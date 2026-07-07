@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hướng dẫn Đặc tả Dự án Parking | GitHub Pages</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-primary: #0b0f19;
+      --bg-secondary: #111827;
+      --bg-tertiary: #1f2937;
+      --text-primary: #f3f4f6;
+      --text-secondary: #9ca3af;
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --secondary: #a855f7;
+      --accent: #10b981;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --glass-bg: rgba(17, 24, 39, 0.7);
+      --glass-border: rgba(255, 255, 255, 0.05);
+      --sidebar-width: 280px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      display: flex;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Sidebar Navigation */
+    .sidebar {
+      width: var(--sidebar-width);
+      background-color: var(--bg-secondary);
+      border-right: 1px solid var(--border-color);
+      height: 100vh;
+      position: fixed;
+      left: 0;
+      top: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 2rem 1.5rem;
+      z-index: 100;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .brand-icon {
+      width: 40px;
+      height: 40px;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: 1.25rem;
+      box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
+    }
+
+    .brand-title {
+      font-family: 'Outfit', sans-serif;
+      font-weight: 700;
+      font-size: 1.25rem;
+      background: linear-gradient(to right, #ffffff, #a855f7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .nav-menu {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      flex-grow: 1;
+    }
+
+    .nav-item a {
+      display: flex;
+      align-items: center;
+      padding: 0.75rem 1rem;
+      color: var(--text-secondary);
+      text-decoration: none;
+      border-radius: 10px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: all 0.2s ease;
+      border: 1px solid transparent;
+    }
+
+    .nav-item a:hover, .nav-item.active a {
+      color: white;
+      background-color: rgba(99, 102, 241, 0.1);
+      border-color: rgba(99, 102, 241, 0.2);
+    }
+
+    .nav-item.active a {
+      background: linear-gradient(90deg, rgba(99, 102, 241, 0.15), rgba(168, 85, 247, 0.05));
+      border-left: 3px solid var(--primary);
+    }
+
+    /* Main Content */
+    .main-content {
+      margin-left: var(--sidebar-width);
+      flex-grow: 1;
+      padding: 3rem 4rem;
+      max-width: 1200px;
+    }
+
+    /* Typography */
+    h1 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 2.75rem;
+      font-weight: 800;
+      margin-bottom: 1rem;
+      background: linear-gradient(to right, #ffffff, #818cf8, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1.2;
+    }
+
+    .subtitle {
+      color: var(--text-secondary);
+      font-size: 1.1rem;
+      line-height: 1.6;
+      margin-bottom: 3rem;
+    }
+
+    h2 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-top: 3.5rem;
+      margin-bottom: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.75rem;
+    }
+
+    h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-top: 2rem;
+      margin-bottom: 1rem;
+      color: #e2e8f0;
+    }
+
+    p {
+      color: var(--text-secondary);
+      line-height: 1.7;
+      margin-bottom: 1.25rem;
+      font-size: 0.975rem;
+    }
+
+    /* Cards */
+    .glass-card {
+      background-color: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+    }
+
+    .feature-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      background-color: rgba(99, 102, 241, 0.15);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      border-radius: 9999px;
+      color: #a5b4fc;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+    }
+
+    /* Modules Grid & Table */
+    .table-container {
+      overflow-x: auto;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      margin: 1.5rem 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+
+    th {
+      background-color: rgba(31, 41, 55, 0.6);
+      color: white;
+      padding: 1rem;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    td {
+      padding: 1rem;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-secondary);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    tr:hover td {
+      color: white;
+      background-color: rgba(255, 255, 255, 0.02);
+    }
+
+    /* Tabs Steps styling */
+    .steps-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+    }
+
+    .step-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.5rem;
+      transition: all 0.3s ease;
+    }
+
+    .step-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(99, 102, 241, 0.4);
+      background: rgba(99, 102, 241, 0.02);
+    }
+
+    .step-num {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+
+    .step-title {
+      font-weight: 600;
+      color: white;
+      margin-bottom: 0.5rem;
+    }
+
+    /* Code Block & Copy Section */
+    .template-box {
+      position: relative;
+      background-color: #030712;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      margin-top: 1.5rem;
+    }
+
+    .template-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 1.5rem;
+      background-color: rgba(255, 255, 255, 0.03);
+      border-bottom: 1px solid var(--border-color);
+      border-top-left-radius: 12px;
+      border-top-right-radius: 12px;
+    }
+
+    .template-title {
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      font-family: monospace;
+    }
+
+    .copy-btn {
+      background: linear-gradient(135deg, var(--primary), var(--secondary));
+      color: white;
+      border: none;
+      padding: 0.5rem 1.25rem;
+      font-size: 0.8rem;
+      font-weight: 600;
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+    }
+
+    .copy-btn:hover {
+      opacity: 0.9;
+      transform: scale(1.02);
+    }
+
+    .copy-btn:active {
+      transform: scale(0.98);
+    }
+
+    pre {
+      padding: 1.5rem;
+      overflow-x: auto;
+      font-family: 'Fira Code', 'Courier New', Courier, monospace;
+      font-size: 0.85rem;
+      color: #e2e8f0;
+      max-height: 500px;
+      line-height: 1.5;
+    }
+
+    /* Highlight blocks */
+    .alert-box {
+      border-left: 4px solid var(--primary);
+      background-color: rgba(99, 102, 241, 0.05);
+      padding: 1.25rem 1.5rem;
+      border-radius: 0 12px 12px 0;
+      margin: 1.5rem 0;
+    }
+
+    .alert-box.tip {
+      border-left-color: var(--accent);
+      background-color: rgba(16, 185, 129, 0.05);
+    }
+
+    .alert-title {
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+      font-size: 0.95rem;
+    }
+
+    .alert-box.tip .alert-title {
+      color: var(--accent);
+    }
+
+    .alert-box.normal .alert-title {
+      color: #818cf8;
+    }
+
+    /* Responsive styles */
+    @media (max-width: 1024px) {
+      .sidebar {
+        display: none;
+      }
+      .main-content {
+        margin-left: 0;
+        padding: 2rem;
+      }
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: var(--accent);
+      color: white;
+      padding: 0.75rem 1.5rem;
+      border-radius: 8px;
+      font-weight: 600;
+      box-shadow: 0 10px 25px rgba(16, 185, 129, 0.3);
+      transform: translateY(100px);
+      opacity: 0;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 1000;
+    }
+
+    .toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Sidebar Navigation -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">P</div>
+      <div class="brand-title">Parking Docs</div>
+    </div>
+    <ul class="nav-menu">
+      <li class="nav-item active"><a href="#tong-quan">Tổng quan dự án</a></li>
+      <li class="nav-item"><a href="#phan-he">Các phân hệ chính</a></li>
+      <li class="nav-item"><a href="#huong-dan">Hướng dẫn điền đặc tả</a></li>
+      <li class="nav-item"><a href="#mau-giao-viec">Mẫu giao việc</a></li>
+    </ul>
+  </aside>
+
+  <!-- Main Content Area -->
+  <main class="main-content">
+    
+    <section id="tong-quan">
+      <span class="feature-badge">Dự Án Đặc Tả</span>
+      <h1>Hệ Thống Quản Lý Đặc Tả Dự Án Parking</h1>
+      <p class="subtitle">Tài liệu hướng dẫn cách thiết lập cấu trúc tính năng và quản trị nội dung đặc tả kỹ thuật cho hệ thống Tòa nhà Bãi đỗ xe thông minh (Parking Building Management System).</p>
+
+      <div class="glass-card">
+        <h3>Giới thiệu chung về công cụ</h3>
+        <p>Ứng dụng của bạn là một <strong>Feature Tree System</strong> được viết bằng công nghệ React, TypeScript và Tailwind CSS. Dữ liệu thiết kế được lưu trực tiếp trên trình duyệt bằng cơ sở dữ liệu IndexedDB local giúp toàn quyền bảo mật dữ liệu của bạn.</p>
+        <p>Hệ thống mẫu hiện tại mô phỏng dự án <strong>Parking Building Management System</strong> với hai đầu Backend dịch vụ: <strong>.NET Core API</strong> dành cho các nghiệp vụ ghi giao dịch chính, và <strong>Spring Boot Support API</strong> dành cho các báo cáo, tác vụ hỗ trợ.</p>
+      </div>
+    </section>
+
+    <section id="phan-he">
+      <h2>Các phân hệ cốt lõi trong hệ thống Parking</h2>
+      <p>Hệ thống mẫu đã được nạp sẵn sơ đồ nghiệp vụ chuẩn hóa cho bãi đỗ xe thông minh bao gồm các phân hệ sau:</p>
+      
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Tên phân hệ</th>
+              <th>Tính năng chi tiết tiêu biểu</th>
+              <th>Vai trò hoạt động</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>1. Authentication</strong></td>
+              <td>Đăng nhập & Phiên làm việc, Đăng ký Tài xế khách</td>
+              <td>Xác thực người dùng và phân quyền hệ thống.</td>
+            </tr>
+            <tr>
+              <td><strong>2. User & Driver</strong></td>
+              <td>Quản lý tài khoản nội bộ, Hồ sơ xe, Đăng ký Vé tháng</td>
+              <td>Quản trị phân quyền Admin/Manager/Staff và hồ sơ phương tiện.</td>
+            </tr>
+            <tr>
+              <td><strong>3. Vehicle Config</strong></td>
+              <td>Cấu hình loại xe</td>
+              <td>Thiết lập biểu phí dựa trên các loại phương tiện khác nhau.</td>
+            </tr>
+            <tr>
+              <td><strong>4. Parking Structure</strong></td>
+              <td>Quản lý Tầng, Khu vực đỗ, Quản lý Vị trí (Slot)</td>
+              <td>Cấu hình sơ đồ mặt bằng vật lý của bãi đỗ xe.</td>
+            </tr>
+            <tr>
+              <td><strong>5. Entry & Exit</strong></td>
+              <td>Quét thẻ RFID tự động, Camera nhận diện biển số (ANPR)</td>
+              <td>Tự động hóa luồng xe ra vào tại các barie an ninh.</td>
+            </tr>
+            <tr>
+              <td><strong>6. Billing & Pricing</strong></td>
+              <td>Biểu giá (Tariff Matrix), Thanh toán cổng PayOS</td>
+              <td>Tính toán giá vé và tích hợp thanh toán trực tuyến/quét QR.</td>
+            </tr>
+            <tr>
+              <td><strong>7. Security & Admin</strong></td>
+              <td>Báo mất thẻ, Danh sách đen, Dashboard báo cáo</td>
+              <td>Giám sát rủi ro mất cắp và kết xuất dữ liệu ca trực.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="huong-dan">
+      <h2>Quy trình điền đặc tả tính năng</h2>
+      <p>Mỗi tính năng chi tiết (Leaf Feature) cần được mô tả đầy đủ qua 5 Tab nội dung chính để lập trình viên và Trợ lý AI có thể hiểu rõ:</p>
+
+      <div class="steps-container">
+        <div class="step-card">
+          <div class="step-num">1</div>
+          <div class="step-title">Tab 1: Overview</div>
+          <p>Điền mục tiêu cốt lõi của tính năng, xác định rõ phạm vi (In Scope) và các hạng mục loại trừ (Out of Scope) cùng phân quyền đối tượng.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-num">2</div>
+          <div class="step-title">Tab 2: DB & Validation</div>
+          <p>Khai báo bảng dữ liệu SQL của PostgreSQL cần dùng và thiết lập các luật kiểm tra dữ liệu đầu vào kèm thông báo lỗi tương ứng.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-num">3</div>
+          <div class="step-title">Tab 3: Security & Logs</div>
+          <p>Định nghĩa chi tiết phân quyền API và các sự kiện ghi nhật ký nghiệp vụ quan trọng phục vụ mục đích kiểm toán (Audit Trail).</p>
+        </div>
+        <div class="step-card">
+          <div class="step-num">4</div>
+          <div class="step-title">Tab 4: API & UI Contracts</div>
+          <p>Thiết lập URL API, JSON Request/Response mẫu. Đồng thời mô tả 4 trạng thái giao diện UI: Loading, Empty, Error và Success.</p>
+        </div>
+        <div class="step-card">
+          <div class="step-num">5</div>
+          <div class="step-title">Tab 5: Tests & DoD</div>
+          <p>Viết kịch bản kiểm thử (Test Cases) chi tiết với các bước thực hiện và kết quả mong muốn cùng checklist tiêu chuẩn hoàn thành.</p>
+        </div>
+      </div>
+
+      <div class="alert-box tip">
+        <div class="alert-title">💡 Mẹo Tối Ưu Hóa Bằng Trợ Lý AI</div>
+        <p>Bạn không cần phải tự viết tay toàn bộ thông tin kỹ thuật phức tạp này. Hãy cung cấp mô tả ngắn bằng tiếng Việt cho trợ lý AI (Gemini/Antigravity) và yêu cầu AI <strong>chỉnh sửa trực tiếp thông tin vào file mã nguồn seed <code>src/seed/parkingBuildingSeed.ts</code></strong>. Sau đó nhấn <strong>Load Sample Seed</strong> trên giao diện web để cập nhật ngay lập tức!</p>
+      </div>
+    </section>
+
+    <section id="mau-giao-viec">
+      <h2>Mẫu giao việc cho đội ngũ phát triển</h2>
+      <p>Sao chép mẫu dưới đây để gửi cho các thành viên trong dự án để họ hiểu rõ trách nhiệm và cách thức cộng tác thiết kế:</p>
+
+      <div class="template-box">
+        <div class="template-header">
+          <div class="template-title">TASK_DELEGATION_TEMPLATE.md</div>
+          <button class="copy-btn" onclick="copyTemplate()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
+            Sao chép mẫu
+          </button>
+        </div>
+        <pre id="template-text">### 📋 MẪU GIAO VIỆC: CẬP NHẬT ĐẶC TẢ TÍNH NĂNG HỆ THỐNG PARKING
+
+> **Dự án:** Parking Building Management System (Hệ thống Quản lý Bãi đỗ xe)
+> **Nhiệm vụ:** Hoàn thiện sơ đồ cây tính năng và cập nhật chi tiết đặc tả thiết kế hệ thống.
+
+Chào các bạn,
+
+Để chuẩn bị cho giai đoạn phát triển và kiểm thử hệ thống Parking, chúng ta cần hoàn thiện tài liệu đặc tả chi tiết cho từng tính năng trên công cụ Quản lý Đặc tả (Feature Tree).
+
+Vui lòng đọc kỹ hướng dẫn dưới đây và thực hiện:
+
+#### 1. Phân Chia Công Việc Theo Tính Năng (Feature-based Assignment):
+* **Đảm nhận trọn gói tính năng:** Mỗi thành viên sẽ được phân công phụ trách cụ thể từng tính năng (Feature). Thành viên phụ trách tính năng nào sẽ chịu trách nhiệm hoàn thiện **toàn bộ các tab đặc tả (từ Tab 1 đến Tab 5)** của tính năng đó.
+* **Mục tiêu:** Đảm bảo tính nhất quán cao nhất trong tư duy thiết kế — người thiết kế nghiệp vụ sẽ tự định nghĩa cơ sở dữ liệu, quy tắc bảo mật, API, giao diện UI và kịch bản kiểm thử tương ứng cho tính năng đó.
+
+#### 2. Sử Dụng Trợ Lý AI Để Tự Động Hóa & Cập Nhật File Seed (Khuyên dùng):
+* **Không cần điền thủ công trên giao diện:** Bạn không cần phải mở giao diện web lên và tự tay gõ từng dòng lệnh SQL, viết các JSON API Contract hay thiết kế từng bước Test Cases.
+* **Quy trình thực hiện (Cập nhật trực tiếp vào mã nguồn):**
+  1. Mở khung chat với Trợ lý AI (như Antigravity hoặc Gemini) trong môi trường phát triển của bạn.
+  2. Gửi yêu cầu đặc tả bằng ngôn ngữ tự nhiên hoặc tài liệu tóm tắt cho AI (ví dụ: "Thêm 3 quy tắc validation và thiết lập API contract cho tính năng X").
+  3. Yêu cầu AI **chỉnh sửa trực tiếp thông tin này vào file mã nguồn seed `src/seed/parkingBuildingSeed.ts`**.
+  4. Sau khi AI thông báo đã chỉnh sửa thành công, bạn mở giao diện web của ứng dụng lên và nhấn nút **Nạp lại mẫu (Load Sample Seed)** để cập nhật hiển thị ngay lập tức.
+  5. Thực hiện lệnh `git commit` và `git push` file `parkingBuildingSeed.ts` đã được cập nhật lên GitHub để đồng bộ cho toàn bộ đội ngũ.
+
+#### 3. Nguyên Tắc Điền Thông Tin Cần Tuân Thủ:
+* **Không bỏ trống các trường quan trọng:** Một tính năng được coi là "Ready for Dev" khi và chỉ khi có đủ: API Contract, Luật Validation dữ liệu, Quyền truy cập (Permissions), và ít nhất 2 Test Cases đi kèm.
+* **Định dạng dữ liệu:**
+  * API Contract phải viết dưới dạng mã JSON mẫu rõ ràng.
+  * Câu lệnh SQL phải viết đúng cú pháp PostgreSQL để có thể chạy thử trực tiếp.
+  * Quy định đặt tên Log Event phải viết chữ HOA, phân cách bằng dấu gạch dưới (ví dụ: `PAYMENT_COMPLETED`).
+* **Đồng bộ hóa ngôn ngữ:** Ghi đặc tả bằng tiếng Việt rõ ràng, dễ hiểu hoặc tiếng Anh kỹ thuật đồng nhất.
+
+*Sau khi hoàn thành cập nhật toàn bộ đặc tả cho tính năng được giao bằng cách chạy lại Seed, hãy chuyển trạng thái (Status) của tính năng đó từ `Draft` hoặc `In Progress` sang `Ready` để bàn giao cho đội ngũ phát triển.*
+
+Trân trọng cảm ơn sự phối hợp của các bạn!</pre>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast">Đã sao chép vào bộ nhớ tạm!</div>
+
+  <script>
+    // Copy function with visual feedback
+    function copyTemplate() {
+      const templateText = document.getElementById('template-text').innerText;
+      navigator.clipboard.writeText(templateText).then(() => {
+        const toast = document.getElementById('toast');
+        toast.classList.add('show');
+        setTimeout(() => {
+          toast.classList.remove('show');
+        }, 2000);
+      });
+    }
+
+    // Scroll spy navigation
+    const sections = document.querySelectorAll('section');
+    const navItems = document.querySelectorAll('.nav-item');
+
+    window.addEventListener('scroll', () => {
+      let current = '';
+      sections.forEach(section => {
+        const sectionTop = section.offsetTop;
+        const sectionHeight = section.clientHeight;
+        if (pageYOffset >= (sectionTop - 200)) {
+          current = section.getAttribute('id');
+        }
+      });
+
+      navItems.forEach(item => {
+        item.classList.remove('active');
+        const href = item.querySelector('a').getAttribute('href').substring(1);
+        if (href === current) {
+          item.classList.add('active');
+        }
+      });
+    });
+  </script>
+</body>
+</html>
