@@ -2277,21 +2277,217 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-sess-entry",
             title: "Vehicle Entry",
             type: "leaf_feature",
-            clients: ["Staff"],
+            clients: ["Staff", "Manager", "Admin"],
+            status: "ready",
+            priority: "high",
+            tags: ["entry", "parking-session", "core-api"],
+            objective: "Implement the core Vehicle Entry process for the Parking Building Management System. The .NET Core API is the sole owner of this transaction.",
+            summary: "Implement the core Vehicle Entry process for the Parking Building Management System. The .NET Core API is the sole owner of this transaction. This feature must allow authorized personnel (STAFF, MANAGER, ADMIN) to: Get a location/slot suggestion based on vehicle type and entry gate. Verify reservation codes prior to entry check-in. Process vehicle entries using three modes: CASUAL, MONTHLY, and RESERVATION. Securely bind a physical parking card to the active session. Snapshot the active pricing rule at the time of entry. Commit the entire entry flow (creating session, updating card, updating slot, writing audit logs) within a single database transaction.",
             endpoints: [
-              "POST /api/core/parking-sessions/entry",
+              "GET /api/core/parking-sessions/location-suggestion",
               "GET /api/core/reservations/{reservationCode}/entry-check",
-              "GET /api/core/parking-sessions/location-suggestion"
+              "POST /api/core/parking-sessions/entry"
             ],
-            ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/parking-sessions/entry"),
-            testCases: defaultApiTests("Vehicle Entry", ["Staff"], ["POST /api/core/parking-sessions/entry"]),
+            ownerService: ".NET Core API (ParkingBuilding.CoreApi)",
+            inScope: [
+              "API for suggesting available parking zones/slots based on real-time capacity and prioritization.",
+              "API for validating a reservation code and returning an entry token.",
+              "API for creating a new active parking session (Entry Processing).",
+              "Strict validation of Card state, Slot state, and existing Vehicle active sessions.",
+              "Handling noPlate logic for 2-wheelers vs. slot-required vehicles.",
+              "Database transaction boundary ensuring atomicity (all-or-nothing commit).",
+              "Audit log creation via IAuditWriterService."
+            ],
+            outOfScope: [
+              "Direct hardware integration (mock hardware events are owned by Spring Boot Support API).",
+              "Public QR code generation logic (owned by Spring Boot Support API).",
+              "Exit processing and Fee calculation."
+            ],
+            businessRules: [
+              "The system manages parking building operations for public guests, drivers, staff, managers, and admins.",
+              "The backend is split into .NET Core API for transactional/write operations and Spring Boot Support API for support/read/report/public operations.",
+              "All APIs should return a consistent success/error response format (ApiResponse<T>).",
+              "Authenticated APIs must validate JWT and role permissions.",
+              "Both backend services access a shared PostgreSQL database, maintaining strict entity ownership.",
+              "Global error handling middleware must prevent internal stack traces from leaking to clients.",
+              "A request logging system must log all incoming API requests for security tracing.",
+              "All manager/admin mutating operations must be logged to a dedicated audit schema.",
+              "A parking session starts at vehicle entry and ends after successful exit processing.",
+              "Entry requires card/session information, plate information, gate, and location decision.",
+              "Staff operations must be protected by role authorization.",
+              "Architecture Rule: Must use .NET Core API for this feature. Spring Boot API will only read the resulting data.",
+              "Transaction Boundary Rule: The CreateEntrySessionAsync must run inside a single .NET transaction (IDbContextTransaction). If any step fails (e.g., card update, slot update), the whole process must rollback.",
+              "Pricing Snapshot Rule: The entry process must copy the currently active pricing rule (snapshot_day_price, snapshot_night_price, snapshot_monthly_price, snapshot_lost_card_fee) into the parking_sessions table to prevent disputes if prices change while the session is active.",
+              "No Plate Rule: noPlate = true is ONLY allowed for non-slot vehicles (2-wheelers) and MUST include a vehicleDescription. Slot vehicles (cars/trucks) MUST have a licensePlate.",
+              "Conflict Rule: Do not allow entry if the Card is not AVAILABLE, the Slot is not AVAILABLE (or RESERVED for bookings), or the Vehicle (License Plate) already has an ACTIVE, LOST_CARD_PENDING, or MISMATCH_PENDING session.",
+              "Monthly Pass Rule: When entering via MONTHLY mode, the system must verify that the license plate matches an ACTIVE monthly pass (start_date <= today <= end_date). If valid, set payment_required = false, payment_status = NOT_REQUIRED, and customer_type = MONTHLY. If invalid or expired, reject with MONTHLY_PASS_EXPIRED or MONTHLY_PASS_NOT_FOUND.",
+              "Slot Assignment Rule: For 2-wheelers (RequiresSlot = false), selectedSlotId MUST be null, and capacity is tracked by selectedAreaId. For 4-wheelers/trucks (RequiresSlot = true), selectedSlotId is mandatory and must be marked as OCCUPIED."
+            ],
+            apiContracts: [
+              {
+                id: "api-contract-location-suggestion",
+                name: "GET /api/core/parking-sessions/location-suggestion",
+                content: "Method: GET\nPath: /api/core/parking-sessions/location-suggestion?vehicleTypeId=3&entryGateId=1\nHeaders:\n  Authorization: Bearer <token>\nSuccess Response (200 OK):\n  {\n    \"success\": true,\n    \"message\": \"Suggestion generated successfully\",\n    \"data\": {\n      \"suggestionType\": \"SLOT\",\n      \"suggestedFloorId\": 1,\n      \"suggestedAreaId\": 2,\n      \"suggestedSlotId\": 15,\n      \"slotCode\": \"B-C05\",\n      \"areaCode\": \"B\",\n      \"floorCode\": \"B1\",\n      \"suggestionToken\": \"JWT_TOKEN_HERE\"\n    },\n    \"errors\": null,\n    \"errorCode\": null,\n    \"statusCode\": 200\n  }"
+              },
+              {
+                id: "api-contract-reservation-entry-check",
+                name: "GET /api/core/reservations/{reservationCode}/entry-check",
+                content: "Method: GET\nPath: /api/core/reservations/RES-12345/entry-check?entryGateId=1\nHeaders:\n  Authorization: Bearer <token>\nSuccess Response (200 OK):\n  {\n    \"success\": true,\n    \"message\": \"Reservation check successful.\",\n    \"data\": {\n      \"reservationId\": 123,\n      \"reservationEntryToken\": \"JWT_TOKEN_HERE\",\n      \"licensePlate\": \"51A-12345\",\n      \"vehicleTypeId\": 5,\n      \"assignedSlotId\": 15\n    },\n    \"errors\": null\n  }"
+              },
+              {
+                id: "api-contract-parking-sessions-entry",
+                name: "POST /api/core/parking-sessions/entry",
+                content: "Method: POST\nPath: /api/core/parking-sessions/entry\nHeaders:\n  Authorization: Bearer <token>\nPayload Example (CASUAL Mode):\n{\n  \"entryMode\": \"CASUAL\",\n  \"cardCode\": \"C002\",\n  \"licensePlate\": \"59X1-88888\",\n  \"noPlate\": false,\n  \"vehicleTypeId\": 3,\n  \"entryGateId\": 1,\n  \"selectedAreaId\": 1,\n  \"selectedSlotId\": null,\n  \"suggestionToken\": \"JWT_TOKEN_HERE\",\n  \"convertedFromReservationId\": null\n}\nSuccess Response (201 Created):\n{\n  \"success\": true,\n  \"message\": \"Entry created successfully\",\n  \"data\": {\n    \"sessionId\": 1001,\n    \"sessionCode\": \"SESS-20260629-ABC\",\n    \"status\": \"ACTIVE\",\n    \"customerType\": \"CASUAL\",\n    \"cardCode\": \"C002\",\n    \"slotCode\": null,\n    \"entryTime\": \"2026-06-29T10:00:00+07:00\",\n    \"paymentStatus\": \"PENDING\",\n    \"monthlyPassId\": null,\n    \"reservationId\": null\n  },\n  \"errors\": null\n}\nError Response Example (400 Bad Request):\n{\n  \"success\": false,\n  \"message\": \"Card is not available.\",\n  \"data\": null,\n  \"errors\": [\"CARD_NOT_AVAILABLE\"],\n  \"errorCode\": \"CARD_NOT_AVAILABLE\",\n  \"statusCode\": 400\n}"
+              }
+            ],
+            testCases: [
+              {
+                id: "TC-ENTRY-01",
+                title: "Casual entry with valid inputs.",
+                type: "api",
+                expectedResult: "201 Created. Session created, Card -> IN_USE, Slot -> OCCUPIED.",
+                status: "not_started"
+              },
+              {
+                id: "TC-ENTRY-02",
+                title: "Prevent duplicate active card.",
+                type: "api",
+                expectedResult: "400 Bad Request (CARD_STATE_CONFLICT or CARD_NOT_AVAILABLE).",
+                status: "not_started"
+              },
+              {
+                id: "TC-ENTRY-03",
+                title: "Prevent duplicate active plate.",
+                type: "api",
+                expectedResult: "400 Bad Request (VEHICLE_HAS_ACTIVE_SESSION).",
+                status: "not_started"
+              },
+              {
+                id: "TC-ENTRY-04",
+                title: "Entry with Monthly Pass mode detects customerType MONTHLY.",
+                type: "api",
+                expectedResult: "201 Created. customerType = MONTHLY, paymentStatus = NOT_REQUIRED, paymentRequired = false.",
+                status: "not_started"
+              },
+              {
+                id: "TC-ENTRY-05",
+                title: "Entry with expired Monthly Pass is rejected.",
+                type: "api",
+                expectedResult: "400 Bad Request (MONTHLY_PASS_EXPIRED).",
+                status: "not_started"
+              },
+              {
+                id: "TC-ENTRY-06",
+                title: "Reservation entry with matching plate.",
+                type: "integration",
+                expectedResult: "201 Created. Reservation updated to COMPLETED, Session linked.",
+                status: "not_started"
+              },
+              {
+                id: "TC-ENTRY-07",
+                title: "Reservation entry with mismatched plate.",
+                type: "api",
+                expectedResult: "400 Bad Request (RESERVATION_PLATE_MISMATCH).",
+                status: "not_started"
+              },
+              {
+                id: "TC-ENTRY-08",
+                title: "Snapshot pricing is correctly cloned to session.",
+                type: "integration",
+                expectedResult: "Database asserts snapshot_day_price, etc., are filled from active rule.",
+                status: "not_started"
+              },
+              {
+                id: "TC-SUG-01",
+                title: "Suggestion ignores LOCKED/MAINTENANCE areas. Suggestion prioritizes area with highest available slots.",
+                type: "integration",
+                expectedResult: "Suggestion generated successfully targeting active slots.",
+                status: "not_started"
+              },
+              {
+                id: "TC-ENTRY-09",
+                title: "Transaction rollback on failure.",
+                type: "integration",
+                expectedResult: "If slot status update throws exception during entry flow, parking_sessions record is NOT inserted and card remains AVAILABLE.",
+                status: "not_started"
+              }
+            ],
             doneCriteria: [
-              ...defaultDoneCriteria("Vehicle Entry"),
-              { id: "dc-sess-res-check", content: "Integration checking driver pre-bookings works.", checked: false },
-              { id: "dc-sess-suggest", content: "Integration proposing available floor space layout works.", checked: false }
-            ]
+              { id: "dc-entry-01", content: "Implement IEntryService handling 3 entry modes inside a single DB transaction.", checked: false },
+              { id: "dc-entry-02", content: "API endpoint exists in .NET Swagger (/api/core/parking-sessions/entry).", checked: false },
+              { id: "dc-entry-03", content: "Response adheres strictly to ApiResponse<T> wrapper.", checked: false },
+              { id: "dc-entry-04", content: "Exceptions thrown are BusinessException(ErrorCode).", checked: false },
+              { id: "dc-entry-05", content: "JWT roles are validated (STAFF, MANAGER, ADMIN).", checked: false },
+              { id: "dc-entry-06", content: "parking_cards.status and slots.status update correctly upon successful entry.", checked: false },
+              { id: "dc-entry-07", content: "Active pricing rules are cloned into session snapshot columns.", checked: false },
+              { id: "dc-entry-08", content: "Audit logs (SESSION_CREATED) are correctly written via IAuditWriterService.", checked: false },
+              { id: "dc-entry-09", content: "Transaction rolls back completely if any database update fails.", checked: false },
+              { id: "dc-entry-10", content: "Integration checks Driver pre-bookings (reservation validation and status update).", checked: false },
+              { id: "dc-entry-11", content: "All required automated tests pass locally.", checked: false },
+              { id: "dc-entry-12", content: "Backend quality gate (check-api-contract.ps1 hoặc lệnh tương đương) passes without errors.", checked: false }
+            ],
+            permissions: [
+              { role: "Staff", permission: "Full Access" },
+              { role: "Manager", permission: "Full Access (Can override suggestions with override reason)" },
+              { role: "Admin", permission: "Full Access" },
+              { role: "Driver", permission: "Denied (403 Forbidden)" },
+              { role: "Public", permission: "Denied (401 Unauthorized)" }
+            ],
+            dbExistingTables: [
+              "users",
+              "vehicles",
+              "vehicle_types",
+              "parking_cards",
+              "floors",
+              "areas",
+              "slots",
+              "gates",
+              "parking_sessions",
+              "pricing_rules",
+              "monthly_passes",
+              "reservations",
+              "audit_logs"
+            ],
+            dbRelationships: [
+              "A card can only link to one session where status IN ('ACTIVE', 'LOST_CARD_PENDING', 'MISMATCH_PENDING').",
+              "A license plate can only link to one session where status IN ('ACTIVE', 'LOST_CARD_PENDING', 'MISMATCH_PENDING')."
+            ],
+            validationRules: [
+              { field: "Card Status", rule: "Must be AVAILABLE", errorMessage: "CARD_NOT_AVAILABLE" },
+              { field: "Slot Status", rule: "Must be AVAILABLE (or RESERVED for bookings)", errorMessage: "SLOT_NOT_AVAILABLE" },
+              { field: "Active Vehicle", rule: "Plate must not have an active session", errorMessage: "VEHICLE_HAS_ACTIVE_SESSION" },
+              { field: "Missing Plate", rule: "If noPlate = true, vehicleDescription is required", errorMessage: "VEHICLE_DESCRIPTION_REQUIRED" },
+              { field: "Slot Vehicle Plate", rule: "Cars/Trucks must have a plate; noPlate not allowed", errorMessage: "PLATE_REQUIRED_FOR_SLOT_VEHICLE" },
+              { field: "Pricing", rule: "An active pricing rule must exist for the vehicle type", errorMessage: "PRICING_RULE_NOT_FOUND" },
+              { field: "Reservation Plate", rule: "Plate during check-in must match the reservation exactly", errorMessage: "RESERVATION_PLATE_MISMATCH" },
+              { field: "Suggestion Override", rule: "STAFF cannot override the system's slot suggestion", errorMessage: "SUGGESTION_OVERRIDE_NOT_ALLOWED" },
+              { field: "Monthly Pass", rule: "Must exist and be ACTIVE within start_date and end_date", errorMessage: "MONTHLY_PASS_EXPIRED or MONTHLY_PASS_NOT_FOUND" },
+              { field: "Override Reason", rule: "Required if MANAGER overrides suggested slot/area", errorMessage: "OVERRIDE_REASON_REQUIRED" }
+            ],
+            securityRules: [
+              "Enforce JWT Authentication and Role-based checks ([Authorize(Roles = \"STAFF,MANAGER,ADMIN\")]).",
+              "Extract the acting user ID securely via User.GetUserId() extension method from claims; do not trust client-provided staff IDs.",
+              "Prevent partial data writes: The .NET IDbContextTransaction must wrap the creation of the session, the status changes to cards/slots/reservations, and the audit log insertion."
+            ],
+            logEvents: [
+              "SESSION_CREATED (TargetType: ParkingSession, TargetId: new session ID)",
+              "CARD_STATUS_CHANGED (TargetType: ParkingCard, TargetId: card ID)",
+              "SLOT_STATUS_CHANGED (TargetType: Slot, TargetId: slot ID - if slot assigned)"
+            ],
+            noLogEvents: [
+              "Passwords",
+              "access tokens",
+              "refresh tokens",
+              "credit card details"
+            ],
+            uiPage: "/staff/entry",
+            uiComponents: "StaffEntryPage",
+            uiStateLoading: "Khi đang gửi request API, disable toàn bộ form inputs và nút submit để tránh double-submission. Hiển thị Spinner overlay trên màn hình.",
+            uiStateError: "Nếu kết quả API trả về success === false, bóc tách errorCode từ đối tượng chuẩn ApiResponse<T> để hiển thị banner thông báo lỗi trực quan (Ví dụ: Hiển thị cảnh báo \"Thẻ này đã có xe khác sử dụng\" khi nhận mã lỗi CARD_NOT_AVAILABLE).",
+            uiStateSuccess: "Xóa trắng form inputs (hoặc đưa về trạng thái mặc định), hiển thị Toast thông báo thành công đi kèm mã sessionCode, đồng thời reload lại bộ đếm số chỗ trống của tòa nhà.",
+            notes: "### Database State Transitions & Updates Required\n- **parking_cards**: Cập nhật trạng thái `status = 'IN_USE'` và `current_session_id = {new_session_id}`.\n- **slots**: Cập nhật trạng thái `status = 'OCCUPIED'` và `current_session_id = {new_session_id}` (Chỉ áp dụng nếu xe yêu cầu gán slot và có cung cấp `selectedSlotId`).\n- **reservations**: Cập nhật trạng thái `status = 'COMPLETED'` (Nếu `entryMode = 'RESERVATION'`).\n- **parking_sessions**: Thực hiện lệnh INSERT bản ghi mới với các thông tin chi tiết:\n  - `status = 'ACTIVE'`\n  - `payment_status = 'PENDING'` (Đối với khách Vãng lai/Casual) hoặc `'NOT_REQUIRED'` (Đối với khách Vé tháng/Monthly)\n  - `payment_required = true` (Đối với khách Vãng lai/Casual) hoặc `false` (Đối với khách Vé tháng/Monthly)\n  - Sao chép toàn bộ các trường giá snapshot: `snapshot_day_price`, `snapshot_night_price`, `snapshot_monthly_price`, `snapshot_lost_card_fee` lấy trực tiếp từ cấu hình `pricing_rules` đang hoạt động tại thời điểm xe vào tòa nhà.\n\n### Implementation Instructions for AI\nBefore coding:\n1. Inspect the existing project structure in ParkingBuilding.CoreApi.\n2. Reuse existing architecture, repositories, and naming conventions (PascalCase for C# properties, snake_case for DB mapping).\n3. Do not create duplicate services, entities, or response wrappers (Reuse ApiResponse<T> and BusinessException).\n4. Check existing tests before adding new ones.\n5. Implement the smallest correct change. Do NOT write UI code or Spring Boot code for this task.\n6. Run all relevant tests.\n7. Report changed files, reason, verification, and remaining risks.\n\nDo not mark this task as complete unless all acceptance criteria and automated tests pass."
           },
+
           {
             id: "leaf-sess-claim",
             title: "Claim Session by QR",
