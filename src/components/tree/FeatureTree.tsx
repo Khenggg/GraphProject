@@ -4,7 +4,7 @@ import { Search, FolderKanban, Keyboard } from "lucide-react";
 import { useFeatureTreeStore } from "../../store/featureTreeStore";
 import type { FeatureNode } from "../../domain/featureNode.types";
 import FeatureTreeNode from "./FeatureTreeNode";
-import { getAncestorChain, isNodeAiReady } from "../../domain/inheritance.utils";
+import { getAncestorChain, isNodeAiReady, getEffectiveTags } from "../../domain/inheritance.utils";
 import { buildTreeFromFlat } from "../../domain/export.utils";
 import { translations } from "../../domain/localization";
 
@@ -31,46 +31,54 @@ export default function FeatureTree() {
   const t = translations[language];
   const treeRef = React.useRef<TreeApi<FeatureNode>>(null);
 
-  // 1. Client filter
-  let filteredList = selectedClientFilter === "ALL"
-    ? nodes
-    : nodes.filter(n => n.clients && n.clients.includes(selectedClientFilter as any));
+  // Memoize filteredList to prevent recreating reference on every render
+  const filteredList = React.useMemo(() => {
+    // 1. Client filter
+    let list = selectedClientFilter === "ALL"
+      ? nodes
+      : nodes.filter(n => n.clients && n.clients.includes(selectedClientFilter as any));
 
-  // 2. Status filter
-  if (selectedStatusFilter !== "ALL") {
-    filteredList = filteredList.filter(n => n.status === selectedStatusFilter);
-  }
+    // 2. Status filter
+    if (selectedStatusFilter !== "ALL") {
+      list = list.filter(n => n.status === selectedStatusFilter);
+    }
 
-  // 3. Priority filter
-  if (selectedPriorityFilter !== "ALL") {
-    filteredList = filteredList.filter(n => n.priority === selectedPriorityFilter);
-  }
+    // 3. Priority filter
+    if (selectedPriorityFilter !== "ALL") {
+      list = list.filter(n => n.priority === selectedPriorityFilter);
+    }
 
-  // 4. Incomplete filter (Leafs only that aren't fully AI-ready)
-  if (showOnlyIncomplete) {
-    filteredList = filteredList.filter(n => {
-      if (n.type !== "leaf_feature") return false;
-      const v = isNodeAiReady(n, nodes);
-      return !v.isReady;
-    });
-  }
+    // 4. Incomplete filter (Leafs only that aren't fully AI-ready)
+    if (showOnlyIncomplete) {
+      list = list.filter(n => {
+        if (n.type !== "leaf_feature") return false;
+        const v = isNodeAiReady(n, nodes);
+        return !v.isReady;
+      });
+    }
 
-  // 5. Leaf node filter
-  if (showOnlyLeafs) {
-    filteredList = filteredList.filter(n => n.type === "leaf_feature");
-  }
+    // 5. Leaf node filter
+    if (showOnlyLeafs) {
+      list = list.filter(n => n.type === "leaf_feature");
+    }
 
-  // 6. Text Search query filter
-  if (searchQuery.trim()) {
-    const q = searchQuery.toLowerCase().trim();
-    filteredList = filteredList.filter(n => {
-      const matchTitle = n.title.toLowerCase().includes(q);
-      const matchSummary = n.summary && n.summary.toLowerCase().includes(q);
-      const matchRules = n.businessRules && n.businessRules.some(r => r.toLowerCase().includes(q));
-      const matchTags = n.tags && n.tags.some(t => t.toLowerCase().includes(q));
-      return matchTitle || matchSummary || matchRules || matchTags;
-    });
-  }
+    // 6. Text Search query filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      list = list.filter(n => {
+        const matchTitle = n.title.toLowerCase().includes(q);
+        const matchSummary = n.summary && n.summary.toLowerCase().includes(q);
+        const matchRules = n.businessRules && n.businessRules.some(r => r.toLowerCase().includes(q));
+        
+        // Use effective tags (local + inherited)
+        const effectiveTags = getEffectiveTags(n.id, nodes);
+        const matchTags = effectiveTags.some(t => t.includes(q));
+        
+        return matchTitle || matchSummary || matchRules || matchTags;
+      });
+    }
+    return list;
+  }, [nodes, selectedClientFilter, selectedStatusFilter, selectedPriorityFilter, showOnlyIncomplete, showOnlyLeafs, searchQuery]);
 
   // Re-build tree from flat list keeping hierarchy intact if ancestors are present
   // To avoid breaking Tree UI when ancestors are filtered out, we can build the tree keeping orphans as roots
@@ -197,9 +205,9 @@ export default function FeatureTree() {
             onRename={({ id, name }) => {
               updateNode(id, { title: name });
             }}
-            // Custom renderer
-            children={FeatureTreeNode}
-          />
+          >
+            {FeatureTreeNode}
+          </Tree>
         )}
       </div>
 

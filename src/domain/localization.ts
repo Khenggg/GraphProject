@@ -100,7 +100,13 @@ export const translations = {
     missingDetails: "missing detail",
     missingDetailsPlural: "missing details",
     allStatuses: "All Statuses",
-    allPriorities: "All Priorities"
+    allPriorities: "All Priorities",
+    projectRolesTitle: "Project Roles / Stakeholders",
+    projectRolesDesc: "Define the user roles that apply across this project. Child features will use this list for role assignment.",
+    addRolePlaceholder: "New role name (e.g. Customer, Teacher)...",
+    addRoleBtn: "Add Role",
+    noRolesDefined: "No custom roles defined. Using default roles.",
+    defaultRolesHint: "Default roles: Admin, Manager, Staff, Driver, Guest, System"
   },
   vi: {
     brandTitle: "FeatureTree AI",
@@ -203,6 +209,12 @@ export const translations = {
     missingDetails: "yêu cầu còn thiếu",
     missingDetailsPlural: "yêu cầu còn thiếu",
     allStatuses: "Tất cả Trạng thái",
-    allPriorities: "Tất cả Độ ưu tiên"
+    allPriorities: "Tất cả Độ ưu tiên",
+    projectRolesTitle: "Vai trò Dự án / Các bên liên quan",
+    projectRolesDesc: "Định nghĩa các vai trò người dùng trong dự án. Các feature con sẽ dùng danh sách này để gán vai trò.",
+    addRolePlaceholder: "Tên vai trò mới (VD: Khách hàng, Giáo viên)...",
+    addRoleBtn: "Thêm Vai trò",
+    noRolesDefined: "Chưa định nghĩa vai trò tùy chỉnh. Đang dùng vai trò mặc định.",
+    defaultRolesHint: "Vai trò mặc định: Admin, Manager, Staff, Driver, Guest, System"
   }
 };

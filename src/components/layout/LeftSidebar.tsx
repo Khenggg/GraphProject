@@ -117,7 +117,7 @@ export default function LeftSidebar() {
           ? `Successfully imported project "${data.projectName}" with ${data.nodes.length} features!`
           : `Nhập thành công dự án "${data.projectName}" với ${data.nodes.length} feature!`;
         alert(successMsg);
-      } catch (err) {
+      } catch {
         const parseErrMsg = language === "en" ? "Failed to parse JSON file." : "Không thể phân tích file JSON.";
         alert(parseErrMsg);
       }

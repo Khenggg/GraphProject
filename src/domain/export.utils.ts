@@ -52,59 +52,66 @@ export function formatSingleNodeMarkdown(
     md += `| **Type** | \`${node.type}\` |\n`;
     md += `| **Status** | \`${node.status}\` |\n`;
     md += `| **Priority** | \`${node.priority}\` |\n`;
-    md += `| **Clients/Roles** | ${node.clients.join(", ") || "*None assigned*"} |\n`;
-    md += `| **Tags** | ${node.tags.map(t => `\`${t}\``).join(", ") || "*None*"} |\n\n`;
-    
-    md += `## Summary\n${node.summary || "*No summary provided.*"}\n\n`;
-    
-    md += `## Business Rules\n`;
-    if (inheritedGroups.length > 0) {
-      md += `### Inherited Rules\n`;
-      inheritedGroups.forEach(g => {
-        md += `#### From ${g.sourceTitle}\n`;
-        g.rules.forEach(r => md += `- ${r}\n`);
-      });
-      md += `\n`;
+    if (node.clients && node.clients.length > 0) {
+      md += `| **Clients/Roles** | ${node.clients.join(", ")} |\n`;
     }
-    
-    md += `### Local Rules\n`;
-    if (localRules.length > 0) {
-      localRules.forEach(r => md += `- ${r}\n`);
-    } else {
-      md += `*No local rules.*\n`;
+    if (node.tags && node.tags.length > 0) {
+      md += `| **Tags** | ${node.tags.map(t => `\`${t}\``).join(", ")} |\n`;
     }
     md += `\n`;
     
-    md += `## Contracts\n`;
-    md += `### API Contracts\n`;
-    if (node.apiContracts && node.apiContracts.length > 0) {
-      node.apiContracts.forEach(c => {
-        md += `#### ${c.name}\n\`\`\`\n${c.content}\n\`\`\`\n\n`;
-      });
-    } else {
-      md += `*No API contracts specified.*\n\n`;
+    if (node.summary) {
+      md += `## Summary\n${node.summary}\n\n`;
     }
     
-    md += `### UI Contracts\n`;
-    if (node.uiContracts && node.uiContracts.length > 0) {
-      node.uiContracts.forEach(c => {
-        md += `#### ${c.name}\n\`\`\`\n${c.content}\n\`\`\`\n\n`;
-      });
-    } else {
-      md += `*No UI contracts specified.*\n\n`;
+    // Business Rules Section (Only if inherited or local rules exist)
+    if (inheritedGroups.length > 0 || localRules.length > 0) {
+      md += `## Business Rules\n`;
+      if (inheritedGroups.length > 0) {
+        md += `### Inherited Rules\n`;
+        inheritedGroups.forEach(g => {
+          md += `#### From ${g.sourceTitle}\n`;
+          g.rules.forEach(r => md += `- ${r}\n`);
+        });
+        md += `\n`;
+      }
+      
+      if (localRules.length > 0) {
+        md += `### Local Rules\n`;
+        localRules.forEach(r => md += `- ${r}\n`);
+        md += `\n`;
+      }
     }
     
-    md += `### Data Contracts\n`;
-    if (node.dataContracts && node.dataContracts.length > 0) {
-      node.dataContracts.forEach(c => {
-        md += `#### ${c.name}\n\`\`\`\n${c.content}\n\`\`\`\n\n`;
-      });
-    } else {
-      md += `*No Data contracts specified.*\n\n`;
+    // Contracts Section (Only if at least one type of contract exists)
+    const hasApi = node.apiContracts && node.apiContracts.length > 0;
+    const hasUi = node.uiContracts && node.uiContracts.length > 0;
+    const hasData = node.dataContracts && node.dataContracts.length > 0;
+    if (hasApi || hasUi || hasData) {
+      md += `## Contracts\n`;
+      if (hasApi) {
+        md += `### API Contracts\n`;
+        node.apiContracts!.forEach(c => {
+          md += `#### ${c.name}\n\`\`\`\n${c.content}\n\`\`\`\n\n`;
+        });
+      }
+      if (hasUi) {
+        md += `### UI Contracts\n`;
+        node.uiContracts!.forEach(c => {
+          md += `#### ${c.name}\n\`\`\`\n${c.content}\n\`\`\`\n\n`;
+        });
+      }
+      if (hasData) {
+        md += `### Data Contracts\n`;
+        node.dataContracts!.forEach(c => {
+          md += `#### ${c.name}\n\`\`\`\n${c.content}\n\`\`\`\n\n`;
+        });
+      }
     }
     
-    md += `## Test Cases & Verification\n`;
+    // Test Cases Section
     if (node.testCases && node.testCases.length > 0) {
+      md += `## Test Cases & Verification\n`;
       node.testCases.forEach((tc, idx) => {
         md += `### Test ${idx + 1}: ${tc.title} (\`${tc.type}\`)\n`;
         if (tc.precondition) md += `**Precondition:** ${tc.precondition}\n\n`;
@@ -116,36 +123,33 @@ export function formatSingleNodeMarkdown(
         md += `**Expected:** ${tc.expectedResult}\n`;
         md += `**Status:** \`${tc.status}\`\n\n`;
       });
-    } else {
-      md += `*No test cases defined.*\n\n`;
     }
     
-    md += `## Done Criteria\n`;
+    // Done Criteria Section
     if (node.doneCriteria && node.doneCriteria.length > 0) {
+      md += `## Done Criteria\n`;
       node.doneCriteria.forEach(dc => {
         md += `- [${dc.checked ? 'x' : ' '}] ${dc.content}\n`;
       });
-    } else {
-      md += `*No done criteria specified.*\n`;
+      md += `\n`;
     }
-    md += `\n`;
     
-    md += `## Dependencies & Risks\n`;
-    md += `### Dependencies\n`;
-    if (node.dependencies && node.dependencies.length > 0) {
-      node.dependencies.forEach(d => md += `- ${d}\n`);
-    } else {
-      md += `*None*\n`;
+    // Dependencies & Risks Section
+    const hasDeps = node.dependencies && node.dependencies.length > 0;
+    const hasRisks = node.risks && node.risks.length > 0;
+    if (hasDeps || hasRisks) {
+      md += `## Dependencies & Risks\n`;
+      if (hasDeps) {
+        md += `### Dependencies\n`;
+        node.dependencies!.forEach(d => md += `- ${d}\n`);
+        md += `\n`;
+      }
+      if (hasRisks) {
+        md += `### Risks\n`;
+        node.risks!.forEach(r => md += `- ${r}\n`);
+        md += `\n`;
+      }
     }
-    md += `\n`;
-    
-    md += `### Risks\n`;
-    if (node.risks && node.risks.length > 0) {
-      node.risks.forEach(r => md += `- ${r}\n`);
-    } else {
-      md += `*None*\n`;
-    }
-    md += `\n`;
     
     if (node.notes) {
       md += `## Notes\n${node.notes}\n\n`;
@@ -157,10 +161,15 @@ export function formatSingleNodeMarkdown(
     md += `**Node Type:** ${node.type}\n`;
     md += `**Status:** ${node.status}\n`;
     md += `**Priority:** ${node.priority}\n`;
-    md += `**Authorized Clients/Roles:** ${node.clients.join(", ") || "None specified"}\n`;
+    if (node.clients && node.clients.length > 0) {
+      md += `**Authorized Clients/Roles:** ${node.clients.join(", ")}\n`;
+    }
     if (node.metadata) {
       if (node.metadata.ownerService) {
         md += `**Owner Service:** ${node.metadata.ownerService}\n`;
+      }
+      if (node.metadata.consumerServices && node.metadata.consumerServices.length > 0) {
+        md += `**Consumer Services:** ${node.metadata.consumerServices.join(", ")}\n`;
       }
       if (node.metadata.endpoints && node.metadata.endpoints.length > 0) {
         md += `**Endpoints:**\n`;
@@ -169,52 +178,159 @@ export function formatSingleNodeMarkdown(
         });
       }
     }
+    md += `\n---\n\n`;
+
+    // Section 1: Objective
+    md += `## 1. Summary / Objective\n\n`;
+    md += `${node.objective || node.summary || "No objective documented."}\n\n`;
+
+    // Section 2: Scope
+    md += `## 2. Scope\n\n`;
+    md += `### In Scope\n\n`;
+    if (node.inScope && node.inScope.length > 0) {
+      node.inScope.forEach(item => md += `* ${item}\n`);
+    } else {
+      md += `* Implement the core logic and requirements of this feature.\n`;
+    }
+    md += `\n### Out of Scope\n\n`;
+    if (node.outOfScope && node.outOfScope.length > 0) {
+      node.outOfScope.forEach(item => md += `* ${item}\n`);
+    } else {
+      md += `* External system integrations not specified in this document.\n`;
+    }
     md += `\n`;
-    md += `## Summary / Objective\n`;
-    md += `${node.summary || "No summary provided."}\n\n`;
-    
-    md += `## Effective Rules (Inherited & Local)\n`;
+
+    // Section 3: Actors / Roles / Permissions
+    md += `## 3. Actors / Roles / Permissions\n\n`;
+    if (node.permissions && node.permissions.length > 0) {
+      md += `| Role | Permission |\n`;
+      md += `| --- | --- |\n`;
+      node.permissions.forEach(p => {
+        md += `| ${p.role} | ${p.permission} |\n`;
+      });
+    } else if (node.clients && node.clients.length > 0) {
+      md += `| Role | Access |\n`;
+      md += `| --- | --- |\n`;
+      node.clients.forEach(c => {
+        md += `| ${c} | Authorized to access this feature. |\n`;
+      });
+    } else {
+      md += `No role-specific permissions specified.\n`;
+    }
+    md += `\n`;
+
+    // Section 4: Effective Business Rules
+    md += `## 4. Effective Rules (Inherited & Local)\n\n`;
     if (allEffectiveRules.length > 0) {
       allEffectiveRules.forEach(rule => {
-        md += `- ${rule}\n`;
+        md += `* ${rule}\n`;
       });
     } else {
-      md += `*No business rules govern this feature.*\n`;
+      md += `* Follow standard application logic.\n`;
     }
     md += `\n`;
-    
-    md += `## Contracts & Schemas\n`;
-    md += `### API Contracts\n`;
+
+    // Section 5: API Contracts
+    md += `## 5. API Contracts\n\n`;
     if (node.apiContracts && node.apiContracts.length > 0) {
       node.apiContracts.forEach(c => {
-        md += `#### ${c.name}\n\`\`\`\n${c.content}\n\`\`\`\n`;
+        md += `### ${c.name}\n\n\`\`\`\n${c.content}\n\`\`\`\n\n`;
       });
     } else {
-      md += `*No API contract specified.*\n`;
+      md += `No API contracts documented.\n\n`;
+    }
+
+    // Section 6: Database Requirements
+    md += `## 6. Database / Data Model Requirements\n\n`;
+    md += `### Existing Tables to Reuse\n\n`;
+    if (node.dbExistingTables && node.dbExistingTables.length > 0) {
+      node.dbExistingTables.forEach(t => md += `* \`${t}\`\n`);
+    } else {
+      md += `* Reuse existing tables where applicable.\n`;
+    }
+    md += `\n### New Tables / Fields Required\n\n`;
+    if (node.dbNewTablesSql) {
+      md += `\`\`\`sql\n${node.dbNewTablesSql}\n\`\`\`\n`;
+    } else {
+      md += `No new database schema defined.\n`;
+    }
+    md += `\n### Relationship Rules\n\n`;
+    if (node.dbRelationships && node.dbRelationships.length > 0) {
+      node.dbRelationships.forEach(r => md += `* ${r}\n`);
+    } else {
+      md += `* None specified.\n`;
     }
     md += `\n`;
-    
-    md += `### UI Contracts / Requirements\n`;
-    if (node.uiContracts && node.uiContracts.length > 0) {
-      node.uiContracts.forEach(c => {
-        md += `#### ${c.name}\n\`\`\`\n${c.content}\n\`\`\`\n`;
+
+    // Section 7: Validation Rules
+    md += `## 7. Validation Rules\n\n`;
+    if (node.validationRules && node.validationRules.length > 0) {
+      md += `| Field | Rule | Error Message |\n`;
+      md += `| --- | --- | --- |\n`;
+      node.validationRules.forEach(v => {
+        md += `| ${v.field} | ${v.rule} | ${v.errorMessage} |\n`;
       });
     } else {
-      md += `*No UI layout or contract specified.*\n`;
+      md += `Standard request validation is expected.\n`;
     }
     md += `\n`;
-    
-    md += `### Data Schemas & DB Models\n`;
-    if (node.dataContracts && node.dataContracts.length > 0) {
-      node.dataContracts.forEach(c => {
-        md += `#### ${c.name}\n\`\`\`\n${c.content}\n\`\`\`\n`;
+
+    // Section 8: Security Requirements
+    md += `## 8. Security Requirements\n\n`;
+    if (node.securityRules && node.securityRules.length > 0) {
+      node.securityRules.forEach(s => md += `* ${s}\n`);
+    } else {
+      md += `* Validate role permissions.\n`;
+      md += `* Prevent unauthorized access.\n`;
+      md += `* Do not log sensitive data.\n`;
+    }
+    md += `\n`;
+
+    // Section 9: Logging & Audit Requirements
+    md += `## 9. Logging & Audit\n\n`;
+    md += `### Log these events:\n\n`;
+    if (node.logEvents && node.logEvents.length > 0) {
+      node.logEvents.forEach(e => md += `* ${e}\n`);
+    } else {
+      md += `* Log request access, inputs, duration, and response code.\n`;
+    }
+    md += `\n### Do not log (Sensitive data):\n\n`;
+    if (node.noLogEvents && node.noLogEvents.length > 0) {
+      node.noLogEvents.forEach(e => md += `* ${e}\n`);
+    } else {
+      md += `* Passwords, access tokens, refresh tokens, and credit card details.\n`;
+    }
+    md += `\n`;
+
+    // Section 10: Integration Points
+    md += `## 10. Integration Points\n\n`;
+    if (node.integrationPoints && node.integrationPoints.length > 0) {
+      md += `| System / Module | Responsibility |\n`;
+      md += `| --- | --- |\n`;
+      node.integrationPoints.forEach(ip => {
+        md += `| ${ip.system} | ${ip.responsibility} |\n`;
       });
     } else {
-      md += `*No Data model or schema specified.*\n`;
+      md += `No external integration points specified.\n`;
     }
     md += `\n`;
-    
-    md += `## Automated Test Cases to Implement\n`;
+
+    // Section 11: Frontend Behavior
+    md += `## 11. Frontend Behavior\n\n`;
+    if (node.uiPage || node.uiComponents || node.uiStateLoading || node.uiStateEmpty || node.uiStateError || node.uiStateSuccess) {
+      if (node.uiPage) md += `* **Page:** ${node.uiPage}\n`;
+      if (node.uiComponents) md += `* **Components:** ${node.uiComponents}\n`;
+      if (node.uiStateLoading) md += `* **Loading State:** ${node.uiStateLoading}\n`;
+      if (node.uiStateEmpty) md += `* **Empty State:** ${node.uiStateEmpty}\n`;
+      if (node.uiStateError) md += `* **Error State:** ${node.uiStateError}\n`;
+      if (node.uiStateSuccess) md += `* **Success State:** ${node.uiStateSuccess}\n`;
+    } else {
+      md += `No frontend behavior specified.\n`;
+    }
+    md += `\n`;
+
+    // Section 12: Automated Test Cases
+    md += `## 12. Automated Test Cases\n\n`;
     if (node.testCases && node.testCases.length > 0) {
       node.testCases.forEach((tc) => {
         md += `### Test: ${tc.title}\n`;
@@ -227,56 +343,49 @@ export function formatSingleNodeMarkdown(
         md += `- **Expected Result**: ${tc.expectedResult}\n\n`;
       });
     } else {
-      md += `*No automated tests defined.*\n\n`;
+      md += `No automated tests specified.\n\n`;
     }
-    
-    md += `## Acceptance / Done Criteria\n`;
+
+    // Section 13: Acceptance / Done Criteria
+    md += `## 13. Acceptance / Done Criteria\n\n`;
     if (node.doneCriteria && node.doneCriteria.length > 0) {
       node.doneCriteria.forEach(dc => {
         md += `- [${dc.checked ? 'x' : ' '}] ${dc.content}\n`;
       });
+      md += `\n`;
     } else {
-      md += `*No formal done criteria.*\n`;
+      md += `No done criteria specified.\n\n`;
     }
-    md += `\n`;
-    
-    if ((node.dependencies && node.dependencies.length > 0) || (node.risks && node.risks.length > 0)) {
-      md += `## Technical Context\n`;
-      if (node.dependencies && node.dependencies.length > 0) {
-        md += `**Dependencies:**\n`;
-        node.dependencies.forEach(d => md += `- ${d}\n`);
-        md += `\n`;
-      }
-      if (node.risks && node.risks.length > 0) {
-        md += `**Risks/Mitigations:**\n`;
-        node.risks.forEach(r => md += `- ${r}\n`);
-        md += `\n`;
-      }
-    }
-    
-    md += `## AI Instruction\n`;
-    md += `> [!IMPORTANT]\n`;
-    md += `> Implement this feature completely. Ensure all effective business rules are fully enforced.\n`;
-    md += `> Ensure the API and UI matches the contracts, and all automated test cases pass.\n`;
-    md += `> Do not mark this task as done unless all done criteria listed above are satisfied.\n\n`;
+
+    // Section 14: Implementation Instructions for AI
+    md += `## 14. Implementation Instructions for AI\n\n`;
+    md += `Before coding:\n\n`;
+    md += `1. Inspect the existing project structure.\n`;
+    md += `2. Reuse existing architecture and naming conventions.\n`;
+    md += `3. Do not create duplicate services, entities, or response wrappers.\n`;
+    md += `4. Check existing tests before adding new ones.\n`;
+    md += `5. Implement the smallest correct change.\n`;
+    md += `6. Run all relevant tests.\n`;
+    md += `7. Report changed files, reason, verification, and remaining risks.\n\n`;
+    md += `Do not mark this task as complete unless all acceptance criteria and automated tests pass.\n\n`;
     
   } else if (mode === 'qa') {
     md += `# QA Specification: ${node.title}\n\n`;
     md += `**Path:** ${path}\n`;
-    md += `**Clients:** ${node.clients.join(", ") || "None"}\n\n`;
+    if (node.clients && node.clients.length > 0) {
+      md += `**Clients:** ${node.clients.join(", ")}\n\n`;
+    }
     
-    md += `## Business Rules to Verify\n`;
     if (allEffectiveRules.length > 0) {
+      md += `## Business Rules to Verify\n`;
       allEffectiveRules.forEach(rule => {
         md += `- ${rule}\n`;
       });
-    } else {
-      md += `*No business rules defined.*\n`;
+      md += `\n`;
     }
-    md += `\n`;
     
-    md += `## Test Cases\n`;
     if (node.testCases && node.testCases.length > 0) {
+      md += `## Test Cases\n`;
       node.testCases.forEach((tc) => {
         md += `### [${tc.type.toUpperCase()}] ${tc.title}\n`;
         if (tc.precondition) md += `- **Precondition**: ${tc.precondition}\n`;
@@ -287,19 +396,15 @@ export function formatSingleNodeMarkdown(
         md += `- **Expected**: ${tc.expectedResult}\n`;
         md += `- **Current Status**: \`${tc.status}\`\n\n`;
       });
-    } else {
-      md += `*No test cases defined.*\n\n`;
     }
     
-    md += `## Verification Criteria\n`;
     if (node.doneCriteria && node.doneCriteria.length > 0) {
+      md += `## Verification Criteria\n`;
       node.doneCriteria.forEach(dc => {
         md += `- [${dc.checked ? 'x' : ' '}] ${dc.content}\n`;
       });
-    } else {
-      md += `*No done criteria.*\n`;
+      md += `\n`;
     }
-    md += `\n`;
   }
   
   return md;

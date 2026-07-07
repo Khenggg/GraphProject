@@ -12,7 +12,9 @@ import {
   Trash2, 
   Copy, 
   MoreVertical,
-  Check
+  Check,
+  Scale,
+  Users
 } from "lucide-react";
 import type { FeatureNode, ClientType } from "../../domain/featureNode.types";
 import { useFeatureTreeStore } from "../../store/featureTreeStore";
@@ -62,6 +64,7 @@ export default function FeatureTreeNode({
   const isSelected = selectedNodeId === node.id;
   const isLeaf = node.isLeaf;
   const data = node.data;
+  const isFeatureLike = ["feature", "sub_feature", "leaf_feature"].includes(data.type);
 
   // AI-readiness validation
   const validation = isNodeAiReady(data, nodes);
@@ -85,7 +88,7 @@ export default function FeatureTreeNode({
   const getNodeIcon = () => {
     switch (data.type) {
       case "project":
-        return <FolderOpen className="w-4 h-4 text-indigo-600 mx-0.5 flex-shrink-0" />;
+        return <FolderOpen className="w-4 h-4 text-indigo-650 mx-0.5 flex-shrink-0" />;
       case "category":
         return <Folder className="w-4 h-4 text-amber-550 mx-0.5 flex-shrink-0" />;
       case "feature":
@@ -94,6 +97,10 @@ export default function FeatureTreeNode({
         return <FileCode className="w-4 h-4 text-teal-600 mx-0.5 flex-shrink-0" />;
       case "leaf_feature":
         return <Check className="w-4 h-4 text-emerald-600 mx-0.5 flex-shrink-0" />;
+      case "rule_group":
+        return <Scale className="w-4 h-4 text-purple-650 mx-0.5 flex-shrink-0" />;
+      case "client_group":
+        return <Users className="w-4 h-4 text-pink-600 mx-0.5 flex-shrink-0" />;
       default:
         return <span className="w-2 h-2 rounded-full bg-slate-400 mx-1 flex-shrink-0" />;
     }
@@ -200,7 +207,7 @@ export default function FeatureTreeNode({
         </button>
 
         {/* Client Badges */}
-        {data.clients && data.clients.length > 0 && (
+        {isFeatureLike && data.clients && data.clients.length > 0 && (
           <div className="flex items-center -space-x-1.5 mr-1.5">
             {data.clients.slice(0, 3).map((client) => {
               const cfg = CLIENT_CONFIG[client] || { char: "?", bg: "bg-slate-100", text: "text-slate-500" };
@@ -223,11 +230,13 @@ export default function FeatureTreeNode({
         )}
 
         {/* Status indicator */}
-        <span 
-          className={`text-[10px] px-1.5 py-0.2 rounded border hidden sm:inline-block ${STATUS_COLORS[data.status] || "bg-slate-100"}`}
-        >
-          {data.status}
-        </span>
+        {isFeatureLike && (
+          <span 
+            className={`text-[10px] px-1.5 py-0.2 rounded border hidden sm:inline-block ${STATUS_COLORS[data.status] || "bg-slate-100"}`}
+          >
+            {data.status}
+          </span>
+        )}
 
         {/* AI Readiness Check */}
         {data.type === "leaf_feature" && (

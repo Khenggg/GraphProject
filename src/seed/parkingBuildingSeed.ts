@@ -127,52 +127,12 @@ export function createParkingBuildingSeedTree(): FeatureNode[] {
       "The backend is split into .NET Core API for transactional/write operations and Spring Boot Support API for support/read/report/public operations.",
       "All APIs should return a consistent success/error response format.",
       "Authenticated APIs must validate JWT and role permissions.",
-      "Important staff/manager/admin actions should be auditable."
+      "Both backend services access a shared PostgreSQL database, maintaining strict entity ownership.",
+      "Global error handling middleware must prevent internal stack traces from leaking to clients.",
+      "A request logging system must log all incoming API requests for security tracing.",
+      "All manager/admin mutating operations must be logged to a dedicated audit schema."
     ],
     children: [
-      // 1. Clients / Roles
-      {
-        id: "cat-clients-roles",
-        title: "Clients / Roles",
-        type: "category",
-        summary: "Primary user categories and system personas supported by the parking management system.",
-        children: [
-          { id: "leaf-role-guest", title: "Public / Guest", type: "leaf_feature", summary: "Anonymous or unregistered public users seeking basic parking building info." },
-          { id: "leaf-role-driver", title: "Driver", type: "leaf_feature", summary: "Registered drivers utilizing reservations, claiming sessions, and making payments." },
-          { id: "leaf-role-staff", title: "Staff", type: "leaf_feature", summary: "On-site operators handling gates, cash payments, card lookups, and manual overrides." },
-          { id: "leaf-role-manager", title: "Manager", type: "leaf_feature", summary: "Supervisor managing floors, areas, parking slots, pricing configurations, and viewing reports." },
-          { id: "leaf-role-admin", title: "Admin", type: "leaf_feature", summary: "System administrators handling user CRUD, roles changes, audit logs, and diagnostic debugs." },
-          { id: "leaf-role-system", title: "System / Worker", type: "leaf_feature", summary: "Automated cron workers executing reservations expiries, webhook triggers, and reconciliations." }
-        ].map(node => ({
-          ...node,
-          type: node.type as any,
-          testCases: defaultApiTests(node.title, [], []),
-          doneCriteria: defaultDoneCriteria(node.title)
-        }))
-      },
-
-      // 2. System Architecture
-      {
-        id: "cat-sys-arch",
-        title: "System Architecture",
-        type: "category",
-        summary: "Core system constraints and architectural boundaries governing the dual backend APIs.",
-        children: [
-          { id: "leaf-arch-dual", title: "Dual Backend Boundary", type: "leaf_feature", summary: "Splitting transactional API writes to .NET Core and public queries to Spring Boot Support API." },
-          { id: "leaf-arch-db", title: "Shared PostgreSQL Database", type: "leaf_feature", summary: "Single source of truth accessed by both backend services with strict entity ownership." },
-          { id: "leaf-arch-format", title: "Common API Response Format", type: "leaf_feature", summary: "Enforcing unified wrappers for success payloads and localized errors." },
-          { id: "leaf-arch-error", title: "Global Error Handling", type: "leaf_feature", summary: "Catch-all middleware preventing internal stack traces leaking to clients." },
-          { id: "leaf-arch-log", title: "Request Logging", type: "leaf_feature", summary: "Structured logging of all incoming API requests for security tracing." },
-          { id: "leaf-arch-jwt", title: "JWT Auth Between .NET and Spring", type: "leaf_feature", summary: "Authenticating requests across APIs via shared secret key validation." },
-          { id: "leaf-arch-audit", title: "Audit Logging", type: "leaf_feature", summary: "Recording sensitive manager/admin mutations in a dedicated audit schema." }
-        ].map(node => ({
-          ...node,
-          type: node.type as any,
-          testCases: defaultApiTests(node.title, ["Admin"], []),
-          doneCriteria: defaultDoneCriteria(node.title)
-        }))
-      },
-
       // 3. Authentication
       {
         id: "cat-authentication",
@@ -185,91 +145,916 @@ export function createParkingBuildingSeedTree(): FeatureNode[] {
         ],
         children: [
           {
-            id: "leaf-auth-login",
-            title: "Login",
+            id: "leaf-auth-session",
+            title: "Login & Session Management",
             type: "leaf_feature",
+            summary: "User authentication flows, current user profile retrieval, JWT token refreshing, and session termination.",
             clients: ["Driver", "Staff", "Manager", "Admin"],
-            endpoints: ["POST /api/core/auth/login"],
+            status: "ready_for_implementation",
+            priority: "high",
+            tags: ["auth", "session", "security"],
+            dependencies: [],
+            risks: [],
+            notes: "Immediate session revocation requires access token blacklisting using JWT jti claims.",
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/auth/login"),
-            testCases: defaultApiTests("Login", ["Driver", "Staff"], ["POST /api/core/auth/login"]),
+            objective: "Implement complete authentication and session management for the Parking Building Management System. This feature must allow users to:\n1. Login with username and password.\n2. Receive a short-lived JWT access token.\n3. Receive a secure refresh token.\n4. Retrieve the current authenticated user profile.\n5. Refresh expired access tokens using refresh token rotation.\n6. Logout and revoke the current session.\n7. Prevent disabled or inactive users from accessing protected APIs.\n\nThe .NET Core API is the owner of authentication. The Spring Boot Support API must be able to validate the JWT issued by the .NET Core API.",
+            inScope: [
+              "Login with username and password.",
+              "Receive a short-lived JWT access token.",
+              "Receive a secure refresh token.",
+              "Retrieve the current authenticated user profile.",
+              "Refresh expired access tokens using refresh token rotation.",
+              "Logout and revoke the current session.",
+              "Prevent disabled or inactive users from accessing protected APIs."
+            ],
+            outOfScope: [
+              "Third-party OAuth identity providers (Google, Facebook).",
+              "User registration or signup flow.",
+              "Frontend UI theme customization."
+            ],
+            permissions: [
+              { role: "Driver", permission: "Can login, retrieve own profile, refresh token, and logout." },
+              { role: "Staff", permission: "Can login, retrieve own profile, refresh token, and logout." },
+              { role: "Manager", permission: "Can login, retrieve own profile, refresh token, and logout." },
+              { role: "Admin", permission: "Can login, retrieve own profile, refresh token, and logout." }
+            ],
+            dbExistingTables: ["users", "user_roles"],
+            dbNewTablesSql: `-- Table for storing hashed refresh tokens
+CREATE TABLE refresh_tokens (
+  id uuid PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES users(id),
+  token_hash text NOT NULL,
+  token_family_id uuid NOT NULL,
+  jwt_id varchar(255) null,
+  expires_at timestamp not null,
+  revoked_at timestamp null,
+  replaced_by_token_hash text null,
+  created_at timestamp not null,
+  created_by_ip varchar(100) null,
+  revoked_by_ip varchar(100) null,
+  revocation_reason varchar(255) null
+);
+
+CREATE INDEX idx_refresh_tokens_hash ON refresh_tokens(token_hash);
+
+-- Table for storing revoked access tokens (blacklist)
+CREATE TABLE revoked_access_tokens (
+  id uuid PRIMARY KEY,
+  jwt_id varchar(255) UNIQUE NOT NULL,
+  user_id uuid NOT NULL,
+  expires_at timestamp NOT NULL,
+  revoked_at timestamp NOT NULL,
+  reason varchar(255) NULL
+);`,
+            dbRelationships: ["refresh_tokens(user_id) references users(id)"],
+            validationRules: [
+              { field: "username", rule: "Required, non-empty, string", errorMessage: "Username is required." },
+              { field: "password", rule: "Required, non-empty, string", errorMessage: "Password is required." }
+            ],
+            securityRules: [
+              "Never log raw password, raw access token, or raw refresh token.",
+              "Store only the hashed refresh token in the database using secure HMAC SHA256 / SHA256.",
+              "Login endpoint must have rate limiting (limit: 5 failed attempts per username/IP in 15 minutes).",
+              "Use HTTPS in production and load JWT secrets from secure configuration / environment.",
+              "Use constant-time comparison for token validation if available.",
+              "All date/time values must use UTC.",
+              "Error messages must not reveal username existence (use generic 'Invalid username or password')."
+            ],
+            logEvents: [
+              "Successful login events.",
+              "Failed login attempts.",
+              "Disabled or inactive user login attempts.",
+              "Token refresh success.",
+              "Refresh token reuse anomaly detection.",
+              "Logout session revocation."
+            ],
+            noLogEvents: [
+              "Raw passwords.",
+              "Access tokens.",
+              "Refresh tokens."
+            ],
+            integrationPoints: [
+              { system: "Spring Boot Support API", responsibility: "Must validate issuer, audience, signing key, expiration, and roles claim of JWT issued by .NET Core API" }
+            ],
+            uiPage: "/login",
+            uiComponents: "LoginForm, Button, FormInput",
+            uiStateLoading: "Show spinner overlay on the login card, disable the submit button and input fields to prevent double submission.",
+            uiStateEmpty: "Not applicable for authentication screen.",
+            uiStateError: "Display a warning banner toast indicating validation fails or invalid credential messages.",
+            uiStateSuccess: "Redirect the authenticated user to the main home dashboard and display a welcome toast message.",
+            endpoints: [
+              "POST /api/core/auth/login",
+              "GET /api/core/auth/me",
+              "POST /api/core/auth/refresh-token",
+              "POST /api/core/auth/logout"
+            ],
+            apiContracts: [
+              {
+                id: "contract-auth-login",
+                name: "POST /api/core/auth/login",
+                content: `Method: POST
+Path: /api/core/auth/login
+Headers:
+  Content-Type: application/json
+Request Body:
+  {
+    "username": "driver_john",
+    "password": "Password123"
+  }
+Success Response (200 OK):
+  {
+    "success": true,
+    "data": {
+      "accessToken": "eyJhbGciOi...",
+      "expiresIn": 3600,
+      "refreshToken": "d8f3k9s...",
+      "user": {
+        "id": "usr-12345",
+        "username": "driver_john",
+        "fullName": "John Doe",
+        "email": "john.doe@example.com",
+        "roles": ["Driver"],
+        "status": "Active"
+      }
+    },
+    "message": "Login successful.",
+    "errors": null
+  }
+Validation Error Response (400 Bad Request):
+  {
+    "success": false,
+    "data": null,
+    "message": "Validation failed.",
+    "errors": [
+      { "field": "username", "message": "Username is required." }
+    ]
+  }
+Invalid Credentials Response (401 Unauthorized):
+  {
+    "success": false,
+    "data": null,
+    "message": "Invalid username or password.",
+    "errors": null
+  }
+Inactive/Disabled Account Response (403 Forbidden):
+  {
+    "success": false,
+    "data": null,
+    "message": "Your account is currently disabled or inactive.",
+    "errors": null
+  }`
+              },
+              {
+                id: "contract-auth-me",
+                name: "GET /api/core/auth/me",
+                content: `Method: GET
+Path: /api/core/auth/me
+Headers:
+  Authorization: Bearer <accessToken>
+Success Response (200 OK):
+  {
+    "success": true,
+    "data": {
+      "id": "usr-12345",
+      "username": "driver_john",
+      "fullName": "John Doe",
+      "email": "john.doe@example.com",
+      "roles": ["Driver"],
+      "status": "Active"
+    },
+    "message": null,
+    "errors": null
+  }
+Unauthorized Response (401 Unauthorized):
+  {
+    "success": false,
+    "data": null,
+    "message": "Unauthorized. Token is invalid or expired.",
+    "errors": null
+  }
+Disabled/Not-Exist Response (403 Forbidden):
+  {
+    "success": false,
+    "data": null,
+    "message": "Your account is disabled or user does not exist.",
+    "errors": null
+  }`
+              },
+              {
+                id: "contract-auth-refresh",
+                name: "POST /api/core/auth/refresh-token",
+                content: `Method: POST
+Path: /api/core/auth/refresh-token
+Headers:
+  Content-Type: application/json
+Request Body:
+  {
+    "refreshToken": "d8f3k9s..."
+  }
+Success Response (200 OK):
+  {
+    "success": true,
+    "data": {
+      "accessToken": "eyJhbGciOi...",
+      "expiresIn": 3600,
+      "refreshToken": "new_d8f3k9s..."
+    },
+    "message": "Token refreshed successfully.",
+    "errors": null
+  }
+Invalid/Expired/Revoked Refresh Token Response (400 Bad Request):
+  {
+    "success": false,
+    "data": null,
+    "message": "Invalid or expired refresh token.",
+    "errors": null
+  }`
+              },
+              {
+                id: "contract-auth-logout",
+                name: "POST /api/core/auth/logout",
+                content: `Method: POST
+Path: /api/core/auth/logout
+Headers:
+  Authorization: Bearer <accessToken>
+Request Body (Optional):
+  {
+    "refreshToken": "d8f3k9s..."
+  }
+Success Response (200 OK):
+  {
+    "success": true,
+    "data": null,
+    "message": "Session terminated successfully.",
+    "errors": null
+  }
+Invalid Token Response (401 Unauthorized):
+  {
+    "success": false,
+    "data": null,
+    "message": "Invalid token.",
+    "errors": null
+  }`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-auth-login-success",
+                title: "Login - Happy Path (Success)",
+                type: "integration",
+                precondition: "Active user exists. Password hash matches test password.",
+                steps: ["Send POST /api/core/auth/login with valid username and password."],
+                expectedResult: "Returns 200 OK with success=true, accessToken, refreshToken, expiresIn = 3600, and user info. Password hash is not returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-login-empty-username",
+                title: "Login - Empty Username",
+                type: "integration",
+                precondition: "None.",
+                steps: ["Send login request with empty username."],
+                expectedResult: "Returns 400 Bad Request with success=false and username validation error message.",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-login-empty-password",
+                title: "Login - Empty Password",
+                type: "integration",
+                precondition: "None.",
+                steps: ["Send login request with empty password."],
+                expectedResult: "Returns 400 Bad Request with success=false and password validation error message.",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-login-invalid-password",
+                title: "Login - Invalid Password",
+                type: "integration",
+                precondition: "User exists.",
+                steps: ["Send login request with correct username and wrong password."],
+                expectedResult: "Returns 401 Unauthorized with success=false and message 'Invalid username or password.'",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-login-unknown-username",
+                title: "Login - Unknown Username",
+                type: "integration",
+                precondition: "None.",
+                steps: ["Send login request with non-existing username."],
+                expectedResult: "Returns 401 Unauthorized with message 'Invalid username or password.' and does not reveal whether username exists.",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-login-disabled-account",
+                title: "Login - Disabled Account",
+                type: "integration",
+                precondition: "User exists with status 'Disabled'.",
+                steps: ["Send login request with correct credentials."],
+                expectedResult: "Returns 403 Forbidden with success=false and message indicating account is disabled or inactive.",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-login-inactive-account",
+                title: "Login - Inactive Account",
+                type: "integration",
+                precondition: "User exists with status 'Inactive'.",
+                steps: ["Send login request with correct credentials."],
+                expectedResult: "Returns 403 Forbidden with success=false.",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-me-success",
+                title: "Get Profile - Happy Path (Success)",
+                type: "integration",
+                precondition: "User has valid access token.",
+                steps: ["Send GET /api/core/auth/me with valid Bearer token."],
+                expectedResult: "Returns 200 OK with success=true and current user profile details, without password hash.",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-me-missing-token",
+                title: "Get Profile - Missing Token",
+                type: "integration",
+                precondition: "None.",
+                steps: ["Send GET /api/core/auth/me without Authorization header."],
+                expectedResult: "Returns 401 Unauthorized.",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-me-malformed-token",
+                title: "Get Profile - Malformed Token",
+                type: "integration",
+                precondition: "None.",
+                steps: ["Send GET /api/core/auth/me with malformed Bearer token."],
+                expectedResult: "Returns 401 Unauthorized.",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-me-expired-token",
+                title: "Get Profile - Expired Token",
+                type: "integration",
+                precondition: "None.",
+                steps: ["Send GET /api/core/auth/me with expired token."],
+                expectedResult: "Returns 401 Unauthorized.",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-me-disabled-after-login",
+                title: "Get Profile - Disabled After Login",
+                type: "integration",
+                precondition: "User logs in successfully, user status is then changed to 'Disabled'.",
+                steps: ["Send GET /api/core/auth/me using old valid access token."],
+                expectedResult: "Returns 403 Forbidden.",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-refresh-success",
+                title: "Refresh Token - Happy Path (Success)",
+                type: "integration",
+                precondition: "User has active refresh token.",
+                steps: ["Send POST /api/core/auth/refresh-token with active refresh token."],
+                expectedResult: "Returns 200 OK with new access token and new refresh token, old refresh token is revoked.",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-refresh-missing-token",
+                title: "Refresh Token - Missing Token",
+                type: "integration",
+                precondition: "None.",
+                steps: ["Send refresh request with empty body."],
+                expectedResult: "Returns 400 Bad Request.",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-refresh-expired-token",
+                title: "Refresh Token - Expired Token",
+                type: "integration",
+                precondition: "Refresh token exists but expired.",
+                steps: ["Send refresh request."],
+                expectedResult: "Returns 400 Bad Request with message 'Invalid or expired refresh token.'",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-refresh-revoked-reuse",
+                title: "Refresh Token - Revoked Token Reuse",
+                type: "integration",
+                precondition: "Refresh token was already used or revoked.",
+                steps: ["Send refresh request using revoked token."],
+                expectedResult: "Returns 400 Bad Request, token family is revoked, security audit log created.",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-refresh-disabled-user",
+                title: "Refresh Token - Disabled User",
+                type: "integration",
+                precondition: "User has valid refresh token, user status becomes 'Disabled'.",
+                steps: ["Send refresh request."],
+                expectedResult: "Returns 403 Forbidden, no new token issued.",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-logout-success",
+                title: "Logout - Happy Path (Success)",
+                type: "integration",
+                precondition: "User has valid active session.",
+                steps: ["Send POST /api/core/auth/logout with valid Bearer token."],
+                expectedResult: "Returns 200 OK, refresh token/session is revoked, access token jti is blacklisted.",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-logout-missing-token",
+                title: "Logout - Missing Token",
+                type: "integration",
+                precondition: "None.",
+                steps: ["Send logout request without Authorization header."],
+                expectedResult: "Returns 401 Unauthorized.",
+                status: "not_started"
+              },
+              {
+                id: "tc-auth-logout-reuse-token",
+                title: "Logout - Reuse Access Token After Logout",
+                type: "integration",
+                precondition: "User logs in, user logs out.",
+                steps: ["Call protected endpoint using the same old access token."],
+                expectedResult: "Returns 401 Unauthorized due to access token blacklist JTI check.",
+                status: "not_started"
+              }
+            ],
             doneCriteria: [
-              ...defaultDoneCriteria("Login"),
-              { id: "dc-auth-jwt-gen", content: "JWT token is generated and returned on successful login.", checked: false }
+              { id: "dc-auth-login-impl", content: "Login endpoint is fully implemented.", checked: false },
+              { id: "dc-auth-login-validation", content: "Login validates required fields.", checked: false },
+              { id: "dc-auth-login-reject-invalid", content: "Login rejects invalid credentials.", checked: false },
+              { id: "dc-auth-login-reject-disabled", content: "Login rejects disabled, inactive, and locked users.", checked: false },
+              { id: "dc-auth-password-hash", content: "Password verification uses secure hashing.", checked: false },
+              { id: "dc-jwt-claims", content: "JWT access token is generated with required claims.", checked: false },
+              { id: "dc-jwt-expiry", content: "Access token expires after 1 hour.", checked: false },
+              { id: "dc-refresh-secure", content: "Refresh token is generated securely.", checked: false },
+              { id: "dc-refresh-hashed", content: "Refresh token is stored hashed in database.", checked: false },
+              { id: "dc-refresh-rotation", content: "Refresh token rotation works.", checked: false },
+              { id: "dc-refresh-reuse", content: "Refresh token reuse detection works.", checked: false },
+              { id: "dc-logout-revoke", content: "Logout revokes refresh token/session.", checked: false },
+              { id: "dc-logout-blacklist", content: "Logout revokes access token using JWT jti blacklist.", checked: false },
+              { id: "dc-me-profile", content: "GET /api/core/auth/me returns the current authenticated user.", checked: false },
+              { id: "dc-me-no-expose", content: "GET /api/core/auth/me does not expose password hash or sensitive fields.", checked: false },
+              { id: "dc-me-disabled", content: "Disabled users cannot use /auth/me even with an old token.", checked: false },
+              { id: "dc-global-format", content: "All endpoints return the global response format.", checked: false },
+              { id: "dc-global-error", content: "Global error handling prevents stack traces from leaking.", checked: false },
+              { id: "dc-request-logging", content: "Request logging excludes passwords and tokens.", checked: false },
+              { id: "dc-security-audit", content: "Security audit logs are created for auth events.", checked: false },
+              { id: "dc-spring-boot-jwt", content: "Spring Boot Support API can validate JWT issued by .NET Core API.", checked: false },
+              { id: "dc-tests-pass", content: "Automated tests for all listed cases pass.", checked: false },
+              { id: "dc-no-break", content: "Existing tests are not broken.", checked: false }
             ]
           },
           {
-            id: "leaf-auth-me",
-            title: "Get Current User",
+            id: "leaf-auth-register",
+            title: "Driver Registration",
             type: "leaf_feature",
-            clients: ["Driver", "Staff", "Manager", "Admin"],
-            endpoints: ["GET /api/core/auth/me"],
+            clients: ["Guest"],
+            status: "ready",
+            priority: "high",
+            tags: ["auth", "register", "driver", "signup"],
+            summary: "Public self-service registration for Driver accounts.",
+            objective: "Enable public guest users to register a Driver account. A guest provides registration information including full name, username, email, phone, password, and confirm password. After successful registration, the system creates a users record and a driver_profiles record in one database transaction.",
+            inScope: [
+              "Public registration endpoint: POST /api/core/auth/register",
+              "Input validation: Required full name, username format validation, username must be lowercase, unique username, valid email format, email normalized to lowercase before saving, unique email, Vietnamese phone format validation, phone normalization before saving, unique phone after normalization, password strength validation, and confirm password validation.",
+              "Case-insensitive duplicate handling for username and email.",
+              "Duplicate submit handling.",
+              "Duplicate conflict handling.",
+              "Race condition handling for concurrent registration requests.",
+              "Database unique constraints for username, email, and phone.",
+              "Password hashing with BCrypt.",
+              "Transactional creation of users and driver_profiles records.",
+              "Default user role: DRIVER.",
+              "Default user status: ACTIVE.",
+              "Default driver profile status: ACTIVE.",
+              "Common API response format.",
+              "Return safe response without password or password hash.",
+              "Basic request logging and security-safe error handling.",
+              "Optional rate limiting."
+            ],
+            outOfScope: [
+              "Email verification OTP/link.",
+              "Phone OTP verification.",
+              "Registration of internal roles: ADMIN, MANAGER, STAFF.",
+              "Driver vehicle registration during signup.",
+              "Driver profile verification/resident verification.",
+              "Initial wallet/deposit.",
+              "Automatic login after registration.",
+              "Refresh token implementation unless already supported elsewhere.",
+              "Full RBAC tables."
+            ],
+            permissions: [
+              { role: "Guest", permission: "Can call register endpoint anonymously" },
+              { role: "Driver", permission: "Should not need to call register again" },
+              { role: "Staff", permission: "No special access" },
+              { role: "Manager", permission: "No special access" },
+              { role: "Admin", permission: "No special access" }
+            ],
+            dbExistingTables: ["users", "driver_profiles"],
+            dbNewTablesSql: `-- Unique indexes for case-insensitive duplicate checking and race condition protection
+CREATE UNIQUE INDEX ux_users_username_lower ON users (LOWER(username));
+CREATE UNIQUE INDEX ux_users_email_lower ON users (LOWER(email));
+CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
+            dbRelationships: [
+              "driver_profiles.user_id references users.id"
+            ],
+            validationRules: [
+              { field: "fullName", rule: "Required, trim, max 150", errorMessage: "VALIDATION_FAILED" },
+              { field: "username", rule: "Required, trim, max 100", errorMessage: "VALIDATION_FAILED" },
+              { field: "username", rule: "Must be lowercase", errorMessage: "VALIDATION_FAILED" },
+              { field: "username", rule: "Must match username format", errorMessage: "VALIDATION_FAILED" },
+              { field: "username", rule: "Unique case-insensitively", errorMessage: "USERNAME_ALREADY_EXISTS" },
+              { field: "email", rule: "Required, valid email format, max 150", errorMessage: "VALIDATION_FAILED" },
+              { field: "email", rule: "Normalize to lowercase after valid format check", errorMessage: "N/A" },
+              { field: "email", rule: "Unique case-insensitively", errorMessage: "EMAIL_ALREADY_EXISTS" },
+              { field: "phone", rule: "Required, valid Vietnamese phone format, max 30", errorMessage: "VALIDATION_FAILED" },
+              { field: "phone", rule: "Normalize before duplicate check and saving", errorMessage: "N/A" },
+              { field: "phone", rule: "Unique after normalization", errorMessage: "PHONE_ALREADY_EXISTS" },
+              { field: "password", rule: "Required, min 8 chars, at least 1 uppercase, 1 lowercase, 1 digit", errorMessage: "VALIDATION_FAILED" },
+              { field: "confirmPassword", rule: "Required if included in DTO, must match password", errorMessage: "PASSWORD_CONFIRMATION_NOT_MATCH" }
+            ],
+            securityRules: [
+              "Endpoint is public but must be protected against abuse.",
+              "Hash password with BCrypt before saving.",
+              "Do not use MD5/SHA/plain text for password.",
+              "Do not log password or password hash.",
+              "Do not return password hash.",
+              "Use database transaction.",
+              "Use global exception handling and prevent stack trace leakage.",
+              "Sanitize/validate text input before persisting or rendering.",
+              "Do not allow client to send role or status.",
+              "If client sends role or status, backend must ignore or reject it.",
+              "Created user role must always be DRIVER.",
+              "Created user status must always be ACTIVE.",
+              "Created driver profile status must always be ACTIVE.",
+              "Optional rate limiting: Max 5 registration attempts per minute per IP, returning 429 Too Many Requests with RATE_LIMIT_EXCEEDED."
+            ],
+            logEvents: [
+              "DRIVER_REGISTER_ATTEMPT",
+              "DRIVER_REGISTERED",
+              "DRIVER_REGISTER_FAILED",
+              "DRIVER_REGISTER_DUPLICATE_CONFLICT",
+              "DRIVER_REGISTER_RACE_CONFLICT"
+            ],
+            noLogEvents: [
+              "Password",
+              "Confirm password",
+              "Password hash",
+              "Access token",
+              "Refresh token"
+            ],
+            integrationPoints: [
+              { system: "ParkingDbContext", responsibility: "Performs atomic insert operations for users and driver_profiles in a transaction." },
+              { system: "IPasswordHasher / BCrypt helper", responsibility: "Hashes raw password with BCrypt before saving." },
+              { system: "GlobalExceptionMiddleware / BusinessException", responsibility: "Maps validation, duplicate conflict, and database unique constraint errors to safe HTTP responses." },
+              { system: "AuthController", responsibility: "Exposes public AllowAnonymous POST /api/core/auth/register endpoint." },
+              { system: "Database unique constraints", responsibility: "Final protection against duplicate records and race condition." }
+            ],
+            uiPage: "/register",
+            uiComponents: "Registration Form, Full Name input, Username input, Email input, Phone input, Password input, Confirm Password input, Submit Button, Loading indicator, Field-level error messages, General rate limit error banner, Success redirection banner.",
+            uiStateLoading: "Disable all inputs, disable submit button, show loading spinner on submit button, and prevent duplicate submit from UI side.",
+            uiStateEmpty: "N/A",
+            uiStateError: "Display specific validation errors under respective inputs: 'Username must be lowercase', 'Username format is invalid', 'Email already exists', 'Phone already exists', 'Password confirmation does not match'. Display general banner for RATE_LIMIT_EXCEEDED or unexpected registration error.",
+            uiStateSuccess: "Show 'Registration successful! Redirecting to login...' and redirect to /login after 2 seconds without auto-login.",
+            notes: "Driver registration does not perform email verification or phone verification for now. Username must be lowercase. Email normalized to lowercase before saving. Phone normalized using Vietnamese phone normalization before checking. Concurrent duplicate registration requests are protected by database unique constraints (ux_users_username_lower, ux_users_email_lower, ux_users_phone).",
+            endpoints: [
+              "POST /api/core/auth/register"
+            ],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("GET /api/core/auth/me"),
-            testCases: defaultApiTests("Get Current User", ["Driver"], ["GET /api/core/auth/me"]),
-            doneCriteria: defaultDoneCriteria("Get Current User")
-          },
-          {
-            id: "leaf-auth-refresh",
-            title: "Refresh Token",
-            type: "leaf_feature",
-            clients: ["Driver", "Staff", "Manager", "Admin"],
-            endpoints: ["POST /api/core/auth/refresh-token"],
-            ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/auth/refresh-token"),
-            testCases: defaultApiTests("Refresh Token", ["Driver"], ["POST /api/core/auth/refresh-token"]),
-            doneCriteria: defaultDoneCriteria("Refresh Token")
-          },
-          {
-            id: "leaf-auth-logout",
-            title: "Logout",
-            type: "leaf_feature",
-            clients: ["Driver", "Staff", "Manager", "Admin"],
-            endpoints: ["POST /api/core/auth/logout"],
-            ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/auth/logout"),
-            testCases: defaultApiTests("Logout", ["Driver"], ["POST /api/core/auth/logout"]),
-            doneCriteria: defaultDoneCriteria("Logout")
+            apiContracts: [
+              {
+                id: "api-contract-post-register",
+                name: "POST /api/core/auth/register",
+                content: "Description:\nPublic self-service registration for Driver accounts.\n\nAuth:\nAllowAnonymous\n\nContent-Type:\napplication/json\n\nRequest Body:\n{\n  \"fullName\": \"Nguyen Van A\",\n  \"username\": \"driver_a\",\n  \"email\": \"driver_a@example.com\",\n  \"phone\": \"0987654321\",\n  \"password\": \"Password123\",\n  \"confirmPassword\": \"Password123\"\n}\n\nResponse 201 Created:\n{\n  \"success\": true,\n  \"message\": \"Driver registered successfully\",\n  \"data\": {\n    \"id\": 15,\n    \"driverProfileId\": 9,\n    \"fullName\": \"Nguyen Van A\",\n    \"username\": \"driver_a\",\n    \"email\": \"driver_a@example.com\",\n    \"phone\": \"0987654321\",\n    \"role\": \"DRIVER\",\n    \"status\": \"ACTIVE\",\n    \"createdAt\": \"2026-07-05T17:20:00+07:00\"\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:20:00+07:00\"\n}"
+              }
+            ],
+            uiContracts: [
+              {
+                id: "ui-contract-register-flow",
+                name: "Driver Registration UI Flow",
+                content: "Form inputs:\n  - Full Name (fullName)\n  - Username (username - lowercase only)\n  - Email (email)\n  - Phone (phone - Vietnamese phone format)\n  - Password (password)\n  - Confirm Password (confirmPassword)\n\nValidation triggers:\n  - On blur for individual fields.\n  - On form submission (calls POST /api/core/auth/register).\n\nState handling:\n  - Loading: Form fields and submit button disabled, loading spinner shown.\n  - Success (201): Success banner shown, redirects to /login after 2s.\n  - Error: Respective fields highlighted in red, error message displayed below them."
+              }
+            ],
+            dataContracts: [
+              {
+                id: "data-contract-register-request",
+                name: "RegisterDriverRequest (C# DTO)",
+                content: "public class RegisterDriverRequest\n{\n    public string FullName { get; set; } = string.Empty;\n    public string Username { get; set; } = string.Empty;\n    public string Email { get; set; } = string.Empty;\n    public string Phone { get; set; } = string.Empty;\n    public string Password { get; set; } = string.Empty;\n    public string ConfirmPassword { get; set; } = string.Empty;\n}"
+              },
+              {
+                id: "data-contract-register-response",
+                name: "RegisterDriverResponse (C# DTO)",
+                content: "public class RegisterDriverResponse\n{\n    public long Id { get; set; }\n    public long DriverProfileId { get; set; }\n    public string FullName { get; set; } = string.Empty;\n    public string Username { get; set; } = string.Empty;\n    public string Email { get; set; } = string.Empty;\n    public string Phone { get; set; } = string.Empty;\n    public string Role { get; set; } = \"DRIVER\";\n    public string Status { get; set; } = \"ACTIVE\";\n    public DateTimeOffset CreatedAt { get; set; }\n}"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-reg-01",
+                title: "Guest can register successfully with valid data",
+                type: "api",
+                steps: [
+                  "Submit POST /api/core/auth/register with valid Nguyen Van A data.",
+                  "Check response code.",
+                  "Check database records."
+                ],
+                expectedResult: "Status 201. Response has success = true. User is created in users table with role DRIVER, status ACTIVE. Password is stored as BCrypt hash. Driver profile is created in driver_profiles table. Response does not contain password or password hash.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-02",
+                title: "Register normalizes email to lowercase",
+                type: "api",
+                steps: [
+                  "Submit request with email Driver_A@Example.com."
+                ],
+                expectedResult: "Status 201. Saved email is driver_a@example.com. Response email is driver_a@example.com.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-03",
+                title: "Register fails when email format is invalid",
+                type: "api",
+                steps: [
+                  "Submit request with invalid email format."
+                ],
+                expectedResult: "Status 400. Error code VALIDATION_FAILED.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-04",
+                title: "Register treats email duplicate case-insensitively",
+                type: "api",
+                steps: [
+                  "Register with email Driver_A@Example.com.",
+                  "Register again with email driver_a@example.com."
+                ],
+                expectedResult: "Second request fails with HTTP 409. Error code EMAIL_ALREADY_EXISTS. Only one user exists for that email.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-05",
+                title: "Register fails when username is uppercase",
+                type: "api",
+                steps: [
+                  "Submit request with username Driver_A."
+                ],
+                expectedResult: "Status 400. Error code VALIDATION_FAILED. Field: username. Message indicates username must be lowercase.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-06",
+                title: "Register fails when username format is invalid",
+                type: "api",
+                steps: [
+                  "Submit request with username that does not match username format."
+                ],
+                expectedResult: "Status 400. Error code VALIDATION_FAILED. Field: username.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-07",
+                title: "Register treats username duplicate case-insensitively",
+                type: "api",
+                steps: [
+                  "Register with username driver_a.",
+                  "Try to register with username DRIVER_A."
+                ],
+                expectedResult: "Second request fails with HTTP 400 if uppercase format is rejected. If duplicate check is reached, it must fail with HTTP 409 USERNAME_ALREADY_EXISTS. No duplicate username can exist in database.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-08",
+                title: "Register normalizes Vietnamese phone",
+                type: "api",
+                steps: [
+                  "Submit request with phone +84987654321."
+                ],
+                expectedResult: "Status 201. Saved phone is normalized to 0987654321. Response phone is normalized.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-09",
+                title: "Register fails when phone is invalid",
+                type: "api",
+                steps: [
+                  "Submit request with invalid phone format."
+                ],
+                expectedResult: "Status 400. Error code VALIDATION_FAILED. Field: phone.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-10",
+                title: "Register treats normalized phone as duplicate",
+                type: "api",
+                steps: [
+                  "Register with phone 0987654321.",
+                  "Register again with phone +84987654321."
+                ],
+                expectedResult: "Second request fails with HTTP 409. Error code PHONE_ALREADY_EXISTS. Only one user exists for that normalized phone.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-11",
+                title: "Register fails when fullName is empty",
+                type: "api",
+                steps: [
+                  "Submit request with empty fullName."
+                ],
+                expectedResult: "Status 400. Error code VALIDATION_FAILED.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-12",
+                title: "Register fails when username is empty",
+                type: "api",
+                steps: [
+                  "Submit request with empty username."
+                ],
+                expectedResult: "Status 400. Error code VALIDATION_FAILED.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-13",
+                title: "Register fails when password is weak",
+                type: "api",
+                steps: [
+                  "Submit password with less than 8 characters, or without uppercase/lowercase/digit."
+                ],
+                expectedResult: "Status 400. Error code VALIDATION_FAILED.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-14",
+                title: "Register fails when confirmPassword does not match",
+                type: "api",
+                steps: [
+                  "Submit request where confirmPassword != password."
+                ],
+                expectedResult: "Status 400. Error code PASSWORD_CONFIRMATION_NOT_MATCH.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-15",
+                title: "Register fails when username already exists",
+                type: "api",
+                expectedResult: "Status 409. Error code USERNAME_ALREADY_EXISTS.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-16",
+                title: "Register fails when email already exists",
+                type: "api",
+                expectedResult: "Status 409. Error code EMAIL_ALREADY_EXISTS.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-17",
+                title: "Register fails when phone already exists",
+                type: "api",
+                expectedResult: "Status 409. Error code PHONE_ALREADY_EXISTS.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-18",
+                title: "Client cannot assign role",
+                type: "api",
+                steps: [
+                  "Submit request with extra field role: ADMIN."
+                ],
+                expectedResult: "Backend ignores or rejects role field. Created user role must still be DRIVER.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-19",
+                title: "Client cannot assign status",
+                type: "api",
+                steps: [
+                  "Submit request with extra field status: LOCKED."
+                ],
+                expectedResult: "Backend ignores or rejects status field. Created user status must still be ACTIVE.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-20",
+                title: "Duplicate submit creates only one account",
+                type: "integration",
+                steps: [
+                  "Submit the same valid registration request twice quickly."
+                ],
+                expectedResult: "Only one user is created. Only one driver_profile is created. One request succeeds with HTTP 201. The duplicate request fails with HTTP 409 and correct duplicate error code.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-21",
+                title: "Register handles concurrent duplicate email race condition",
+                type: "integration",
+                steps: [
+                  "Send two concurrent register requests with the same email.",
+                  "Let both requests reach duplicate checking at nearly the same time."
+                ],
+                expectedResult: "Only one user is created. Only one driver_profile is created. One request succeeds. The other request fails with HTTP 409 EMAIL_ALREADY_EXISTS. No raw database error is returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-22",
+                title: "Register handles concurrent duplicate username race condition",
+                type: "integration",
+                steps: [
+                  "Send two concurrent register requests with the same username."
+                ],
+                expectedResult: "Only one user is created. The second request fails with HTTP 409 USERNAME_ALREADY_EXISTS. No duplicate username exists.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-23",
+                title: "Register handles concurrent duplicate phone race condition",
+                type: "integration",
+                steps: [
+                  "Send two concurrent register requests with equivalent phone numbers (e.g. 0987654321 and +84987654321)."
+                ],
+                expectedResult: "Only one user is created. The second request fails with HTTP 409 PHONE_ALREADY_EXISTS. No duplicate normalized phone exists.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-24",
+                title: "Register is transactional",
+                type: "integration",
+                steps: [
+                  "Force driver_profiles insert to fail.",
+                  "Submit valid register request."
+                ],
+                expectedResult: "Response is an error. users insert is rolled back. No orphaned user exists.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-25",
+                title: "Password hash is not plain text",
+                type: "integration",
+                steps: [
+                  "Register successfully.",
+                  "Read users.password_hash."
+                ],
+                expectedResult: "password_hash is not equal to raw password. BCrypt verify succeeds with raw password.",
+                status: "not_started"
+              },
+              {
+                id: "tc-reg-26",
+                title: "Register response uses common response format",
+                type: "api",
+                expectedResult: "Response contains: success, message, data, errors, timestamp.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-reg-01", content: "POST /api/core/auth/register exists in AuthController.", checked: false },
+              { id: "dc-reg-02", content: "Endpoint is public and allows anonymous access.", checked: false },
+              { id: "dc-reg-03", content: "Endpoint does not require JWT.", checked: false },
+              { id: "dc-reg-04", content: "Request validates fullName, username, email, phone, password, and confirmPassword.", checked: false },
+              { id: "dc-reg-05", content: "fullName is trimmed before saving.", checked: false },
+              { id: "dc-reg-06", content: "username is trimmed before validation.", checked: false },
+              { id: "dc-reg-07", content: "username must be lowercase.", checked: false },
+              { id: "dc-reg-08", content: "username invalid format returns HTTP 400 VALIDATION_FAILED.", checked: false },
+              { id: "dc-reg-09", content: "username duplicate check is case-insensitive.", checked: false },
+              { id: "dc-reg-10", content: "Duplicate username returns HTTP 409 USERNAME_ALREADY_EXISTS.", checked: false },
+              { id: "dc-reg-11", content: "email validates correct email format before normalization.", checked: false },
+              { id: "dc-reg-12", content: "email is normalized to lowercase before duplicate check and saving.", checked: false },
+              { id: "dc-reg-13", content: "email duplicate check is case-insensitive.", checked: false },
+              { id: "dc-reg-14", content: "Duplicate email returns HTTP 409 EMAIL_ALREADY_EXISTS.", checked: false },
+              { id: "dc-reg-15", content: "phone validates Vietnamese phone format.", checked: false },
+              { id: "dc-reg-16", content: "phone is normalized before duplicate check and saving.", checked: false },
+              { id: "dc-reg-17", content: "Duplicate normalized phone returns HTTP 409 PHONE_ALREADY_EXISTS.", checked: false },
+              { id: "dc-reg-18", content: "Database has unique protection index lower(username).", checked: false },
+              { id: "dc-reg-19", content: "Database has unique protection index lower(email).", checked: false },
+              { id: "dc-reg-20", content: "Database has unique protection index for phone.", checked: false },
+              { id: "dc-reg-21", content: "Database uniqueness protects against race condition.", checked: false },
+              { id: "dc-reg-22", content: "Backend catches database unique constraint violation.", checked: false },
+              { id: "dc-reg-23", content: "Backend maps database duplicate conflict to safe HTTP 409 response.", checked: false },
+              { id: "dc-reg-24", content: "Backend does not expose raw SQL/database errors.", checked: false },
+              { id: "dc-reg-25", content: "Duplicate submit creates only one account.", checked: false },
+              { id: "dc-reg-26", content: "Concurrent duplicate registration requests create only one account.", checked: false },
+              { id: "dc-reg-27", content: "Password is hashed with BCrypt.", checked: false },
+              { id: "dc-reg-28", content: "No password or password hash is returned.", checked: false },
+              { id: "dc-reg-29", content: "Created user has role DRIVER.", checked: false },
+              { id: "dc-reg-30", content: "Created user has status ACTIVE.", checked: false },
+              { id: "dc-reg-31", content: "Created driver profile has status ACTIVE.", checked: false },
+              { id: "dc-reg-32", content: "Email verification is not implemented for now.", checked: false },
+              { id: "dc-reg-33", content: "Phone verification is not implemented for now.", checked: false },
+              { id: "dc-reg-34", content: "users and driver_profiles are created in one transaction.", checked: false },
+              { id: "dc-reg-35", content: "Transaction rolls back if either insert fails.", checked: false },
+              { id: "dc-reg-36", content: "Client cannot create ADMIN, MANAGER, or STAFF through this endpoint.", checked: false },
+              { id: "dc-reg-37", content: "Client cannot assign custom status through this endpoint.", checked: false },
+              { id: "dc-reg-38", content: "Response uses common API response format.", checked: false },
+              { id: "dc-reg-39", content: "Success response returns HTTP 201.", checked: false },
+              { id: "dc-reg-40", content: "Validation errors return HTTP 400.", checked: false },
+              { id: "dc-reg-41", content: "Duplicate conflicts return HTTP 409.", checked: false },
+              { id: "dc-reg-42", content: "Rate limit returns HTTP 429 if rate limiting is implemented.", checked: false },
+              { id: "dc-reg-43", content: "Audit/application log records DRIVER_REGISTERED.", checked: false },
+              { id: "dc-reg-44", content: "Automated test cases pass.", checked: false }
+            ]
           }
         ]
       },
-
-      // 4. Access Control & Authorization
-      {
-        id: "cat-access-control",
-        title: "Access Control & Authorization",
-        type: "category",
-        summary: "Authorization and permission checking mechanisms.",
-        businessRules: [
-          "Role-based authorization must protect admin, manager, staff, and driver-only endpoints.",
-          "Spring Boot Support API must validate the JWT issued by the .NET Core API."
-        ],
-        children: [
-          {
-            id: "leaf-auth-support-check",
-            title: "Support Auth Check",
-            type: "leaf_feature",
-            clients: ["Driver", "Staff", "Manager", "Admin"],
-            endpoints: ["GET /api/support/auth-check"],
-            ownerService: "Spring Boot Support API",
-            apiContracts: createApiContract("GET /api/support/auth-check"),
-            testCases: defaultApiTests("Support Auth Check", ["Driver"], ["GET /api/support/auth-check"]),
-            doneCriteria: defaultDoneCriteria("Support Auth Check")
-          },
-          {
-            id: "leaf-auth-rbac",
-            title: "Role-Based Authorization",
-            type: "leaf_feature",
-            clients: ["Driver", "Staff", "Manager", "Admin"],
-            endpoints: [],
-            ownerService: ".NET Core API",
-            testCases: defaultApiTests("Role-Based Authorization", ["Admin"], []),
-            doneCriteria: defaultDoneCriteria("Role-Based Authorization")
-          }
-        ]
-      },
-
-      // 4. User & Driver Management
       {
         id: "cat-user-driver",
         title: "User & Driver Management",
@@ -277,42 +1062,981 @@ export function createParkingBuildingSeedTree(): FeatureNode[] {
         summary: "Operations for administering users and driver vehicle records.",
         children: [
           {
-            id: "leaf-user-crud",
-            title: "User CRUD",
-            type: "leaf_feature",
-            clients: ["Admin"],
-            endpoints: [
-              "GET /api/core/users",
-              "GET /api/core/users/{id}",
-              "POST /api/core/users",
-              "PUT /api/core/users/{id}",
-              "DELETE /api/core/users/{id}",
-              "PATCH /api/core/users/{id}/status",
-              "PATCH /api/core/users/{id}/role"
-            ],
-            ownerService: ".NET Core API",
-            apiContracts: createApiContract("GET /api/core/users"),
-            testCases: defaultApiTests("User CRUD", ["Admin"], ["GET /api/core/users"]),
-            doneCriteria: [
-              ...defaultDoneCriteria("User CRUD"),
-              { id: "dc-user-status", content: "User status activation/deactivation works.", checked: false },
-              { id: "dc-user-role", content: "User role modifications are applied immediately.", checked: false }
+            id: "cat-user-management",
+            title: "User Management",
+            type: "category",
+            summary: "Operations for administering internal accounts, status, and role configurations.",
+            children: [
+              {
+                id: "leaf-user-list-detail",
+                title: "User Listing & Detail",
+                type: "leaf_feature",
+                clients: ["Admin"],
+                status: "ready",
+                priority: "medium",
+                tags: ["users", "listing", "detail", "admin"],
+                summary: "Allows Admin to search, list, filter, and view detail of all users.",
+                objective: "Implement user search, listing, and detail views for Admin. User list and detail endpoints can retrieve ADMIN, MANAGER, STAFF, and DRIVER. Password hashes must be hidden.",
+                inScope: [
+                  "Admin user listing with keyword search, role filter, status filter, and pagination.",
+                  "User listing includes ADMIN, MANAGER, STAFF, and DRIVER.",
+                  "Admin user detail for all user roles, including DRIVER.",
+                  "Common API response format.",
+                  "All APIs require JWT authentication and Admin role."
+                ],
+                outOfScope: [
+                  "Driver public registration.",
+                  "Driver profile management.",
+                  "Driver vehicle management.",
+                  "User password reset.",
+                  "Change password.",
+                  "Hard delete user.",
+                  "Full RBAC/permission table management.",
+                  "Email invitation/activation email.",
+                  "Email verification.",
+                  "Phone verification."
+                ],
+                permissions: [
+                  { role: "ADMIN", permission: "Full access to list and detail APIs" },
+                  { role: "MANAGER", permission: "No access" },
+                  { role: "STAFF", permission: "No access" },
+                  { role: "DRIVER", permission: "No access" },
+                  { role: "Anonymous", permission: "No access" }
+                ],
+                dbExistingTables: ["users"],
+                dbRelationships: [
+                  "Reads records from users table.",
+                  "No hard delete is allowed."
+                ],
+                securityRules: [
+                  "Validate JWT.",
+                  "Require Admin role for listing and detail endpoints.",
+                  "Do not return password hash in any response.",
+                  "Use global exception handling and prevent stack trace leakage."
+                ],
+                uiPage: "/admin/users",
+                uiComponents: "User Table, Search Input, Role Filter Dropdown, Status Filter Dropdown, Pagination Controls.",
+                uiStateLoading: "Show skeleton table rows or animated loading indicator while fetching users.",
+                uiStateEmpty: "No users found matching filters.",
+                uiStateError: "Display general toast/banner for FORBIDDEN, USER_NOT_FOUND, or unexpected errors.",
+                uiStateSuccess: "Render users list in a responsive table. Highlight active filters.",
+                notes: "Admin can list and view all users, including DRIVER users. Driver profile fields are not managed by this feature.",
+                endpoints: [
+                  "GET /api/core/users",
+                  "GET /api/core/users/{id}"
+                ],
+                ownerService: ".NET Core API",
+                apiContracts: [
+                  {
+                    id: "api-contract-get-users",
+                    name: "GET /api/core/users",
+                    content: "Description:\nAdmin searches and lists all users, including ADMIN, MANAGER, STAFF, and DRIVER.\n\nAuth:\nJWT required\n\nRole:\nADMIN only\n\nQuery Parameters:\n  - keyword: string (optional)\n  - role: string (optional)\n  - status: string (optional)\n  - page: int (default 1)\n  - pageSize: int (default 20, max 100)\n\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"Get users successfully\",\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": 2,\n        \"fullName\": \"Staff User\",\n        \"username\": \"staff01\",\n        \"email\": \"staff01@example.com\",\n        \"phone\": \"0900000002\",\n        \"role\": \"STAFF\",\n        \"status\": \"ACTIVE\",\n        \"createdAt\": \"2026-07-05T17:20:00+07:00\"\n      },\n      {\n        \"id\": 15,\n        \"fullName\": \"Driver User\",\n        \"username\": \"driver01\",\n        \"email\": \"driver01@example.com\",\n        \"phone\": \"0987654321\",\n        \"role\": \"DRIVER\",\n        \"status\": \"ACTIVE\",\n        \"createdAt\": \"2026-07-05T17:20:00+07:00\"\n      }\n    ],\n    \"page\": 1,\n    \"pageSize\": 20,\n    \"totalItems\": 2,\n    \"totalPages\": 1\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:20:00+07:00\"\n}"
+                  },
+                  {
+                    id: "api-contract-get-user-detail",
+                    name: "GET /api/core/users/{id}",
+                    content: "Description:\nAdmin gets user detail by ID. User detail can return ADMIN, MANAGER, STAFF, or DRIVER.\n\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"Get user successfully\",\n  \"data\": {\n    \"id\": 2,\n    \"fullName\": \"Staff User\",\n    \"username\": \"staff01\",\n    \"email\": \"staff01@example.com\",\n    \"phone\": \"0900000002\",\n    \"role\": \"STAFF\",\n    \"status\": \"ACTIVE\",\n    \"createdAt\": \"2026-07-05T17:20:00+07:00\",\n    \"updatedAt\": \"2026-07-05T17:20:00+07:00\"\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:20:00+07:00\"\n}"
+                  }
+                ],
+                testCases: [
+                  {
+                    id: "tc-user-ld-01",
+                    title: "Admin can list all users including drivers",
+                    type: "api",
+                    precondition: "User authenticated as ADMIN. Database has ADMIN, MANAGER, STAFF, and DRIVER users.",
+                    steps: [
+                      "Call GET /api/core/users?page=1&pageSize=20."
+                    ],
+                    expectedResult: "Status 200. Response has success = true. Items can include ADMIN, MANAGER, STAFF, and DRIVER users.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-ld-02",
+                    title: "Admin can search users by keyword",
+                    type: "api",
+                    steps: [
+                      "Call GET /api/core/users?keyword=staff."
+                    ],
+                    expectedResult: "Only matching users are returned. Search matches username/fullName/email/phone.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-ld-03",
+                    title: "Admin can filter by role DRIVER",
+                    type: "api",
+                    steps: [
+                      "Call GET /api/core/users?role=DRIVER."
+                    ],
+                    expectedResult: "Status 200. Returned users have role DRIVER.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-ld-04",
+                    title: "Admin can filter by role/status",
+                    type: "api",
+                    steps: [
+                      "Call GET /api/core/users?role=STAFF&status=ACTIVE."
+                    ],
+                    expectedResult: "Returned users have role STAFF and status ACTIVE.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-ld-05",
+                    title: "Invalid page/pageSize returns validation error",
+                    type: "api",
+                    steps: [
+                      "Call GET /api/core/users?page=0&pageSize=1000."
+                    ],
+                    expectedResult: "Status 400 or page/pageSize are safely clamped based on existing project convention. No server error occurs.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-ld-06",
+                    title: "Admin can get user detail",
+                    type: "api",
+                    steps: [
+                      "Call GET /api/core/users/{id}."
+                    ],
+                    expectedResult: "Status 200. User detail returned. Response does not contain passwordHash.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-ld-07",
+                    title: "Admin can get Driver user detail",
+                    type: "api",
+                    steps: [
+                      "Call GET /api/core/users/{driverUserId}."
+                    ],
+                    expectedResult: "Status 200. Driver user detail returned. Response does not contain passwordHash. Driver profile management data is not required in this response.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-ld-08",
+                    title: "User not found returns 404",
+                    type: "api",
+                    steps: [
+                      "Call GET /api/core/users/999999."
+                    ],
+                    expectedResult: "Status 404. Error code USER_NOT_FOUND.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-ld-09",
+                    title: "Staff cannot access User Management",
+                    type: "api",
+                    precondition: "User authenticated as STAFF.",
+                    steps: [
+                      "Call GET /api/core/users."
+                    ],
+                    expectedResult: "Status 403.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-ld-10",
+                    title: "Anonymous cannot access User Management",
+                    type: "api",
+                    steps: [
+                      "Call GET /api/core/users without token."
+                    ],
+                    expectedResult: "Status 401.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-ld-11",
+                    title: "User Management responses use common response format",
+                    type: "api",
+                    expectedResult: "All endpoints return response containing success, message, data, errors, and timestamp.",
+                    status: "not_started"
+                  }
+                ],
+                doneCriteria: [
+                  { id: "dc-user-ld-01", content: "Endpoints GET /api/core/users and GET /api/core/users/{id} are exposed.", checked: false },
+                  { id: "dc-user-ld-02", content: "No hard delete endpoint exists.", checked: false },
+                  { id: "dc-user-ld-03", content: "All endpoints require JWT authentication.", checked: false },
+                  { id: "dc-user-ld-04", content: "All endpoints require Admin role.", checked: false },
+                  { id: "dc-user-ld-05", content: "GET /api/core/users supports keyword, role, status, page, pageSize.", checked: false },
+                  { id: "dc-user-ld-06", content: "GET /api/core/users can list ADMIN, MANAGER, STAFF, and DRIVER users.", checked: false },
+                  { id: "dc-user-ld-07", content: "GET /api/core/users supports role filter DRIVER.", checked: false },
+                  { id: "dc-user-ld-08", content: "GET /api/core/users/{id} can return ADMIN, MANAGER, STAFF, and DRIVER user detail.", checked: false },
+                  { id: "dc-user-ld-09", content: "List endpoint returns paged response.", checked: false },
+                  { id: "dc-user-ld-10", content: "No response exposes password hash.", checked: false },
+                  { id: "dc-user-ld-11", content: "Response uses common API response format.", checked: false }
+                ]
+              },
+              {
+                id: "leaf-user-create",
+                title: "Internal User Creation",
+                type: "leaf_feature",
+                clients: ["Admin"],
+                status: "ready",
+                priority: "medium",
+                tags: ["users", "create", "admin"],
+                summary: "Allows Admin to create internal users (ADMIN, MANAGER, STAFF).",
+                objective: "Implement internal user creation for Admin. DRIVER role creation is rejected. Encrypt password with BCrypt. Enforce duplicate rules, database index integrity, and audit logging.",
+                inScope: [
+                  "Admin creates internal users only: ADMIN, MANAGER, STAFF.",
+                  "Password hashing with BCrypt.",
+                  "Username lowercase validation and trimmed.",
+                  "Email lowercase normalization and trimmed.",
+                  "Vietnamese phone validation and normalization.",
+                  "Case-insensitive duplicate handling for username and email.",
+                  "Duplicate submit handling and concurrent race condition check.",
+                  "Database unique constraints for username, email, and phone.",
+                  "Mutating operations write audit log USER_CREATED."
+                ],
+                outOfScope: [
+                  "Driver public registration.",
+                  "Driver profile management.",
+                  "User profile update.",
+                  "Status changes.",
+                  "Role changes after creation.",
+                  "Password reset.",
+                  "Hard delete."
+                ],
+                permissions: [
+                  { role: "ADMIN", permission: "Can call POST /api/core/users" }
+                ],
+                dbExistingTables: ["users"],
+                dbNewTablesSql: `-- Unique indexes for case-insensitive duplicate checking and race condition protection\nCREATE UNIQUE INDEX ux_users_username_lower ON users (LOWER(username));\nCREATE UNIQUE INDEX ux_users_email_lower ON users (LOWER(email)) WHERE email IS NOT NULL;\nCREATE UNIQUE INDEX ux_users_phone ON users (phone) WHERE phone IS NOT NULL;`,
+                dbRelationships: [
+                  "Creates records in users table."
+                ],
+                validationRules: [
+                  { field: "fullName", rule: "Required, trim, max 150", errorMessage: "VALIDATION_FAILED" },
+                  { field: "username", rule: "Required, trim, max 100", errorMessage: "VALIDATION_FAILED" },
+                  { field: "username", rule: "Must be lowercase", errorMessage: "VALIDATION_FAILED" },
+                  { field: "username", rule: "Must match username format", errorMessage: "VALIDATION_FAILED" },
+                  { field: "username", rule: "Unique case-insensitively", errorMessage: "USERNAME_ALREADY_EXISTS" },
+                  { field: "email", rule: "Optional, valid email format, max 150", errorMessage: "VALIDATION_FAILED" },
+                  { field: "email", rule: "Normalize to lowercase after valid format check", errorMessage: "N/A" },
+                  { field: "email", rule: "Unique case-insensitively if present", errorMessage: "EMAIL_ALREADY_EXISTS" },
+                  { field: "phone", rule: "Optional, valid Vietnamese phone format, max 30", errorMessage: "VALIDATION_FAILED" },
+                  { field: "phone", rule: "Normalize before duplicate check and saving", errorMessage: "N/A" },
+                  { field: "phone", rule: "Unique after normalization if present", errorMessage: "PHONE_ALREADY_EXISTS" },
+                  { field: "password", rule: "Required on create, min 8, at least 1 uppercase, 1 lowercase, 1 digit", errorMessage: "VALIDATION_FAILED" },
+                  { field: "role", rule: "Required on create, only ADMIN, MANAGER, STAFF", errorMessage: "INVALID_USER_ROLE" }
+                ],
+                securityRules: [
+                  "Validate JWT.",
+                  "Require Admin role.",
+                  "Hash password with BCrypt before saving.",
+                  "Do not log password or password hash.",
+                  "Do not return password hash.",
+                  "Prevent creating DRIVER through POST /api/core/users.",
+                  "Do not expose raw SQL/database errors."
+                ],
+                logEvents: [
+                  "USER_CREATED",
+                  "USER_CREATE_DUPLICATE_CONFLICT",
+                  "USER_CREATE_RACE_CONFLICT"
+                ],
+                noLogEvents: [
+                  "Password",
+                  "Password hash"
+                ],
+                integrationPoints: [
+                  { system: "Auth / JWT Middleware", responsibility: "Validates authenticated Admin request" },
+                  { system: "Password Hasher / BCrypt helper", responsibility: "Hashes password when creating user" },
+                  { system: "Audit Log Service", responsibility: "Writes audit logs on mutating operations" },
+                  { system: "Database unique constraints", responsibility: "Final protection against duplicate records and race condition" }
+                ],
+                uiComponents: "Create User Modal, Form fields: fullName, username, email, phone, password, role dropdown.",
+                uiStateLoading: "Disable submit button, show loading spinner, prevent duplicate submits.",
+                uiStateError: "Display field-level validation errors.",
+                uiStateSuccess: "Show success toast, refresh user list, close modal.",
+                endpoints: [
+                  "POST /api/core/users"
+                ],
+                ownerService: ".NET Core API",
+                apiContracts: [
+                  {
+                    id: "api-contract-post-create-user",
+                    name: "POST /api/core/users",
+                    content: "Description:\nAdmin creates an internal user (ADMIN, MANAGER, or STAFF). DRIVER role is rejected.\n\nRequest Body:\n{\n  \"fullName\": \"New Staff\",\n  \"username\": \"staff02\",\n  \"email\": \"Staff02@Example.com\",\n  \"phone\": \"+84900000003\",\n  \"password\": \"Password123\",\n  \"role\": \"STAFF\"\n}\n\nResponse 201 Created:\n{\n  \"success\": true,\n  \"message\": \"User created successfully\",\n  \"data\": {\n    \"id\": 20,\n    \"fullName\": \"New Staff\",\n    \"username\": \"staff02\",\n    \"email\": \"staff02@example.com\",\n    \"phone\": \"0900000003\",\n    \"role\": \"STAFF\",\n    \"status\": \"ACTIVE\",\n    \"createdAt\": \"2026-07-05T17:20:00+07:00\"\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:20:00+07:00\"\n}"
+                  }
+                ],
+                dataContracts: [
+                  {
+                    id: "data-contract-create-user-request",
+                    name: "CreateUserRequest (C# DTO)",
+                    content: "public class CreateUserRequest\n{\n    public string FullName { get; set; } = string.Empty;\n    public string Username { get; set; } = string.Empty;\n    public string Email { get; set; } = string.Empty;\n    public string Phone { get; set; } = string.Empty;\n    public string Password { get; set; } = string.Empty;\n    public string Role { get; set; } = string.Empty;\n}"
+                  }
+                ],
+                testCases: [
+                  {
+                    id: "tc-user-c-01",
+                    title: "Admin can create STAFF user",
+                    type: "api",
+                    steps: [
+                      "Call POST /api/core/users with valid STAFF payload."
+                    ],
+                    expectedResult: "Status 201. User created with status ACTIVE. Password is stored as BCrypt hash. Response does not contain passwordHash. Audit log USER_CREATED exists.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-c-02",
+                    title: "Create user normalizes email to lowercase",
+                    type: "api",
+                    steps: [
+                      "Submit POST /api/core/users with email Staff02@Example.com."
+                    ],
+                    expectedResult: "Status 201. Saved email is staff02@example.com. Response email is staff02@example.com.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-c-03",
+                    title: "Create user normalizes Vietnamese phone",
+                    type: "api",
+                    steps: [
+                      "Submit POST /api/core/users with phone +84900000003."
+                    ],
+                    expectedResult: "Status 201. Saved phone is normalized to 0900000003. Response phone is normalized.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-c-04",
+                    title: "Create user with uppercase username is rejected",
+                    type: "api",
+                    steps: [
+                      "Submit POST /api/core/users with username Staff02."
+                    ],
+                    expectedResult: "Status 400. Error code VALIDATION_FAILED. Field username indicates username must be lowercase.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-c-05",
+                    title: "Create user with invalid username format is rejected",
+                    type: "api",
+                    steps: [
+                      "Submit POST /api/core/users with invalid username format."
+                    ],
+                    expectedResult: "Status 400. Error code VALIDATION_FAILED. Field username.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-c-06",
+                    title: "Create user with invalid email format is rejected",
+                    type: "api",
+                    steps: [
+                      "Submit POST /api/core/users with invalid email format."
+                    ],
+                    expectedResult: "Status 400. Error code VALIDATION_FAILED. Field email.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-c-07",
+                    title: "Create user with invalid phone format is rejected",
+                    type: "api",
+                    steps: [
+                      "Submit POST /api/core/users with invalid Vietnamese phone format."
+                    ],
+                    expectedResult: "Status 400. Error code VALIDATION_FAILED. Field phone.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-c-08",
+                    title: "Duplicate username returns 409",
+                    type: "api",
+                    expectedResult: "Status 409. Error code USERNAME_ALREADY_EXISTS.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-c-09",
+                    title: "Duplicate email returns 409",
+                    type: "api",
+                    expectedResult: "Status 409. Error code EMAIL_ALREADY_EXISTS.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-c-10",
+                    title: "Duplicate phone returns 409",
+                    type: "api",
+                    expectedResult: "Status 409. Error code PHONE_ALREADY_EXISTS.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-c-11",
+                    title: "Duplicate email is case-insensitive",
+                    type: "api",
+                    steps: [
+                      "Create user with email Staff02@Example.com.",
+                      "Create another user with email staff02@example.com."
+                    ],
+                    expectedResult: "Second request fails with HTTP 409. Error code EMAIL_ALREADY_EXISTS. Only one user exists for that email.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-c-12",
+                    title: "Duplicate phone is checked after normalization",
+                    type: "api",
+                    steps: [
+                      "Create user with phone 0900000003.",
+                      "Create another user with phone +84900000003."
+                    ],
+                    expectedResult: "Second request fails with HTTP 409. Error code PHONE_ALREADY_EXISTS. Only one user exists for that normalized phone.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-c-13",
+                    title: "Create user with DRIVER role is rejected",
+                    type: "api",
+                    steps: [
+                      "Call POST /api/core/users with role DRIVER."
+                    ],
+                    expectedResult: "Status 400. Error code INVALID_USER_ROLE. No user is created.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-c-14",
+                    title: "Password policy is enforced when creating user",
+                    type: "api",
+                    steps: [
+                      "Call POST /api/core/users with weak password."
+                    ],
+                    expectedResult: "Status 400. Error code VALIDATION_FAILED. Password must satisfy min length, uppercase, lowercase, and digit rule.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-c-15",
+                    title: "Duplicate submit creates only one user",
+                    type: "integration",
+                    steps: [
+                      "Submit the same valid POST /api/core/users request twice quickly."
+                    ],
+                    expectedResult: "Only one user is created. One request succeeds with HTTP 201. The duplicate request fails with HTTP 409 and correct duplicate error code.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-c-16",
+                    title: "Create user handles concurrent duplicate email race condition",
+                    type: "integration",
+                    steps: [
+                      "Send two concurrent POST /api/core/users requests with the same email."
+                    ],
+                    expectedResult: "Only one user is created. One request succeeds. The other request fails with HTTP 409 EMAIL_ALREADY_EXISTS. No raw database error is returned.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-c-17",
+                    title: "Create user handles concurrent duplicate username race condition",
+                    type: "integration",
+                    steps: [
+                      "Send two concurrent POST /api/core/users requests with the same username."
+                    ],
+                    expectedResult: "Only one user is created. The second request fails with HTTP 409 USERNAME_ALREADY_EXISTS. No duplicate username exists.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-c-18",
+                    title: "Create user handles concurrent duplicate phone race condition",
+                    type: "integration",
+                    steps: [
+                      "Send two concurrent POST /api/core/users requests with equivalent phone numbers (e.g. 0900000003 and +84900000003)."
+                    ],
+                    expectedResult: "Only one user is created. The second request fails with HTTP 409 PHONE_ALREADY_EXISTS. No duplicate normalized phone exists.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-c-19",
+                    title: "Password hash is not plain text",
+                    type: "integration",
+                    steps: [
+                      "Create user successfully.",
+                      "Read users.password_hash."
+                    ],
+                    expectedResult: "password_hash is not equal to raw password. BCrypt verify succeeds with raw password.",
+                    status: "not_started"
+                  }
+                ],
+                doneCriteria: [
+                  { id: "dc-user-c-01", content: "Endpoint POST /api/core/users is exposed.", checked: false },
+                  { id: "dc-user-c-02", content: "Create endpoint returns HTTP 201.", checked: false },
+                  { id: "dc-user-c-03", content: "POST /api/core/users creates internal users only.", checked: false },
+                  { id: "dc-user-c-04", content: "POST /api/core/users allows ADMIN, MANAGER, STAFF.", checked: false },
+                  { id: "dc-user-c-05", content: "POST /api/core/users rejects DRIVER role.", checked: false },
+                  { id: "dc-user-c-06", content: "fullName is trimmed before saving.", checked: false },
+                  { id: "dc-user-c-07", content: "username is trimmed before validation.", checked: false },
+                  { id: "dc-user-c-08", content: "username must be lowercase.", checked: false },
+                  { id: "dc-user-c-09", content: "username invalid format returns HTTP 400 VALIDATION_FAILED.", checked: false },
+                  { id: "dc-user-c-10", content: "username duplicate check is case-insensitive.", checked: false },
+                  { id: "dc-user-c-11", content: "Duplicate username returns HTTP 409 USERNAME_ALREADY_EXISTS.", checked: false },
+                  { id: "dc-user-c-12", content: "email validates correct email format before normalization.", checked: false },
+                  { id: "dc-user-c-13", content: "email is normalized to lowercase before duplicate check and saving.", checked: false },
+                  { id: "dc-user-c-14", content: "email duplicate check is case-insensitive.", checked: false },
+                  { id: "dc-user-c-15", content: "Duplicate email returns HTTP 409 EMAIL_ALREADY_EXISTS.", checked: false },
+                  { id: "dc-user-c-16", content: "phone validates Vietnamese phone format.", checked: false },
+                  { id: "dc-user-c-17", content: "phone is normalized before duplicate check and saving.", checked: false },
+                  { id: "dc-user-c-18", content: "Duplicate normalized phone returns HTTP 409 PHONE_ALREADY_EXISTS.", checked: false },
+                  { id: "dc-user-c-19", content: "Database has unique index lower(username).", checked: false },
+                  { id: "dc-user-c-20", content: "Database has unique index lower(email) if present.", checked: false },
+                  { id: "dc-user-c-21", content: "Database has unique index phone if present.", checked: false },
+                  { id: "dc-user-c-22", content: "Database uniqueness protects against race condition.", checked: false },
+                  { id: "dc-user-c-23", content: "Backend catches database unique constraint violation.", checked: false },
+                  { id: "dc-user-c-24", content: "Backend maps database duplicate conflict to safe HTTP 409 response.", checked: false },
+                  { id: "dc-user-c-25", content: "Backend does not expose raw SQL/database errors.", checked: false },
+                  { id: "dc-user-c-26", content: "Duplicate submit creates only one user.", checked: false },
+                  { id: "dc-user-c-27", content: "Concurrent duplicate create requests create only one user.", checked: false },
+                  { id: "dc-user-c-28", content: "Password is hashed with BCrypt.", checked: false },
+                  { id: "dc-user-c-29", content: "No response exposes password hash.", checked: false },
+                  { id: "dc-user-c-30", content: "Mutating operations write audit log USER_CREATED.", checked: false }
+                ]
+              },
+              {
+                id: "leaf-user-update",
+                title: "User Profile Update",
+                type: "leaf_feature",
+                clients: ["Admin"],
+                status: "ready",
+                priority: "medium",
+                tags: ["users", "update", "admin"],
+                summary: "Allows Admin to update basic user profile fields (fullName, email, phone).",
+                objective: "Implement basic profile field updates for Admin. Username, password, role, status are read-only. Prevent email/phone duplicates with other users.",
+                inScope: [
+                  "Admin updates basic user profile fields: fullName, email, phone.",
+                  "Email and phone normalization and validation.",
+                  "Prevent duplicate email or phone with another user (returns HTTP 409).",
+                  "Allow updating with same email/phone of the current user.",
+                  "Audit log USER_UPDATED is written."
+                ],
+                outOfScope: [
+                  "Creating users.",
+                  "Changing status.",
+                  "Changing role.",
+                  "Changing password.",
+                  "Hard delete.",
+                  "Driver profile management."
+                ],
+                permissions: [
+                  { role: "ADMIN", permission: "Can call PUT /api/core/users/{id}" }
+                ],
+                dbExistingTables: ["users"],
+                dbRelationships: [
+                  "Updates records in users table."
+                ],
+                validationRules: [
+                  { field: "fullName", rule: "Required, trim, max 150", errorMessage: "VALIDATION_FAILED" },
+                  { field: "email", rule: "Optional, valid email format, max 150", errorMessage: "VALIDATION_FAILED" },
+                  { field: "email", rule: "Normalize to lowercase after valid format check", errorMessage: "N/A" },
+                  { field: "phone", rule: "Optional, valid Vietnamese phone format, max 30", errorMessage: "VALIDATION_FAILED" },
+                  { field: "phone", rule: "Normalize before duplicate check and saving", errorMessage: "N/A" }
+                ],
+                securityRules: [
+                  "Validate JWT.",
+                  "Require Admin role.",
+                  "Do not accept password, username, role, or status updates in this endpoint.",
+                  "Do not expose raw SQL/database errors."
+                ],
+                logEvents: [
+                  "USER_UPDATED",
+                  "USER_UPDATE_DUPLICATE_CONFLICT",
+                  "USER_UPDATE_RACE_CONFLICT"
+                ],
+                integrationPoints: [
+                  { system: "Auth / JWT Middleware", responsibility: "Validates authenticated Admin request" },
+                  { system: "Audit Log Service", responsibility: "Writes audit logs on mutating operations" }
+                ],
+                uiComponents: "Edit User Modal, Form fields: fullName, email, phone. Username read-only.",
+                uiStateLoading: "Disable submit button, show loading spinner.",
+                uiStateError: "Display field-level validation errors.",
+                uiStateSuccess: "Show success toast, refresh list, close modal.",
+                endpoints: [
+                  "PUT /api/core/users/{id}"
+                ],
+                ownerService: ".NET Core API",
+                apiContracts: [
+                  {
+                    id: "api-contract-put-update-user",
+                    name: "PUT /api/core/users/{id}",
+                    content: "Description:\nAdmin updates basic user profile fields: fullName, email, phone. Username, password, role, status are not updated.\n\nRequest Body:\n{\n  \"fullName\": \"Updated Staff Name\",\n  \"email\": \"Staff02.Updated@Example.com\",\n  \"phone\": \"+84900000004\"\n}\n\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"User updated successfully\",\n  \"data\": {\n    \"id\": 20,\n    \"fullName\": \"Updated Staff Name\",\n    \"username\": \"staff02\",\n    \"email\": \"staff02.updated@example.com\",\n    \"phone\": \"0900000004\",\n    \"role\": \"STAFF\",\n    \"status\": \"ACTIVE\",\n    \"updatedAt\": \"2026-07-05T17:30:00+07:00\"\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:30:00+07:00\"\n}"
+                  }
+                ],
+                dataContracts: [
+                  {
+                    id: "data-contract-update-user-request",
+                    name: "UpdateUserRequest (C# DTO)",
+                    content: "public class UpdateUserRequest\n{\n    public string FullName { get; set; } = string.Empty;\n    public string Email { get; set; } = string.Empty;\n    public string Phone { get; set; } = string.Empty;\n}"
+                  }
+                ],
+                testCases: [
+                  {
+                    id: "tc-user-u-01",
+                    title: "Admin can update fullName/email/phone",
+                    type: "api",
+                    expectedResult: "Status 200. Fields updated. Username, role, status, passwordHash unchanged. Audit log USER_UPDATED exists.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-u-02",
+                    title: "PUT normalizes email to lowercase",
+                    type: "api",
+                    steps: [
+                      "Update user email to Updated.Staff@Example.com."
+                    ],
+                    expectedResult: "Status 200. Saved email is updated.staff@example.com.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-u-03",
+                    title: "PUT normalizes Vietnamese phone",
+                    type: "api",
+                    steps: [
+                      "Update user phone to +84900000004."
+                    ],
+                    expectedResult: "Status 200. Saved phone is 0900000004.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-u-04",
+                    title: "PUT duplicate email with another user returns 409",
+                    type: "api",
+                    steps: [
+                      "User A has email staff01@example.com.",
+                      "User B updates email to staff01@example.com."
+                    ],
+                    expectedResult: "Status 409. Error code EMAIL_ALREADY_EXISTS.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-u-05",
+                    title: "PUT duplicate phone with another user returns 409",
+                    type: "api",
+                    steps: [
+                      "User A has phone 0900000003.",
+                      "User B updates phone to +84900000003."
+                    ],
+                    expectedResult: "Status 409. Error code PHONE_ALREADY_EXISTS.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-u-06",
+                    title: "PUT same email/phone of current user is allowed",
+                    type: "api",
+                    steps: [
+                      "User A currently has email staff01@example.com and phone 0900000003.",
+                      "Update User A with same email and phone."
+                    ],
+                    expectedResult: "Status 200. No duplicate error is returned.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-u-07",
+                    title: "PUT cannot change password/role/status",
+                    type: "api",
+                    steps: [
+                      "Send extra fields password, role, status in PUT body."
+                    ],
+                    expectedResult: "Extra fields ignored or rejected. Stored password, role, status remain unchanged.",
+                    status: "not_started"
+                  }
+                ],
+                doneCriteria: [
+                  { id: "dc-user-u-01", content: "Endpoint PUT /api/core/users/{id} is exposed.", checked: false },
+                  { id: "dc-user-u-02", content: "PUT only updates fullName, email, phone.", checked: false },
+                  { id: "dc-user-u-03", content: "PUT cannot change username.", checked: false },
+                  { id: "dc-user-u-04", content: "PUT cannot change password.", checked: false },
+                  { id: "dc-user-u-05", content: "PUT cannot change role.", checked: false },
+                  { id: "dc-user-u-06", content: "PUT cannot change status.", checked: false },
+                  { id: "dc-user-u-07", content: "PUT duplicate email with another user returns HTTP 409 EMAIL_ALREADY_EXISTS.", checked: false },
+                  { id: "dc-user-u-08", content: "PUT duplicate phone with another user returns HTTP 409 PHONE_ALREADY_EXISTS.", checked: false },
+                  { id: "dc-user-u-09", content: "PUT with same email/phone of current user is allowed.", checked: false },
+                  { id: "dc-user-u-10", content: "Mutating operations write audit log USER_UPDATED.", checked: false }
+                ]
+              },
+              {
+                id: "leaf-user-status",
+                title: "User Status Management",
+                type: "leaf_feature",
+                clients: ["Admin"],
+                status: "ready",
+                priority: "medium",
+                tags: ["users", "status", "admin"],
+                summary: "Allows Admin to change user status (ACTIVE, LOCKED, INACTIVE) with a required reason.",
+                objective: "Implement status changing for Admin. Protect Admin from deactivating their own account or the last active Admin.",
+                inScope: [
+                  "Admin changes user status: ACTIVE, LOCKED, INACTIVE.",
+                  "Status change requires a reason.",
+                  "Self status change protection.",
+                  "Last active Admin status change protection.",
+                  "Audit log USER_STATUS_CHANGED is written."
+                ],
+                outOfScope: [
+                  "Creating users.",
+                  "Updating profile.",
+                  "Changing role.",
+                  "Hard delete.",
+                  "Password reset."
+                ],
+                permissions: [
+                  { role: "ADMIN", permission: "Can call PATCH /api/core/users/{id}/status" }
+                ],
+                dbExistingTables: ["users"],
+                validationRules: [
+                  { field: "status", rule: "Required, ACTIVE, LOCKED, INACTIVE", errorMessage: "INVALID_USER_STATUS" },
+                  { field: "reason", rule: "Required, trim", errorMessage: "REASON_REQUIRED" }
+                ],
+                securityRules: [
+                  "Validate JWT.",
+                  "Require Admin role.",
+                  "Prevent Admin from locking or deactivating own account.",
+                  "Prevent locking or deactivating the last active Admin."
+                ],
+                logEvents: [
+                  "USER_STATUS_CHANGED",
+                  "USER_SELF_PROTECTION_BLOCKED",
+                  "USER_LAST_ADMIN_PROTECTION_BLOCKED"
+                ],
+                integrationPoints: [
+                  { system: "Auth / JWT Middleware", responsibility: "Validates authenticated Admin request" },
+                  { system: "Audit Log Service", responsibility: "Writes audit logs on mutating operations" }
+                ],
+                uiComponents: "Change Status Confirmation Modal, required reason text input.",
+                uiStateLoading: "Disable inputs, show loading spinner.",
+                uiStateError: "Display general validation errors.",
+                uiStateSuccess: "Show success toast, refresh list, close modal.",
+                endpoints: [
+                  "PATCH /api/core/users/{id}/status"
+                ],
+                ownerService: ".NET Core API",
+                apiContracts: [
+                  {
+                    id: "api-contract-patch-user-status",
+                    name: "PATCH /api/core/users/{id}/status",
+                    content: "Description:\nAdmin changes user status. Reason is required.\n\nRequest Body:\n{\n  \"status\": \"LOCKED\",\n  \"reason\": \"Suspicious activity\"\n}\n\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"User status changed successfully\",\n  \"data\": {\n    \"id\": 20,\n    \"fullName\": \"Updated Staff Name\",\n    \"username\": \"staff02\",\n    \"role\": \"STAFF\",\n    \"oldStatus\": \"ACTIVE\",\n    \"newStatus\": \"LOCKED\",\n    \"reason\": \"Suspicious activity\",\n    \"updatedAt\": \"2026-07-05T17:35:00+07:00\"\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:35:00+07:00\"\n}"
+                  }
+                ],
+                dataContracts: [
+                  {
+                    id: "data-contract-change-status-request",
+                    name: "ChangeStatusRequest (C# DTO)",
+                    content: "public class ChangeStatusRequest\n{\n    public string Status { get; set; } = string.Empty;\n    public string Reason { get; set; } = string.Empty;\n}"
+                  }
+                ],
+                testCases: [
+                  {
+                    id: "tc-user-s-01",
+                    title: "Admin can lock user with reason",
+                    type: "api",
+                    steps: [
+                      "Call PATCH /api/core/users/{id}/status.",
+                      "Body: { \"status\": \"LOCKED\", \"reason\": \"Policy violation\" }."
+                    ],
+                    expectedResult: "Status 200. User status becomes LOCKED. Audit log USER_STATUS_CHANGED exists.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-s-02",
+                    title: "Missing reason in status change returns 400",
+                    type: "api",
+                    expectedResult: "Status 400. Error code REASON_REQUIRED.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-s-03",
+                    title: "Admin cannot lock or deactivate own account",
+                    type: "api",
+                    expectedResult: "Status 409. Error code CANNOT_CHANGE_OWN_STATUS.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-s-04",
+                    title: "Admin cannot lock or deactivate last active Admin",
+                    type: "api",
+                    precondition: "There is only one ACTIVE Admin in the system.",
+                    steps: [
+                      "Attempt to change that Admin status to LOCKED or INACTIVE."
+                    ],
+                    expectedResult: "Status 409. Error code CANNOT_DISABLE_LAST_ADMIN. Admin remains ACTIVE.",
+                    status: "not_started"
+                  }
+                ],
+                doneCriteria: [
+                  { id: "dc-user-s-01", content: "Endpoint PATCH /api/core/users/{id}/status is exposed.", checked: false },
+                  { id: "dc-user-s-02", content: "Status change requires reason.", checked: false },
+                  { id: "dc-user-s-03", content: "Admin cannot lock or deactivate own account.", checked: false },
+                  { id: "dc-user-s-04", content: "Admin cannot lock or deactivate the last active Admin.", checked: false },
+                  { id: "dc-user-s-05", content: "Mutating operations write audit log USER_STATUS_CHANGED.", checked: false }
+                ]
+              },
+              {
+                id: "leaf-user-role",
+                title: "User Role Management",
+                type: "leaf_feature",
+                clients: ["Admin"],
+                status: "ready",
+                priority: "medium",
+                tags: ["users", "role", "admin"],
+                summary: "Allows Admin to change internal user role (ADMIN, MANAGER, STAFF) with a required reason.",
+                objective: "Implement role changing for Admin. Protect Admin from self-demotion or demoting the last active Admin. Rejects DRIVER role assignment.",
+                inScope: [
+                  "Admin changes internal user role: ADMIN, MANAGER, STAFF.",
+                  "Role change requires a reason.",
+                  "Self-demotion protection.",
+                  "Last active Admin demotion protection.",
+                  "Rejects DRIVER role assignment.",
+                  "Audit log USER_ROLE_CHANGED is written."
+                ],
+                outOfScope: [
+                  "Creating users.",
+                  "Updating profile.",
+                  "Changing status.",
+                  "Driver registration.",
+                  "Driver profile management.",
+                  "Full RBAC/permission table management."
+                ],
+                permissions: [
+                  { role: "ADMIN", permission: "Can call PATCH /api/core/users/{id}/role" }
+                ],
+                dbExistingTables: ["users"],
+                validationRules: [
+                  { field: "role", rule: "Required, ADMIN, MANAGER, STAFF", errorMessage: "INVALID_USER_ROLE" },
+                  { field: "reason", rule: "Required, trim", errorMessage: "REASON_REQUIRED" }
+                ],
+                securityRules: [
+                  "Validate JWT.",
+                  "Require Admin role.",
+                  "Prevent Admin from demoting own role.",
+                  "Prevent demoting the last active Admin.",
+                  "Prevent assigning DRIVER through PATCH /api/core/users/{id}/role."
+                ],
+                logEvents: [
+                  "USER_ROLE_CHANGED",
+                  "USER_SELF_PROTECTION_BLOCKED",
+                  "USER_LAST_ADMIN_PROTECTION_BLOCKED"
+                ],
+                integrationPoints: [
+                  { system: "Auth / JWT Middleware", responsibility: "Validates authenticated Admin request" },
+                  { system: "Audit Log Service", responsibility: "Writes audit logs on mutating operations" }
+                ],
+                uiComponents: "Change Role Confirmation Modal, required reason text input.",
+                uiStateLoading: "Disable inputs, show loading spinner.",
+                uiStateError: "Display general validation errors.",
+                uiStateSuccess: "Show success toast, refresh list, close modal.",
+                endpoints: [
+                  "PATCH /api/core/users/{id}/role"
+                ],
+                ownerService: ".NET Core API",
+                apiContracts: [
+                  {
+                    id: "api-contract-patch-user-role",
+                    name: "PATCH /api/core/users/{id}/role",
+                    content: "Description:\nAdmin changes internal user role. Reason is required. DRIVER role is rejected.\n\nRequest Body:\n{\n  \"role\": \"MANAGER\",\n  \"reason\": \"Promoted to manager\"\n}\n\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"User role changed successfully\",\n  \"data\": {\n    \"id\": 20,\n    \"fullName\": \"Updated Staff Name\",\n    \"username\": \"staff02\",\n    \"oldRole\": \"STAFF\",\n    \"newRole\": \"MANAGER\",\n    \"reason\": \"Promoted to manager\",\n    \"updatedAt\": \"2026-07-05T17:40:00+07:00\"\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:40:00+07:00\"\n}"
+                  }
+                ],
+                dataContracts: [
+                  {
+                    id: "data-contract-change-role-request",
+                    name: "ChangeRoleRequest (C# DTO)",
+                    content: "public class ChangeRoleRequest\n{\n    public string Role { get; set; } = string.Empty;\n    public string Reason { get; set; } = string.Empty;\n}"
+                  }
+                ],
+                testCases: [
+                  {
+                    id: "tc-user-r-01",
+                    title: "Admin can change role with reason",
+                    type: "api",
+                    steps: [
+                      "Call PATCH /api/core/users/{id}/role.",
+                      "Body: { \"role\": \"MANAGER\", \"reason\": \"Promotion\" }."
+                    ],
+                    expectedResult: "Status 200. User role becomes MANAGER. Audit log USER_ROLE_CHANGED exists.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-r-02",
+                    title: "Missing reason in role change returns 400",
+                    type: "api",
+                    expectedResult: "Status 400. Error code REASON_REQUIRED.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-r-03",
+                    title: "Change role to DRIVER is rejected",
+                    type: "api",
+                    steps: [
+                      "Call PATCH /api/core/users/{id}/role with role DRIVER."
+                    ],
+                    expectedResult: "Status 400. Error code INVALID_USER_ROLE.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-r-04",
+                    title: "Admin cannot demote own role",
+                    type: "api",
+                    expectedResult: "Status 409. Error code CANNOT_CHANGE_OWN_ROLE.",
+                    status: "not_started"
+                  },
+                  {
+                    id: "tc-user-r-05",
+                    title: "Admin cannot demote last active Admin",
+                    type: "api",
+                    precondition: "There is only one ACTIVE Admin in the system.",
+                    steps: [
+                      "Attempt to change that Admin role to MANAGER or STAFF."
+                    ],
+                    expectedResult: "Status 409. Error code CANNOT_DEMOTE_LAST_ADMIN. Admin role remains ADMIN.",
+                    status: "not_started"
+                  }
+                ],
+                doneCriteria: [
+                  { id: "dc-user-r-01", content: "Endpoint PATCH /api/core/users/{id}/role is exposed.", checked: false },
+                  { id: "dc-user-r-02", content: "PATCH /api/core/users/{id}/role rejects DRIVER role.", checked: false },
+                  { id: "dc-user-r-03", content: "Role change requires reason.", checked: false },
+                  { id: "dc-user-r-04", content: "Admin cannot demote own role.", checked: false },
+                  { id: "dc-user-r-05", content: "Admin cannot demote the last active Admin.", checked: false },
+                  { id: "dc-user-r-06", content: "Mutating operations write audit log USER_ROLE_CHANGED.", checked: false }
+                ]
+              }
             ]
           },
           {
-            id: "leaf-driver-vehicle",
-            title: "Driver Vehicle Management",
+            id: "leaf-driver-vehicles-list",
+            title: "Driver Registered Vehicles",
             type: "leaf_feature",
             clients: ["Driver"],
             endpoints: [
-              "GET /api/core/driver/vehicles",
-              "POST /api/core/driver/vehicles"
+              "GET /api/core/driver/vehicles"
             ],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/driver/vehicles"),
-            testCases: defaultApiTests("Driver Vehicle Management", ["Driver"], ["GET /api/core/driver/vehicles"]),
-            doneCriteria: defaultDoneCriteria("Driver Vehicle Management")
+            apiContracts: createApiContract("GET /api/core/driver/vehicles"),
+            testCases: defaultApiTests("Driver Registered Vehicles", ["Driver"], ["GET /api/core/driver/vehicles"]),
+            doneCriteria: defaultDoneCriteria("Driver Registered Vehicles")
           },
+          {
+            id: "leaf-driver-vehicle-history",
+            title: "Driver Vehicle Entry Exit History",
+            type: "leaf_feature",
+            clients: ["Driver"],
+            endpoints: [
+              "GET /api/support/driver/vehicles/entry-exit-history"
+            ],
+            ownerService: "Spring Boot Support API",
+            apiContracts: createApiContract("GET /api/support/driver/vehicles/entry-exit-history"),
+            testCases: defaultApiTests("Driver Vehicle Entry Exit History", ["Driver"], ["GET /api/support/driver/vehicles/entry-exit-history"]),
+            doneCriteria: defaultDoneCriteria("Driver Vehicle Entry Exit History")
+          },
+          {
+            id: "leaf-driver-mp-application",
+            title: "Driver Monthly Pass Application",
+            type: "leaf_feature",
+            clients: ["Driver"],
+            endpoints: [
+              "POST /api/core/monthly-passes/applications",
+              "GET /api/support/monthly-passes/applications/me"
+            ],
+            ownerService: ".NET Core API",
+            apiContracts: createApiContract("POST /api/core/monthly-passes/applications"),
+            testCases: defaultApiTests("Driver Monthly Pass Application", ["Driver"], ["POST /api/core/monthly-passes/applications"]),
+            doneCriteria: defaultDoneCriteria("Driver Monthly Pass Application")
+          }
+        ]
+      },
+      // 4b. Vehicle Configuration
+      {
+        id: "cat-vehicle-config",
+        title: "Vehicle Configuration",
+        type: "category",
+        summary: "Configuration and master data of vehicle properties.",
+        children: [
           {
             id: "leaf-vehicle-type",
             title: "Vehicle Type Management",
@@ -599,6 +2323,19 @@ export function createParkingBuildingSeedTree(): FeatureNode[] {
               { id: "dc-sess-calc", content: "Accurate fee calculation based on active pricing scheme.", checked: false },
               { id: "dc-sess-monthly-exit", content: "Seamless gate exit for registered monthly pass vehicles.", checked: false }
             ]
+          },
+          {
+            id: "leaf-mp-validation",
+            title: "Monthly Pass Check During Entry Exit",
+            type: "leaf_feature",
+            clients: ["Staff", "System"],
+            endpoints: [
+              "GET /api/core/monthly-passes/check"
+            ],
+            ownerService: ".NET Core API",
+            apiContracts: createApiContract("GET /api/core/monthly-passes/check"),
+            testCases: defaultApiTests("Monthly Pass Check During Entry Exit", ["Staff"], ["GET /api/core/monthly-passes/check"]),
+            doneCriteria: defaultDoneCriteria("Monthly Pass Check During Entry Exit")
           }
         ]
       },
@@ -746,22 +2483,35 @@ export function createParkingBuildingSeedTree(): FeatureNode[] {
         ],
         children: [
           {
-            id: "leaf-mp-crud",
-            title: "Monthly Pass CRUD",
+            id: "leaf-mp-app-review",
+            title: "Monthly Pass Application Review",
+            type: "leaf_feature",
+            clients: ["Manager", "Admin"],
+            endpoints: [
+              "GET /api/core/monthly-passes/applications",
+              "PATCH /api/core/monthly-passes/applications/{id}/status"
+            ],
+            ownerService: ".NET Core API",
+            apiContracts: createApiContract("GET /api/core/monthly-passes/applications"),
+            testCases: defaultApiTests("Monthly Pass Application Review", ["Manager"], ["GET /api/core/monthly-passes/applications"]),
+            doneCriteria: defaultDoneCriteria("Monthly Pass Application Review")
+          },
+          {
+            id: "leaf-mp-card-manage",
+            title: "Monthly Pass Card Management",
             type: "leaf_feature",
             clients: ["Manager", "Admin"],
             endpoints: [
               "GET /api/core/monthly-passes",
               "POST /api/core/monthly-passes",
               "PUT /api/core/monthly-passes/{id}",
-              "PATCH /api/core/monthly-passes/{id}/status",
-              "GET /api/core/monthly-passes/check"
+              "PATCH /api/core/monthly-passes/{id}/status"
             ],
             ownerService: ".NET Core API",
             apiContracts: createApiContract("GET /api/core/monthly-passes"),
-            testCases: defaultApiTests("Monthly Pass CRUD", ["Manager"], ["GET /api/core/monthly-passes"]),
+            testCases: defaultApiTests("Monthly Pass Card Management", ["Manager"], ["GET /api/core/monthly-passes"]),
             doneCriteria: [
-              ...defaultDoneCriteria("Monthly Pass CRUD"),
+              ...defaultDoneCriteria("Monthly Pass Card Management"),
               { id: "dc-mp-validity", content: "Card scans check monthly pass validity instantly.", checked: false }
             ]
           },
@@ -1174,7 +2924,62 @@ export function createParkingBuildingSeedTree(): FeatureNode[] {
   };
 
   const rootNode = createSeedNode(seedInput, null, 0);
+  enrichNodeWithTags(rootNode);
   return [rootNode];
+}
+
+function enrichNodeWithTags(node: FeatureNode) {
+  if (!node.tags) {
+    node.tags = [];
+  }
+
+  if (node.id === "root-parking-system") {
+    node.tags = ["system", "parking", "core"];
+  } else if (node.id.startsWith("cat-")) {
+    const categoryTags: Record<string, string[]> = {
+      "cat-authentication": ["auth", "security"],
+      "cat-access-control": ["auth", "rbac", "security"],
+      "cat-user-driver": ["user", "driver"],
+      "cat-structure": ["structure", "inventory"],
+      "cat-cards": ["cards", "membership"],
+      "cat-reservation": ["booking", "reservation"],
+      "cat-session": ["session", "gate"],
+      "cat-payment": ["payment", "billing", "finance"],
+      "cat-pricing": ["pricing", "billing"],
+      "cat-monthly-pass": ["cards", "monthly-pass"],
+      "cat-incidents": ["incidents", "support"],
+      "cat-reports": ["reports", "dashboard", "manager"],
+      "cat-public": ["public", "info"],
+      "cat-feedback": ["feedback", "support"],
+      "cat-notification": ["notification", "alerts"],
+      "cat-mock-devices": ["devices", "mock"],
+      "cat-diagnostics": ["diagnostics", "admin"]
+    };
+    const key = node.id;
+    if (categoryTags[key]) {
+      node.tags = [...categoryTags[key]];
+    }
+  } else if (node.id.startsWith("leaf-")) {
+    const localTags: string[] = [];
+    const idLower = node.id.toLowerCase();
+    const titleLower = node.title.toLowerCase();
+
+    if (idLower.includes("login") || titleLower.includes("login")) localTags.push("jwt", "api");
+    if (idLower.includes("logout") || titleLower.includes("logout") || idLower.includes("refresh") || titleLower.includes("refresh") || idLower.includes("session") || titleLower.includes("session")) localTags.push("api");
+    if (idLower.includes("payos") || titleLower.includes("payos")) localTags.push("payos", "webhook");
+    if (idLower.includes("stripe") || titleLower.includes("stripe")) localTags.push("stripe");
+    if (idLower.includes("crud") || titleLower.includes("crud") || idLower.includes("manage") || titleLower.includes("manage")) localTags.push("crud");
+    if (idLower.includes("report") || idLower.includes("export") || titleLower.includes("export") || titleLower.includes("report")) localTags.push("excel", "pdf");
+    if (idLower.includes("device") || idLower.includes("gate") || idLower.includes("barrier") || titleLower.includes("gate") || titleLower.includes("device") || titleLower.includes("barrier")) localTags.push("hardware", "iot");
+    if (idLower.includes("cron") || idLower.includes("worker") || titleLower.includes("cron") || titleLower.includes("worker")) localTags.push("cron", "job");
+    if (idLower.includes("health") || idLower.includes("diag") || titleLower.includes("health") || titleLower.includes("diag")) localTags.push("diagnostics");
+
+    node.tags = localTags;
+  }
+
+  if (node.children) {
+    node.children.forEach(enrichNodeWithTags);
+  }
 }
 
 export function uuidv4(): string {

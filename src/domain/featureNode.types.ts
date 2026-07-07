@@ -73,12 +73,32 @@ export interface FeatureNode {
   notes: string;
 
   metadata?: {
-    ownerService?: ".NET Core API" | "Spring Boot Support API" | "Shared Database" | "Frontend" | "System";
+    ownerService?: ".NET Core API" | "Spring Boot Support API" | "Shared Database" | "Frontend" | "System" | string;
+    consumerServices?: string[];
     sourceFiles?: string[];
     endpoints?: string[];
     roles?: string[];
     businessArea?: string;
   };
+
+  objective?: string;
+  inScope?: string[];
+  outOfScope?: string[];
+  permissions?: { role: string; permission: string }[];
+  dbExistingTables?: string[];
+  dbNewTablesSql?: string;
+  dbRelationships?: string[];
+  validationRules?: { field: string; rule: string; errorMessage: string }[];
+  securityRules?: string[];
+  logEvents?: string[];
+  noLogEvents?: string[];
+  integrationPoints?: { system: string; responsibility: string }[];
+  uiPage?: string;
+  uiComponents?: string;
+  uiStateLoading?: string;
+  uiStateEmpty?: string;
+  uiStateError?: string;
+  uiStateSuccess?: string;
 
   createdAt: string;
   updatedAt: string;

@@ -97,3 +97,17 @@ export function isNodeAiReady(node: FeatureNode, flatNodes: FeatureNode[]): Read
 
   return { isReady, reasons, status };
 }
+
+/**
+ * Combines tags from ancestors to child, returning a unique list of lowercase tags.
+ */
+export function getEffectiveTags(nodeId: string, flatNodes: FeatureNode[]): string[] {
+  const chain = getAncestorChain(nodeId, flatNodes);
+  const tagsSet = new Set<string>();
+  chain.forEach(node => {
+    if (node.tags) {
+      node.tags.forEach(tag => tagsSet.add(tag.toLowerCase().trim()));
+    }
+  });
+  return Array.from(tagsSet).filter(Boolean);
+}

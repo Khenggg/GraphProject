@@ -10,15 +10,13 @@ describe("parkingBuildingSeed", () => {
     expect(tree[0].title).toBe("Parking Building Management System");
   });
 
-  test("root contains Clients / Roles and major feature categories", () => {
+  test("root contains major feature categories", () => {
     const tree = createParkingBuildingSeedTree();
     const root = tree[0];
     expect(root.children).toBeDefined();
     
     const titles = root.children!.map(c => c.title);
-    expect(titles).toContain("Clients / Roles");
     expect(titles).toContain("Authentication");
-    expect(titles).toContain("Access Control & Authorization");
     expect(titles).toContain("Reservation / Booking");
     expect(titles).toContain("Payment");
   });
@@ -26,7 +24,7 @@ describe("parkingBuildingSeed", () => {
   test("Auth/Login node has clients and endpoint POST /api/core/auth/login", () => {
     const tree = createParkingBuildingSeedTree();
     const flat = flattenNodeTree(tree[0]);
-    const loginNode = flat.find(n => n.title === "Login");
+    const loginNode = flat.find(n => n.title === "Login & Session Management");
     
     expect(loginNode).toBeDefined();
     expect(loginNode!.clients).toContain("Driver");

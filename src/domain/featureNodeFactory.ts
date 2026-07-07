@@ -11,7 +11,7 @@ export type SeedNodeInput = {
   summary?: string;
   businessRules?: string[];
   endpoints?: string[];
-  ownerService?: ".NET Core API" | "Spring Boot Support API" | "Shared Database" | "Frontend" | "System";
+  ownerService?: ".NET Core API" | "Spring Boot Support API" | "Shared Database" | "Frontend" | "System" | string;
   sourceFiles?: string[];
   apiContracts?: ContractField[];
   uiContracts?: ContractField[];
@@ -22,6 +22,26 @@ export type SeedNodeInput = {
   risks?: string[];
   notes?: string;
   children?: SeedNodeInput[];
+
+  // Advanced technical fields
+  objective?: string;
+  inScope?: string[];
+  outOfScope?: string[];
+  permissions?: { role: string; permission: string }[];
+  dbExistingTables?: string[];
+  dbNewTablesSql?: string;
+  dbRelationships?: string[];
+  validationRules?: { field: string; rule: string; errorMessage: string }[];
+  securityRules?: string[];
+  logEvents?: string[];
+  noLogEvents?: string[];
+  integrationPoints?: { system: string; responsibility: string }[];
+  uiPage?: string;
+  uiComponents?: string;
+  uiStateLoading?: string;
+  uiStateEmpty?: string;
+  uiStateError?: string;
+  uiStateSuccess?: string;
 };
 
 export function createSeedNode(input: SeedNodeInput, parentId: string | null, order: number): FeatureNode {
@@ -46,6 +66,27 @@ export function createSeedNode(input: SeedNodeInput, parentId: string | null, or
     dependencies: input.dependencies || [],
     risks: input.risks || [],
     notes: input.notes || "",
+    
+    // Copy advanced technical fields
+    objective: input.objective,
+    inScope: input.inScope,
+    outOfScope: input.outOfScope,
+    permissions: input.permissions,
+    dbExistingTables: input.dbExistingTables,
+    dbNewTablesSql: input.dbNewTablesSql,
+    dbRelationships: input.dbRelationships,
+    validationRules: input.validationRules,
+    securityRules: input.securityRules,
+    logEvents: input.logEvents,
+    noLogEvents: input.noLogEvents,
+    integrationPoints: input.integrationPoints,
+    uiPage: input.uiPage,
+    uiComponents: input.uiComponents,
+    uiStateLoading: input.uiStateLoading,
+    uiStateEmpty: input.uiStateEmpty,
+    uiStateError: input.uiStateError,
+    uiStateSuccess: input.uiStateSuccess,
+
     metadata: {
       ownerService: input.ownerService,
       sourceFiles: input.sourceFiles,

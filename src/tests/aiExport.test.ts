@@ -26,7 +26,7 @@ describe("aiExport", () => {
     const flat = flattenNodeTree(tree[0]);
     
     // Find Login node
-    const loginNode = flat.find(n => n.title === "Login");
+    const loginNode = flat.find(n => n.title === "Login & Session Management");
     expect(loginNode).toBeDefined();
 
     // Export to AI mode
@@ -38,9 +38,9 @@ describe("aiExport", () => {
     expect(md).toContain("**Endpoints:**\n- POST /api/core/auth/login");
 
     // Validate sections
-    expect(md).toContain("## Contracts & Schemas");
+    expect(md).toContain("## 5. API Contracts");
     expect(md).toContain("POST /api/core/auth/login");
-    expect(md).toContain("## Automated Test Cases to Implement");
-    expect(md).toContain("## Acceptance / Done Criteria");
+    expect(md).toContain("## 12. Automated Test Cases");
+    expect(md).toContain("## 13. Acceptance / Done Criteria");
   });
 });
