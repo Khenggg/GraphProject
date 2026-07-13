@@ -150,7 +150,7 @@ export function createParkingBuildingSeedTree(): FeatureNode[] {
             type: "leaf_feature",
             summary: "User authentication flows, current user profile retrieval, JWT token refreshing, and session termination.",
             clients: ["Driver", "Staff", "Manager", "Admin"],
-            status: "ready_for_implementation",
+            status: "ready",
             priority: "high",
             tags: ["auth", "session", "security"],
             dependencies: [],
@@ -2389,6 +2389,81 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Vehicle Type Management",
             type: "leaf_feature",
             clients: ["Admin", "Manager"],
+            status: "draft",
+            priority: "medium",
+            tags: ["vehicle", "configuration"],
+            summary: "Provide a comprehensive management tool for all types of vehicles (cars, motorbikes, electric vehicles, etc.) permitted to enter and exit the parking building. Ensure accurate vehicle categorization to support fare configuration, gate traffic control, and optimal parking slot allocation.\n\nThis feature allows administrative roles to perform CRUD (Create, Read, Update, Delete) operations on vehicle types. Each vehicle type includes attributes such as vehicle type name, description, and operational status. The system utilizes this master directory for validation when drivers register their vehicles or when vehicles pass through the gate recognition system.",
+            objective: "Implement CRUD APIs and management dashboard for vehicle types in .NET Core API and React frontend, enforcing uniqueness, status management, role-based access control, and audit logging.",
+            inScope: [
+              "Design the management dashboard interface and create/edit forms for vehicle types accessible by Admin and Manager",
+              "Build RESTful APIs using .NET Core to handle CRUD operations",
+              "Implement input validation (e.g., vehicle type name must be unique and cannot be empty)",
+              "Store and update the operational status of vehicle types in the shared PostgreSQL database",
+              "Log mutating histories (Audit log) into a dedicated audit schema whenever a vehicle type is modified or deleted"
+            ],
+            outOfScope: [
+              "Detailed fare/pricing configuration for each vehicle type (handled under the Vehicle Configuration / Pricing Management module)",
+              "AI-based license plate and vehicle type recognition at the gates (handled under the Gate Read Model module)",
+              "Handling refunds or monthly pass cancellations when a specific vehicle type is deactivated or deleted"
+            ],
+            permissions: [
+              { role: "Admin", permission: "Full access to Create, Read, Update, and Delete vehicle types." },
+              { role: "Manager", permission: "Can View, Create, and Update vehicle types. Cannot delete vehicle types." },
+              { role: "Staff", permission: "No access." },
+              { role: "Driver", permission: "No access." },
+              { role: "Anonymous", permission: "No access." }
+            ],
+            businessRules: [
+              "Vehicle type names must be unique across the system.",
+              "Vehicle types are referenced as master data by vehicle registration, parking sessions, and gate validation processes.",
+              "Deleting a vehicle type should be restricted if it is currently referenced by other business entities."
+            ],
+            dbExistingTables: ["vehicle_types"],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Vehicle types are referenced by registered vehicles.",
+              "Vehicle types are referenced during gate validation.",
+              "Vehicle types are used by parking pricing configuration.",
+              "Vehicle type status determines whether new vehicle registrations are allowed."
+            ],
+            validationRules: [
+              { field: "name", rule: "Required, non-empty, unique across the system", errorMessage: "VALIDATION_FAILED" },
+              { field: "status", rule: "Must be a valid system status", errorMessage: "VALIDATION_FAILED" }
+            ],
+            securityRules: [
+              "Validate JWT.",
+              "Require Admin or Manager role.",
+              "Only Admin can delete vehicle types.",
+              "Prevent unauthorized access.",
+              "Use global exception handling.",
+              "Prevent stack trace leakage."
+            ],
+            logEvents: [
+              "Vehicle type created.",
+              "Vehicle type updated.",
+              "Vehicle type activated/deactivated.",
+              "Vehicle type deleted.",
+              "Log request access, inputs, duration, and response code."
+            ],
+            noLogEvents: [
+              "Passwords.",
+              "Access tokens.",
+              "Refresh tokens.",
+              "Credit card details."
+            ],
+            integrationPoints: [
+              { system: "Shared PostgreSQL database", responsibility: "Store vehicle types and track status." },
+              { system: "Vehicle Registration module", responsibility: "Reference vehicle types for new registrations." },
+              { system: "Gate Recognition / Validation module", responsibility: "Use vehicle types to validate vehicle entry/exit." },
+              { system: "Pricing Management module", responsibility: "Configure pricing rules per vehicle type." },
+              { system: "Audit Logging module", responsibility: "Record administrative mutating operations." }
+            ],
+            uiPage: "/admin/vehicle-types",
+            uiComponents: "Vehicle Type Table, Search Input, Status Filter, Create/Edit Dialog, Pagination.",
+            uiStateLoading: "Display loading indicator while retrieving data.",
+            uiStateEmpty: "Show 'No vehicle types found.'",
+            uiStateError: "Display validation or authorization error messages.",
+            uiStateSuccess: "Refresh list after successful CRUD operations.",
             endpoints: [
               "GET /api/core/vehicle-types",
               "GET /api/core/vehicle-types/{id}",
@@ -2398,9 +2473,115 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
               "DELETE /api/core/vehicle-types/{id}"
             ],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("GET /api/core/vehicle-types"),
-            testCases: defaultApiTests("Vehicle Type Management", ["Manager"], ["GET /api/core/vehicle-types"]),
-            doneCriteria: defaultDoneCriteria("Vehicle Type Management")
+            apiContracts: [
+              {
+                id: "contract-get-vehicle-types",
+                name: "GET /api/core/vehicle-types",
+                content: "Method: GET\nPath: /api/core/vehicle-types\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER\nQuery Parameters:\n  - keyword: string (optional)\n  - status: string (optional)\n  - page: int (default 1)\n  - pageSize: int (default 20, max 100)\n\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"Get vehicle types successfully\",\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": 1,\n        \"name\": \"Car\",\n        \"description\": \"Four-wheel passenger vehicle\",\n        \"status\": \"ACTIVE\"\n      },\n      {\n        \"id\": 2,\n        \"name\": \"Motorbike\",\n        \"description\": \"Two-wheel vehicle\",\n        \"status\": \"ACTIVE\"\n      }\n    ],\n    \"page\": 1,\n    \"pageSize\": 20,\n    \"totalItems\": 2,\n    \"totalPages\": 1\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:20:00+07:00\"\n}"
+              },
+              {
+                id: "contract-get-vehicle-types-id",
+                name: "GET /api/core/vehicle-types/{id}",
+                content: "Method: GET\nPath: /api/core/vehicle-types/{id}\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER"
+              },
+              {
+                id: "contract-post-vehicle-types",
+                name: "POST /api/core/vehicle-types",
+                content: "Method: POST\nPath: /api/core/vehicle-types\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER\nValidation:\n  - Name is required.\n  - Name must be unique."
+              },
+              {
+                id: "contract-put-vehicle-types-id",
+                name: "PUT /api/core/vehicle-types/{id}",
+                content: "Method: PUT\nPath: /api/core/vehicle-types/{id}\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER"
+              },
+              {
+                id: "contract-patch-vehicle-types-id-active",
+                name: "PATCH /api/core/vehicle-types/{id}/active",
+                content: "Method: PATCH\nPath: /api/core/vehicle-types/{id}/active\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER"
+              },
+              {
+                id: "contract-delete-vehicle-types-id",
+                name: "DELETE /api/core/vehicle-types/{id}",
+                content: "Method: DELETE\nPath: /api/core/vehicle-types/{id}\nAuth:\n  JWT required\nRole:\n  ADMIN only\nBusiness Rules:\n  - Cannot delete vehicle type currently referenced by other entities.\n  - Audit log must be recorded."
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-vehicle-type-create-admin",
+                title: "Admin can create vehicle type",
+                type: "api",
+                expectedResult: "Vehicle type created successfully.",
+                status: "not_started"
+              },
+              {
+                id: "tc-vehicle-type-create-manager",
+                title: "Manager can create vehicle type",
+                type: "api",
+                expectedResult: "Vehicle type created successfully.",
+                status: "not_started"
+              },
+              {
+                id: "tc-vehicle-type-name-unique",
+                title: "Vehicle type name must be unique",
+                type: "api",
+                expectedResult: "Duplicate name returns validation error.",
+                status: "not_started"
+              },
+              {
+                id: "tc-vehicle-type-name-empty",
+                title: "Vehicle type name cannot be empty",
+                type: "api",
+                expectedResult: "Validation error returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-vehicle-type-update-manager",
+                title: "Manager can update vehicle type",
+                type: "api",
+                expectedResult: "Vehicle type updated successfully.",
+                status: "not_started"
+              },
+              {
+                id: "tc-vehicle-type-delete-manager",
+                title: "Manager cannot delete vehicle type",
+                type: "api",
+                expectedResult: "Status 403 Forbidden.",
+                status: "not_started"
+              },
+              {
+                id: "tc-vehicle-type-delete-admin-unused",
+                title: "Admin can delete unused vehicle type",
+                type: "api",
+                expectedResult: "Vehicle type deleted successfully.",
+                status: "not_started"
+              },
+              {
+                id: "tc-vehicle-type-delete-admin-referenced",
+                title: "Admin cannot delete referenced vehicle type",
+                type: "api",
+                expectedResult: "Business validation error returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-vehicle-type-anonymous",
+                title: "Anonymous cannot access Vehicle Type Management",
+                type: "api",
+                expectedResult: "Status 401 Unauthorized.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-vehicle-type-crud", content: "CRUD APIs for vehicle types are implemented.", checked: false },
+              { id: "dc-vehicle-type-unique", content: "Vehicle type name is unique.", checked: false },
+              { id: "dc-vehicle-type-nonempty", content: "Vehicle type name cannot be empty.", checked: false },
+              { id: "dc-vehicle-type-status", content: "Vehicle type operational status is maintained.", checked: false },
+              { id: "dc-vehicle-type-admin-crud", content: "Admin has full CRUD permissions.", checked: false },
+              { id: "dc-vehicle-type-manager-permissions", content: "Manager has Create, Read, and Update permissions only.", checked: false },
+              { id: "dc-vehicle-type-delete-audit", content: "Delete operation records audit logs.", checked: false },
+              { id: "dc-vehicle-type-delete-referenced", content: "Delete operation prevents removal of referenced vehicle types.", checked: false },
+              { id: "dc-vehicle-type-jwt", content: "All APIs require JWT authentication.", checked: false },
+              { id: "dc-vehicle-type-common-response", content: "Response uses common API response format.", checked: false }
+            ]
           }
         ]
       },
@@ -2417,77 +2598,1085 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Floor Management",
             type: "leaf_feature",
             clients: ["Manager", "Admin"],
+            status: "draft",
+            priority: "medium",
+            tags: ["floor", "structure"],
+            summary: "Manage the physical levels/floors within the parking structure, establishing the foundational layout for spatial organization and capacity tracking.\n\nThis feature allows Managers and Admins to configure floor details (e.g., Floor Name/Number, Max Capacity, Vehicle Type Restrictions). It serves as the top-level container in the parking inventory hierarchy.",
+            objective: "Implement CRUD APIs and UI for managing levels/floors in a parking building in the .NET Core API, enforcing uniqueness constraints and status tracking, with audit logs.",
+            inScope: [
+              "Design CRUD UI and forms for floor configurations",
+              "Build RESTful APIs in .NET Core to persist floor metadata",
+              "Validate that floor numbers and floor names are unique within the building",
+              "Configure floor information including Floor Name/Number, Maximum Capacity, and Vehicle Type Restrictions",
+              "Record audit logs for every floor configuration mutation into the dedicated audit schema"
+            ],
+            outOfScope: [
+              "Direct drawing or visual mapping of floor layouts (handled by CAD/GIS integration if needed later)"
+            ],
+            permissions: [
+              { role: "Admin", permission: "Full access to Create, Read, Update, and Delete floor configurations." },
+              { role: "Manager", permission: "Full access to Create, Read, Update, and Delete floor configurations." },
+              { role: "Staff", permission: "No access." },
+              { role: "Driver", permission: "No access." },
+              { role: "Anonymous", permission: "No access." }
+            ],
+            businessRules: [
+              "Floor names and floor numbers must be unique within the parking building.",
+              "Each floor represents the highest level of the parking structure hierarchy.",
+              "Floor capacity is used for operational monitoring and future parking allocation logic.",
+              "Vehicle type restrictions determine which vehicle categories are permitted on each floor."
+            ],
+            dbExistingTables: ["floors"],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "One floor contains multiple parking zones.",
+              "Floor metadata is referenced by parking slots.",
+              "Floor capacity contributes to overall parking capacity reporting.",
+              "Vehicle type restrictions are validated during parking slot assignment."
+            ],
+            validationRules: [
+              { field: "floorName", rule: "Required, unique within the building", errorMessage: "VALIDATION_FAILED" },
+              { field: "floorNumber", rule: "Required, unique within the building", errorMessage: "VALIDATION_FAILED" },
+              { field: "maxCapacity", rule: "Must be greater than zero", errorMessage: "VALIDATION_FAILED" },
+              { field: "vehicleTypeRestrictions", rule: "Must reference existing vehicle types", errorMessage: "VALIDATION_FAILED" }
+            ],
+            securityRules: [
+              "Validate JWT.",
+              "Require Admin or Manager role.",
+              "Prevent unauthorized access.",
+              "Use global exception handling.",
+              "Prevent stack trace leakage."
+            ],
+            logEvents: [
+              "Floor created.",
+              "Floor updated.",
+              "Floor deleted.",
+              "Floor capacity modified.",
+              "Vehicle type restriction modified.",
+              "Log request access, inputs, duration, and response code."
+            ],
+            noLogEvents: [
+              "Passwords.",
+              "Access tokens.",
+              "Refresh tokens.",
+              "Credit card details."
+            ],
+            integrationPoints: [
+              { system: "Shared PostgreSQL database", responsibility: "Persist floors and validate constraints." },
+              { system: "Parking Zone Management module", responsibility: "Link zones to their parent floors." },
+              { system: "Parking Slot Management module", responsibility: "Reference parent floors for slot constraints." },
+              { system: "Vehicle Type Management module", responsibility: "Validate vehicle type restrictions on floors." },
+              { system: "Audit Logging module", responsibility: "Record mutating events for floors." }
+            ],
+            uiPage: "/admin/floors",
+            uiComponents: "Floor Table, Search Input, Create/Edit Dialog, Capacity Input, Vehicle Type Restriction Selector, Pagination.",
+            uiStateLoading: "Display loading indicator while retrieving floor data.",
+            uiStateEmpty: "Show 'No floors configured.'",
+            uiStateError: "Display validation or authorization errors.",
+            uiStateSuccess: "Refresh floor list after successful CRUD operations.",
             endpoints: [
               "GET /api/core/floors",
+              "GET /api/core/floors/{id}",
               "POST /api/core/floors",
-              "PUT /api/core/floors/{id}"
+              "PUT /api/core/floors/{id}",
+              "DELETE /api/core/floors/{id}"
             ],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/floors"),
-            testCases: defaultApiTests("Floor Management", ["Manager"], ["POST /api/core/floors"]),
-            doneCriteria: defaultDoneCriteria("Floor Management")
+            apiContracts: [
+              {
+                id: "contract-get-floors",
+                name: "GET /api/core/floors",
+                content: "Method: GET\nPath: /api/core/floors\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER\nQuery Parameters:\n  - keyword: string (optional)\n  - page: int (default 1)\n  - pageSize: int (default 20)\n\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"Get floors successfully\",\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": 1,\n        \"floorName\": \"B1\",\n        \"floorNumber\": -1,\n        \"maxCapacity\": 200,\n        \"vehicleTypeRestrictions\": [\"Car\",\"Motorbike\"]\n      }\n    ]\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:20:00+07:00\"\n}"
+              },
+              {
+                id: "contract-get-floors-id",
+                name: "GET /api/core/floors/{id}",
+                content: "Method: GET\nPath: /api/core/floors/{id}\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER"
+              },
+              {
+                id: "contract-post-floors",
+                name: "POST /api/core/floors",
+                content: "Method: POST\nPath: /api/core/floors\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER\nValidation:\n  - Floor name is required.\n  - Floor number is required.\n  - Floor name must be unique.\n  - Floor number must be unique."
+              },
+              {
+                id: "contract-put-floors-id",
+                name: "PUT /api/core/floors/{id}",
+                content: "Method: PUT\nPath: /api/core/floors/{id}\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER"
+              },
+              {
+                id: "contract-delete-floors-id",
+                name: "DELETE /api/core/floors/{id}",
+                content: "Method: DELETE\nPath: /api/core/floors/{id}\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER\nBusiness Rules:\n  - Prevent deletion when dependent parking zones or slots exist.\n  - Audit log must be recorded."
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-floor-create-admin",
+                title: "Admin can create a floor",
+                type: "api",
+                expectedResult: "Floor is created successfully.",
+                status: "not_started"
+              },
+              {
+                id: "tc-floor-create-manager",
+                title: "Manager can create a floor",
+                type: "api",
+                expectedResult: "Floor is created successfully.",
+                status: "not_started"
+              },
+              {
+                id: "tc-floor-name-unique",
+                title: "Floor name must be unique",
+                type: "api",
+                expectedResult: "Duplicate floor name returns validation error.",
+                status: "not_started"
+              },
+              {
+                id: "tc-floor-number-unique",
+                title: "Floor number must be unique",
+                type: "api",
+                expectedResult: "Duplicate floor number returns validation error.",
+                status: "not_started"
+              },
+              {
+                id: "tc-floor-capacity-positive",
+                title: "Maximum capacity must be greater than zero",
+                type: "api",
+                expectedResult: "Validation error is returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-floor-update-manager",
+                title: "Manager can update floor information",
+                type: "api",
+                expectedResult: "Floor information is updated successfully.",
+                status: "not_started"
+              },
+              {
+                id: "tc-floor-delete-dependent",
+                title: "Cannot delete floor containing parking zones",
+                type: "api",
+                expectedResult: "Business validation error is returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-floor-anonymous",
+                title: "Anonymous cannot access Floor Management",
+                type: "api",
+                expectedResult: "Status 401 Unauthorized.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-floor-crud", content: "CRUD APIs for floor management are implemented.", checked: false },
+              { id: "dc-floor-name-unique", content: "Floor names are unique within the building.", checked: false },
+              { id: "dc-floor-number-unique", content: "Floor numbers are unique within the building.", checked: false },
+              { id: "dc-floor-capacity-configurable", content: "Maximum capacity is configurable.", checked: false },
+              { id: "dc-floor-restrictions-configurable", content: "Vehicle type restrictions are configurable.", checked: false },
+              { id: "dc-floor-audit-logs", content: "Audit logs are generated for all floor mutations.", checked: false },
+              { id: "dc-floor-permissions", content: "Admin and Manager have access to all floor management functions.", checked: false },
+              { id: "dc-floor-jwt", content: "All APIs require JWT authentication.", checked: false },
+              { id: "dc-floor-common-response", content: "Responses use the common API response format.", checked: false },
+              { id: "dc-floor-delete-rules", content: "Business rules prevent deleting floors with dependent entities.", checked: false }
+            ]
           },
           {
             id: "leaf-struct-area",
             title: "Area Management",
             type: "leaf_feature",
             clients: ["Manager", "Admin"],
+            status: "draft",
+            priority: "medium",
+            tags: ["area", "structure"],
+            summary: "Divide each floor into distinct zones or sections (e.g., Zone A, VIP Area, Electric Vehicle Charging Zone) to optimize traffic flow and permit specialized parking rules.\n\nThis feature enables Managers and Admins to partition parking floors into manageable operational areas. Each area belongs to a parent floor and may inherit or define its own operational properties such as total parking slots and allowed vehicle categories.",
+            objective: "Implement CRUD APIs and UI components to partition floors into operational areas in .NET Core API and React, persisting Floor-Area relationships and allowed vehicle categories.",
+            inScope: [
+              "Design CRUD UI components for managing parking areas",
+              "Allow assigning each area to a specific floor",
+              "Build RESTful APIs using .NET Core to manage area information and relationships",
+              "Store area metadata and Floor–Area relationships in the shared PostgreSQL database",
+              "Configure area properties including area name, parent floor, total slots, and allowed vehicle categories",
+              "Record all create, update, and delete operations in the dedicated audit schema"
+            ],
+            outOfScope: [
+              "Dynamic resizing or automatic adjustment of parking areas based on real-time occupancy (areas remain statically configured by managers)"
+            ],
+            permissions: [
+              { role: "Admin", permission: "Full access to Create, Read, Update, and Delete parking areas." },
+              { role: "Manager", permission: "Full access to Create, Read, Update, and Delete parking areas." },
+              { role: "Staff", permission: "No access." },
+              { role: "Driver", permission: "No access." },
+              { role: "Anonymous", permission: "No access." }
+            ],
+            businessRules: [
+              "Every area must belong to exactly one floor.",
+              "Area names must be unique within the same floor.",
+              "Vehicle category restrictions defined for an area must reference existing vehicle types.",
+              "Areas are used to organize parking slots and support traffic management."
+            ],
+            dbExistingTables: ["floors", "areas"],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "One floor can contain multiple areas.",
+              "Each area belongs to exactly one floor.",
+              "One area contains multiple parking slots.",
+              "Allowed vehicle categories reference the Vehicle Type master data."
+            ],
+            validationRules: [
+              { field: "name", rule: "Required, unique within the selected floor", errorMessage: "VALIDATION_FAILED" },
+              { field: "floorId", rule: "Required, must reference an existing floor", errorMessage: "VALIDATION_FAILED" },
+              { field: "totalSlots", rule: "Cannot be negative", errorMessage: "VALIDATION_FAILED" },
+              { field: "allowedVehicleTypes", rule: "Must reference existing vehicle types", errorMessage: "VALIDATION_FAILED" }
+            ],
+            securityRules: [
+              "Validate JWT.",
+              "Require Admin or Manager role.",
+              "Prevent unauthorized access.",
+              "Use global exception handling.",
+              "Prevent stack trace leakage."
+            ],
+            logEvents: [
+              "Area created.",
+              "Area updated.",
+              "Area deleted.",
+              "Parent floor changed.",
+              "Allowed vehicle categories modified.",
+              "Log request access, inputs, duration, and response code."
+            ],
+            noLogEvents: [
+              "Passwords.",
+              "Access tokens.",
+              "Refresh tokens.",
+              "Credit card details."
+            ],
+            integrationPoints: [
+              { system: "Shared PostgreSQL database", responsibility: "Store areas, floors, and relation constraints." },
+              { system: "Floor Management module", responsibility: "Provide floors as parent containers." },
+              { system: "Parking Slot Management module", responsibility: "Organize slots under their respective areas." },
+              { system: "Vehicle Type Management module", responsibility: "Validate allowed vehicle types for area configuration." },
+              { system: "Audit Logging module", responsibility: "Record administrative mutating events." }
+            ],
+            uiPage: "/admin/areas",
+            uiComponents: "Area Table, Search Input, Floor Filter Dropdown, Create/Edit Dialog, Vehicle Type Selector, Pagination.",
+            uiStateLoading: "Display loading indicator while retrieving areas.",
+            uiStateEmpty: "Show 'No parking areas configured.'",
+            uiStateError: "Display validation or authorization error messages.",
+            uiStateSuccess: "Refresh the area list after successful CRUD operations.",
             endpoints: [
               "GET /api/core/areas",
+              "GET /api/core/areas/{id}",
               "POST /api/core/areas",
-              "PUT /api/core/areas/{id}"
+              "PUT /api/core/areas/{id}",
+              "DELETE /api/core/areas/{id}"
             ],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/areas"),
-            testCases: defaultApiTests("Area Management", ["Manager"], ["POST /api/core/areas"]),
-            doneCriteria: defaultDoneCriteria("Area Management")
+            apiContracts: [
+              {
+                id: "contract-get-areas",
+                name: "GET /api/core/areas",
+                content: "Method: GET\nPath: /api/core/areas\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER\nQuery Parameters:\n  - keyword: string (optional)\n  - floorId: int (optional)\n  - page: int (default 1)\n  - pageSize: int (default 20)\n\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"Get areas successfully\",\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": 1,\n        \"name\": \"Zone A\",\n        \"floorId\": 2,\n        \"floorName\": \"B1\",\n        \"totalSlots\": 120,\n        \"allowedVehicleTypes\": [\n          \"Car\",\n          \"Motorbike\"\n        ]\n      }\n    ],\n    \"page\": 1,\n    \"pageSize\": 20,\n    \"totalItems\": 1,\n    \"totalPages\": 1\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:20:00+07:00\"\n}"
+              },
+              {
+                id: "contract-get-areas-id",
+                name: "GET /api/core/areas/{id}",
+                content: "Method: GET\nPath: /api/core/areas/{id}\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER"
+              },
+              {
+                id: "contract-post-areas",
+                name: "POST /api/core/areas",
+                content: "Method: POST\nPath: /api/core/areas\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER\nValidation:\n  - Area name is required.\n  - Parent floor is required.\n  - Area name must be unique within the selected floor."
+              },
+              {
+                id: "contract-put-areas-id",
+                name: "PUT /api/core/areas/{id}",
+                content: "Method: PUT\nPath: /api/core/areas/{id}\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER"
+              },
+              {
+                id: "contract-delete-areas-id",
+                name: "DELETE /api/core/areas/{id}",
+                content: "Method: DELETE\nPath: /api/core/areas/{id}\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER\nBusiness Rules:\n  - Cannot delete an area containing parking slots.\n  - Audit log must be recorded."
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-area-create-admin",
+                title: "Admin can create a parking area",
+                type: "api",
+                expectedResult: "Area is created successfully.",
+                status: "not_started"
+              },
+              {
+                id: "tc-area-create-manager",
+                title: "Manager can create a parking area",
+                type: "api",
+                expectedResult: "Area is created successfully.",
+                status: "not_started"
+              },
+              {
+                id: "tc-area-valid-floor",
+                title: "Area must belong to a valid floor",
+                type: "api",
+                expectedResult: "Validation error is returned if floor does not exist.",
+                status: "not_started"
+              },
+              {
+                id: "tc-area-name-unique",
+                title: "Area name must be unique within the same floor",
+                type: "api",
+                expectedResult: "Duplicate area name returns validation error.",
+                status: "not_started"
+              },
+              {
+                id: "tc-area-update-manager",
+                title: "Manager can update area information",
+                type: "api",
+                expectedResult: "Area is updated successfully.",
+                status: "not_started"
+              },
+              {
+                id: "tc-area-delete-dependent",
+                title: "Cannot delete an area containing parking slots",
+                type: "api",
+                expectedResult: "Business validation error is returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-area-anonymous",
+                title: "Anonymous cannot access Area Management",
+                type: "api",
+                expectedResult: "Status 401 Unauthorized.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-area-crud", content: "CRUD APIs for area management are implemented.", checked: false },
+              { id: "dc-area-valid-floor", content: "Each area belongs to a valid floor.", checked: false },
+              { id: "dc-area-name-unique", content: "Area names are unique within each floor.", checked: false },
+              { id: "dc-area-floor-relation", content: "Floor–Area relationships are persisted in PostgreSQL.", checked: false },
+              { id: "dc-area-vehicles-configurable", content: "Allowed vehicle categories are configurable.", checked: false },
+              { id: "dc-area-audit-logs", content: "Audit logs are generated for all area mutations.", checked: false },
+              { id: "dc-area-permissions", content: "Admin and Manager have access to all area management functions.", checked: false },
+              { id: "dc-area-jwt", content: "All APIs require JWT authentication.", checked: false },
+              { id: "dc-area-common-response", content: "Responses use the common API response format.", checked: false },
+              { id: "dc-area-delete-rules", content: "Business rules prevent deleting areas containing parking slots.", checked: false }
+            ]
           },
           {
             id: "leaf-struct-slot",
             title: "Slot Management",
             type: "leaf_feature",
             clients: ["Manager", "Admin"],
+            status: "draft",
+            priority: "medium",
+            tags: ["slot", "structure"],
+            summary: "Define and manage individual physical parking slots within an area, enabling precise inventory tracking and state management.\n\nThis feature manages the lowest level of the parking structure hierarchy: individual parking slots. Each slot contains a unique slot identifier, slot type (Standard, Compact, EV, Disabled), operational status, and is associated with a parent parking area. Slots can also be linked to physical sensors or status flags for future integration with the parking monitoring system.",
+            objective: "Implement CRUD APIs and management dashboard UI for individual parking slots in the .NET Core API and React, with status override support and audit logs.",
+            inScope: [
+              "Design CRUD management dashboard and forms for parking slots",
+              "Build RESTful APIs using .NET Core to manage slot information",
+              "Configure slot metadata including slot identifier, slot type, operational status, and parent area",
+              "Validate that slot identifiers are unique within the same parking area",
+              "Implement PostgreSQL schema supporting slot statuses: Available, Occupied, Reserved, Maintenance",
+              "Record audit logs whenever managers manually override slot status or modify slot information"
+            ],
+            outOfScope: [
+              "Managing parking sensor firmware",
+              "Processing raw IoT telemetry or hardware communication directly (handled by the external IoT Broker/Gateway)"
+            ],
+            permissions: [
+              { role: "Admin", permission: "Full access to Create, Read, Update, Delete, and manually change slot status." },
+              { role: "Manager", permission: "Full access to Create, Read, Update, Delete, and manually change slot status." },
+              { role: "Staff", permission: "No access." },
+              { role: "Driver", permission: "No access." },
+              { role: "Anonymous", permission: "No access." }
+            ],
+            businessRules: [
+              "Every slot must belong to exactly one parking area.",
+              "Slot identifiers must be unique within the same parking area.",
+              "Slot types must reference predefined supported parking slot categories.",
+              "Slot status must always be one of: Available, Occupied, Reserved, or Maintenance.",
+              "Manual status overrides performed by managers or admins must be audit logged."
+            ],
+            dbExistingTables: ["areas", "slots"],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "One area contains multiple parking slots.",
+              "Each parking slot belongs to exactly one parking area.",
+              "Slot status is stored in PostgreSQL.",
+              "Slot type references predefined parking slot categories.",
+              "Slot records may be associated with physical sensor identifiers for future IoT integration."
+            ],
+            validationRules: [
+              { field: "slotCode", rule: "Required, unique within the same area", errorMessage: "VALIDATION_FAILED" },
+              { field: "areaId", rule: "Required, must reference existing parking area", errorMessage: "VALIDATION_FAILED" },
+              { field: "slotType", rule: "Required, must reference valid category", errorMessage: "VALIDATION_FAILED" },
+              { field: "status", rule: "Must be one of: AVAILABLE, OCCUPIED, RESERVED, MAINTENANCE", errorMessage: "VALIDATION_FAILED" }
+            ],
+            securityRules: [
+              "Validate JWT.",
+              "Require Admin or Manager role.",
+              "Prevent unauthorized access.",
+              "Use global exception handling.",
+              "Prevent stack trace leakage."
+            ],
+            logEvents: [
+              "Parking slot created.",
+              "Parking slot updated.",
+              "Parking slot deleted.",
+              "Manual slot status override.",
+              "Slot type changed.",
+              "Log request access, inputs, duration, and response code."
+            ],
+            noLogEvents: [
+              "Passwords.",
+              "Access tokens.",
+              "Refresh tokens.",
+              "Credit card details."
+            ],
+            integrationPoints: [
+              { system: "Shared PostgreSQL database", responsibility: "Persist parking slots and validate unique constraints." },
+              { system: "Area Management module", responsibility: "Provide parent area contexts for slots." },
+              { system: "Parking Session Management module", responsibility: "Allocate slots to active sessions and track occupancy." },
+              { system: "IoT Broker / Gateway", responsibility: "Support future sensor integration for real-time status updates." },
+              { system: "Audit Logging module", responsibility: "Record manual status overrides and configuration mutations." }
+            ],
+            uiPage: "/admin/slots",
+            uiComponents: "Slot Table, Search Input, Area Filter, Status Filter, Slot Type Filter, Create/Edit Dialog, Pagination.",
+            uiStateLoading: "Display loading indicator while retrieving parking slots.",
+            uiStateEmpty: "Show 'No parking slots configured.'",
+            uiStateError: "Display validation or authorization errors.",
+            uiStateSuccess: "Refresh slot list after successful CRUD operations or status updates.",
             endpoints: [
               "GET /api/core/slots",
+              "GET /api/core/slots/{id}",
               "POST /api/core/slots",
-              "PATCH /api/core/slots/{id}/status"
+              "PUT /api/core/slots/{id}",
+              "PATCH /api/core/slots/{id}/status",
+              "DELETE /api/core/slots/{id}"
             ],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/slots"),
-            testCases: defaultApiTests("Slot Management", ["Manager"], ["GET /api/core/slots"]),
-            doneCriteria: defaultDoneCriteria("Slot Management")
+            apiContracts: [
+              {
+                id: "contract-get-slots",
+                name: "GET /api/core/slots",
+                content: "Method: GET\nPath: /api/core/slots\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER\nQuery Parameters:\n  - keyword: string (optional)\n  - areaId: int (optional)\n  - status: string (optional)\n  - slotType: string (optional)\n  - page: int (default 1)\n  - pageSize: int (default 20)\n\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"Get parking slots successfully\",\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": 15,\n        \"slotCode\": \"A1-001\",\n        \"areaId\": 2,\n        \"areaName\": \"Zone A\",\n        \"slotType\": \"STANDARD\",\n        \"status\": \"AVAILABLE\"\n      }\n    ],\n    \"page\": 1,\n    \"pageSize\": 20,\n    \"totalItems\": 1,\n    \"totalPages\": 1\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:20:00+07:00\"\n}"
+              },
+              {
+                id: "contract-get-slots-id",
+                name: "GET /api/core/slots/{id}",
+                content: "Method: GET\nPath: /api/core/slots/{id}\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER"
+              },
+              {
+                id: "contract-post-slots",
+                name: "POST /api/core/slots",
+                content: "Method: POST\nPath: /api/core/slots\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER\nValidation:\n  - Slot code is required.\n  - Parent area is required.\n  - Slot code must be unique within the selected area.\n  - Slot type is required."
+              },
+              {
+                id: "contract-put-slots-id",
+                name: "PUT /api/core/slots/{id}",
+                content: "Method: PUT\nPath: /api/core/slots/{id}\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER"
+              },
+              {
+                id: "contract-patch-slots-id-status",
+                name: "PATCH /api/core/slots/{id}/status",
+                content: "Method: PATCH\nPath: /api/core/slots/{id}/status\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER\nBusiness Rules:\n  - Allowed statuses: AVAILABLE, OCCUPIED, RESERVED, MAINTENANCE\n  - Manual override must be audit logged."
+              },
+              {
+                id: "contract-delete-slots-id",
+                name: "DELETE /api/core/slots/{id}",
+                content: "Method: DELETE\nPath: /api/core/slots/{id}\nAuth:\n  JWT required\nRole:\n  ADMIN, MANAGER\nBusiness Rules:\n  - Cannot delete a slot currently occupied.\n  - Audit log must be recorded."
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-slot-create-admin",
+                title: "Admin can create a parking slot",
+                type: "api",
+                expectedResult: "Slot is created successfully.",
+                status: "not_started"
+              },
+              {
+                id: "tc-slot-create-manager",
+                title: "Manager can create a parking slot",
+                type: "api",
+                expectedResult: "Slot is created successfully.",
+                status: "not_started"
+              },
+              {
+                id: "tc-slot-code-unique",
+                title: "Slot identifier must be unique within the same area",
+                type: "api",
+                expectedResult: "Duplicate slot identifier returns validation error.",
+                status: "not_started"
+              },
+              {
+                id: "tc-slot-require-area",
+                title: "Slot cannot be created without parent area",
+                type: "api",
+                expectedResult: "Validation error is returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-slot-override-status",
+                title: "Manager can manually update slot status",
+                type: "api",
+                expectedResult: "Slot status is updated successfully and audit log is generated.",
+                status: "not_started"
+              },
+              {
+                id: "tc-slot-status-invalid",
+                title: "Invalid slot status returns validation error",
+                type: "api",
+                expectedResult: "Request is rejected.",
+                status: "not_started"
+              },
+              {
+                id: "tc-slot-delete-occupied",
+                title: "Cannot delete occupied slot",
+                type: "api",
+                expectedResult: "Business validation error is returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-slot-anonymous",
+                title: "Anonymous cannot access Slot Management",
+                type: "api",
+                expectedResult: "Status 401 Unauthorized.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-slot-crud", content: "CRUD APIs for parking slots are implemented.", checked: false },
+              { id: "dc-slot-code-unique", content: "Slot identifiers are unique within each parking area.", checked: false },
+              { id: "dc-slot-valid-area", content: "Every slot belongs to a valid parking area.", checked: false },
+              { id: "dc-slot-type-configurable", content: "Slot types are configurable.", checked: false },
+              { id: "dc-slot-status-supported", content: "Slot statuses (Available, Occupied, Reserved, Maintenance) are supported.", checked: false },
+              { id: "dc-slot-override-audit", content: "Manual status overrides generate audit logs.", checked: false },
+              { id: "dc-slot-permissions", content: "Admin and Manager have access to all slot management functions.", checked: false },
+              { id: "dc-slot-jwt", content: "All APIs require JWT authentication.", checked: false },
+              { id: "dc-slot-common-response", content: "Responses use the common API response format.", checked: false },
+              { id: "dc-slot-delete-rules", content: "Business rules prevent deleting occupied parking slots.", checked: false }
+            ]
           },
           {
             id: "leaf-struct-gate",
             title: "Gate Read Model",
             type: "leaf_feature",
             clients: ["Staff", "Manager", "Admin"],
-            endpoints: [],
+            status: "draft",
+            priority: "medium",
+            tags: ["gate", "structure", "read-model"],
+            summary: "Provide a highly optimized, read-only data model representing gate statuses and recent barrier events to ensure smooth monitoring at entry/exit points.\n\nThis feature materializes and serves real-time entry and exit gate data for Staff, Managers, and Admins. It enables monitoring dashboards to retrieve gate hardware availability, operational status, and recent gate event history without impacting the transactional database.",
+            objective: "Implement optimized read-only APIs for gate monitoring and event tracking in the Spring Boot Support API, sourcing and synchronizing statuses asynchronously from event streams.",
+            inScope: [
+              "Develop optimized read-only REST APIs using the Spring Boot Support API",
+              "Build read models for gate status and recent gate event history",
+              "Listen to entry and exit event streams to update gate status in near real-time",
+              "Implement JWT-based authentication and authorization for Staff, Manager, and Admin roles",
+              "Support efficient querying for monitoring dashboards without affecting transactional workloads"
+            ],
+            outOfScope: [
+              "Triggering physical gate open/close commands",
+              "Direct communication with gate hardware controllers",
+              "Processing transactional parking operations handled by the .NET Core API"
+            ],
+            permissions: [
+              { role: "Admin", permission: "View all gate statuses and event history." },
+              { role: "Manager", permission: "View all gate statuses and event history." },
+              { role: "Staff", permission: "View all gate statuses and event history." },
+              { role: "Driver", permission: "No access." },
+              { role: "Anonymous", permission: "No access." }
+            ],
+            businessRules: [
+              "Read APIs must not modify transactional data.",
+              "Gate status should be updated asynchronously from entry and exit event streams.",
+              "Read models should be optimized for dashboard queries and monitoring performance.",
+              "Event history is read-only and sourced from transactional events."
+            ],
+            dbExistingTables: ["gates", "gate_events"],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "One gate has many gate events.",
+              "Gate event history is generated from transactional parking events.",
+              "Read model is synchronized asynchronously from transactional data."
+            ],
+            validationRules: [
+              { field: "gateId", rule: "Must reference valid gate", errorMessage: "VALIDATION_FAILED" },
+              { field: "eventType", rule: "Must reference valid event category", errorMessage: "VALIDATION_FAILED" }
+            ],
+            securityRules: [
+              "Validate JWT.",
+              "Require Staff, Manager, or Admin role.",
+              "Prevent unauthorized access.",
+              "Read-only APIs must not expose administrative operations.",
+              "Use global exception handling.",
+              "Prevent stack trace leakage."
+            ],
+            logEvents: [
+              "API request access.",
+              "Query execution duration.",
+              "Response status codes.",
+              "Authentication failures."
+            ],
+            noLogEvents: [
+              "Passwords.",
+              "Access tokens.",
+              "Refresh tokens.",
+              "Personal payment information."
+            ],
+            integrationPoints: [
+              { system: "Spring Boot Support API", responsibility: "Expose gate status and event read APIs." },
+              { system: ".NET Core API event stream", responsibility: "Publish gate status/event messages." },
+              { system: "PostgreSQL Read Model", responsibility: "Maintain materialized view of gates." },
+              { system: "Gate Event Stream", responsibility: "Deliver real-time gate entry/exit events." },
+              { system: "Monitoring Dashboard", responsibility: "Consume gate read model APIs." }
+            ],
+            uiPage: "/monitor/gates",
+            uiComponents: "Gate Status Cards, Gate Status Table, Event History Table, Search Box, Status Filter, Time Range Filter.",
+            uiStateLoading: "Display loading indicator while fetching gate data.",
+            uiStateEmpty: "Display \"No gate data available.\"",
+            uiStateError: "Display authorization or service unavailable messages.",
+            uiStateSuccess: "Automatically refresh gate statuses and event history.",
+            endpoints: [
+              "GET /api/support/gates",
+              "GET /api/support/gates/{id}",
+              "GET /api/support/gates/events",
+              "GET /api/support/gates/events/{id}"
+            ],
             ownerService: "Spring Boot Support API",
-            testCases: defaultApiTests("Gate Read Model", ["Staff"], []),
-            doneCriteria: defaultDoneCriteria("Gate Read Model")
+            apiContracts: [
+              {
+                id: "contract-get-support-gates",
+                name: "GET /api/support/gates",
+                content: "Method: GET\nPath: /api/support/gates\nAuth:\n  JWT required\nRole:\n  STAFF, MANAGER, ADMIN\nQuery Parameters:\n  - keyword: string (optional)\n  - gateType: string (optional)\n  - status: string (optional)\n\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"Get gate status successfully\",\n  \"data\": [\n    {\n      \"id\": 1,\n      \"gateName\": \"Entrance Gate A\",\n      \"gateType\": \"ENTRY\",\n      \"status\": \"ONLINE\",\n      \"lastUpdated\": \"2026-07-05T17:20:00+07:00\"\n    }\n  ],\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:20:00+07:00\"\n}"
+              },
+              {
+                id: "contract-get-support-gates-id",
+                name: "GET /api/support/gates/{id}",
+                content: "Method: GET\nPath: /api/support/gates/{id}\nAuth:\n  JWT required\nRole:\n  STAFF, MANAGER, ADMIN"
+              },
+              {
+                id: "contract-get-support-gates-events",
+                name: "GET /api/support/gates/events",
+                content: "Method: GET\nPath: /api/support/gates/events\nAuth:\n  JWT required\nRole:\n  STAFF, MANAGER, ADMIN\nQuery Parameters:\n  - gateId (optional)\n  - eventType (optional)\n  - fromTime (optional)\n  - toTime (optional)\n  - page\n  - pageSize"
+              },
+              {
+                id: "contract-get-support-gates-events-id",
+                name: "GET /api/support/gates/events/{id}",
+                content: "Method: GET\nPath: /api/support/gates/events/{id}\nAuth:\n  JWT required\nRole:\n  STAFF, MANAGER, ADMIN"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-gate-status-staff",
+                title: "Staff can view gate status",
+                type: "api",
+                expectedResult: "Status 200 and gate status list returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-gate-events-manager",
+                title: "Manager can view gate event history",
+                type: "api",
+                expectedResult: "Event history returned successfully.",
+                status: "not_started"
+              },
+              {
+                id: "tc-gate-filter-admin",
+                title: "Admin can filter gate events",
+                type: "api",
+                expectedResult: "Filtered results returned correctly.",
+                status: "not_started"
+              },
+              {
+                id: "tc-gate-anonymous",
+                title: "Anonymous user cannot access Gate Read Model",
+                type: "api",
+                expectedResult: "Status 401 Unauthorized.",
+                status: "not_started"
+              },
+              {
+                id: "tc-gate-driver-denied",
+                title: "Driver cannot access Gate Read Model",
+                type: "api",
+                expectedResult: "Status 403 Forbidden.",
+                status: "not_started"
+              },
+              {
+                id: "tc-gate-no-write",
+                title: "Read model does not modify transactional data",
+                type: "integration",
+                expectedResult: "No database write operations occur during API requests.",
+                status: "not_started"
+              },
+              {
+                id: "tc-gate-stream-sync",
+                title: "Gate status updates after receiving event stream",
+                type: "integration",
+                expectedResult: "Read model reflects latest gate status.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-gate-read-apis", content: "Read-only APIs for gate monitoring are implemented.", checked: false },
+              { id: "dc-gate-optimized", content: "APIs are optimized for monitoring dashboards.", checked: false },
+              { id: "dc-gate-sync", content: "Gate statuses are synchronized from event streams.", checked: false },
+              { id: "dc-gate-events-query", content: "Recent gate events are queryable.", checked: false },
+              { id: "dc-gate-jwt", content: "JWT authentication is enforced.", checked: false },
+              { id: "dc-gate-permissions", content: "Only Staff, Manager, and Admin can access the APIs.", checked: false },
+              { id: "dc-gate-no-write", content: "No transactional database updates occur through these APIs.", checked: false },
+              { id: "dc-gate-common-response", content: "Responses follow the common API response format.", checked: false },
+              { id: "dc-gate-events-filters", content: "Event history supports filtering and pagination.", checked: false },
+              { id: "dc-gate-tests-pass", content: "Automated tests pass successfully.", checked: false }
+            ]
           },
           {
             id: "leaf-struct-avail",
             title: "Public Available Slots",
             type: "leaf_feature",
             clients: ["Guest", "Driver"],
-            endpoints: ["GET /api/public/available-slots"],
+            status: "draft",
+            priority: "medium",
+            tags: ["available-slots", "structure", "public"],
+            summary: "Expose real-time, aggregated parking availability data to public users to help them decide whether to navigate to the building.\n\nThis feature provides a high-concurrency, public-facing read model that displays the number of available parking slots by floor and area. Drivers and guests can quickly view overall parking availability before arriving at the parking building without accessing transactional data.",
+            objective: "Implement high-performance read-only public APIs using the Spring Boot Support API to retrieve aggregated available slots from cached PostgreSQL statistics.",
+            inScope: [
+              "Develop high-performance read-only APIs using the Spring Boot Support API",
+              "Support public access or Guest-level JWT authentication",
+              "Query cached parking occupancy statistics stored in PostgreSQL",
+              "Return aggregated available slot counts by floor and area",
+              "Optimize API responses for low latency and high concurrent requests",
+              "Design mobile-friendly response formats suitable for web and mobile applications"
+            ],
+            outOfScope: [
+              "Reserving or booking parking slots",
+              "Selecting individual parking slots",
+              "Displaying detailed parking session information",
+              "Any transactional parking operations handled by the .NET Core API"
+            ],
+            permissions: [
+              { role: "Guest", permission: "View public parking availability." },
+              { role: "Driver", permission: "View public parking availability." },
+              { role: "Staff", permission: "No access required (uses internal monitoring APIs instead)." },
+              { role: "Manager", permission: "No access required (uses internal monitoring APIs instead)." },
+              { role: "Admin", permission: "No access required (uses internal monitoring APIs instead)." },
+              { role: "Anonymous", permission: "Optional access if public endpoint is enabled." }
+            ],
+            businessRules: [
+              "Public APIs should support anonymous access or Guest-level JWT based on deployment configuration.",
+              "Cached occupancy statistics should be used instead of querying transactional parking sessions directly.",
+              "APIs must be optimized for high read throughput and low response latency.",
+              "Returned information must contain only aggregated availability data without exposing internal parking structure details.",
+              "Read APIs must never modify transactional data."
+            ],
+            dbExistingTables: ["floors", "areas", "slots"],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Availability counts are aggregated from parking slot status.",
+              "Floor availability is calculated from associated areas.",
+              "Area availability is calculated from associated parking slots.",
+              "Read model is synchronized asynchronously from transactional parking events."
+            ],
+            validationRules: [
+              { field: "floorId", rule: "Optional, must reference existing floor if supplied", errorMessage: "VALIDATION_FAILED" }
+            ],
+            securityRules: [
+              "Support anonymous access or Guest JWT based on deployment configuration.",
+              "Prevent exposure of transactional or administrative data.",
+              "Read-only APIs must never modify data.",
+              "Use global exception handling.",
+              "Prevent stack trace leakage."
+            ],
+            logEvents: [
+              "API request access.",
+              "Request duration.",
+              "Response status code.",
+              "API performance metrics."
+            ],
+            noLogEvents: [
+              "Passwords.",
+              "Access tokens.",
+              "Refresh tokens.",
+              "Personal user information.",
+              "Individual parking session data."
+            ],
+            integrationPoints: [
+              { system: "Spring Boot Support API", responsibility: "Expose public available slot read APIs." },
+              { system: "Cached PostgreSQL Read Model", responsibility: "Store cached availability metrics." },
+              { system: "Parking Slot Read Model", responsibility: "Source for raw slot statuses." },
+              { system: "Floor Management Read Model", responsibility: "Grouping source for floors." },
+              { system: "Area Management Read Model", responsibility: "Grouping source for areas." }
+            ],
+            uiPage: "/available-slots",
+            uiComponents: "Availability Summary Card, Floor Availability List, Area Availability List, Refresh Indicator.",
+            uiStateLoading: "Display loading skeleton while retrieving data.",
+            uiStateEmpty: "Display \"No parking information available.\"",
+            uiStateError: "Display service unavailable message.",
+            uiStateSuccess: "Automatically refresh availability every configurable interval (e.g., 30 seconds).",
+            endpoints: [
+              "GET /api/public/available-slots",
+              "GET /api/public/available-slots/floors",
+              "GET /api/public/available-slots/areas"
+            ],
             ownerService: "Spring Boot Support API",
-            apiContracts: createApiContract("GET /api/public/available-slots"),
-            testCases: defaultApiTests("Public Available Slots", ["Guest", "Driver"], ["GET /api/public/available-slots"]),
-            doneCriteria: defaultDoneCriteria("Public Available Slots")
+            apiContracts: [
+              {
+                id: "contract-get-public-avail",
+                name: "GET /api/public/available-slots",
+                content: "Method: GET\nPath: /api/public/available-slots\nAuth:\n  Anonymous or Guest JWT (system configuration)\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"Get parking availability successfully\",\n  \"data\": {\n    \"totalAvailableSlots\": 185,\n    \"totalCapacity\": 500,\n    \"occupancyRate\": 63.0\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:20:00+07:00\"\n}"
+              },
+              {
+                id: "contract-get-public-avail-floors",
+                name: "GET /api/public/available-slots/floors",
+                content: "Method: GET\nPath: /api/public/available-slots/floors\nAuth:\n  Anonymous or Guest JWT\nResponse:\n[\n  {\n    \"floorName\": \"B1\",\n    \"availableSlots\": 65\n  },\n  {\n    \"floorName\": \"B2\",\n    \"availableSlots\": 48\n  }\n]"
+              },
+              {
+                id: "contract-get-public-avail-areas",
+                name: "GET /api/public/available-slots/areas",
+                content: "Method: GET\nPath: /api/public/available-slots/areas\nAuth:\n  Anonymous or Guest JWT\nQuery Parameters:\n  - floorId (optional)\nResponse:\n[\n  {\n    \"areaName\": \"Zone A\",\n    \"availableSlots\": 32\n  },\n  {\n    \"areaName\": \"EV Zone\",\n    \"availableSlots\": 8\n  }\n]"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-avail-guest",
+                title: "Guest can view parking availability",
+                type: "api",
+                expectedResult: "Parking availability is returned successfully.",
+                status: "not_started"
+              },
+              {
+                id: "tc-avail-driver",
+                title: "Driver can view parking availability",
+                type: "api",
+                expectedResult: "Parking availability is returned successfully.",
+                status: "not_started"
+              },
+              {
+                id: "tc-avail-anonymous",
+                title: "Anonymous access works when enabled",
+                type: "api",
+                expectedResult: "Status 200 and aggregated availability is returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-avail-aggregated-only",
+                title: "Response contains aggregated data only",
+                type: "api",
+                expectedResult: "No slot identifiers or private information are exposed.",
+                status: "not_started"
+              },
+              {
+                id: "tc-avail-consistency",
+                title: "Floor availability equals sum of area availability",
+                type: "integration",
+                expectedResult: "Aggregated counts are consistent.",
+                status: "not_started"
+              },
+              {
+                id: "tc-avail-sync",
+                title: "Availability updates after parking session changes",
+                type: "integration",
+                expectedResult: "Cached read model reflects the latest parking occupancy.",
+                status: "not_started"
+              },
+              {
+                id: "tc-avail-concurrency",
+                title: "High concurrent requests maintain low latency",
+                type: "manual",
+                expectedResult: "API continues serving requests within acceptable response time.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-avail-public-read", content: "Public read-only APIs are implemented.", checked: false },
+              { id: "dc-avail-aggregated", content: "APIs return aggregated parking availability.", checked: false },
+              { id: "dc-avail-floors", content: "Floor-level availability is supported.", checked: false },
+              { id: "dc-avail-areas", content: "Area-level availability is supported.", checked: false },
+              { id: "dc-avail-cached", content: "Cached PostgreSQL data is used for low-latency responses.", checked: false },
+              { id: "dc-avail-auth", content: "APIs support anonymous access or Guest JWT.", checked: false },
+              { id: "dc-avail-no-expose", content: "No transactional or sensitive information is exposed.", checked: false },
+              { id: "dc-avail-response-format", content: "Responses follow the common API response format.", checked: false },
+              { id: "dc-avail-concurrency-optimized", content: "APIs are optimized for high-concurrency read workloads.", checked: false },
+              { id: "dc-avail-tests-pass", content: "Automated tests pass successfully.", checked: false }
+            ]
           },
           {
             id: "leaf-struct-suggest",
             title: "Location / Slot Suggestion",
             type: "leaf_feature",
             clients: ["Staff", "Manager", "Driver"],
-            endpoints: ["POST /api/core/parking-sessions/suggest-slot"],
+            status: "draft",
+            priority: "medium",
+            tags: ["suggestion", "slots", "structure"],
+            summary: "Provide intelligent allocation recommendations to drivers or staff to minimize cruising time inside the structure.\n\nThis feature analyzes the current parking occupancy and recommends the optimal parking location—including floor, area, or individual slot—based on parking structure layout, vehicle type, slot availability, and driver preferences. The recommendation service helps reduce searching time and improves traffic flow inside the parking building.",
+            objective: "Implement a parking recommendation algorithm in .NET Core API that analyzes real-time occupancy and suggests compatible, available parking spots with fallback options.",
+            inScope: [
+              "Develop a parking recommendation algorithm using parking structure hierarchy and real-time occupancy",
+              "Recommend the optimal floor, parking area, or individual parking slot",
+              "Expose recommendation APIs for Driver mobile applications and Staff operational consoles",
+              "Consider vehicle type compatibility when generating recommendations",
+              "Support preference-based recommendations when driver preferences are available",
+              "Implement fallback recommendation logic when preferred locations are unavailable",
+              "Return recommendations using the common API response format"
+            ],
+            outOfScope: [
+              "Indoor turn-by-turn navigation",
+              "AR guidance inside the parking building",
+              "Physical navigation hardware integration",
+              "Voice navigation or map rendering"
+            ],
+            permissions: [
+              { role: "Driver", permission: "Request parking location recommendations." },
+              { role: "Staff", permission: "Request recommendations for assisting incoming vehicles." },
+              { role: "Manager", permission: "Request recommendations and monitor recommendation behavior." },
+              { role: "Admin", permission: "No direct access required." },
+              { role: "Guest", permission: "No access." },
+              { role: "Anonymous", permission: "No access." }
+            ],
+            businessRules: [
+              "Recommendation logic should prioritize the nearest suitable available location.",
+              "Recommendations must consider vehicle type compatibility.",
+              "Recommendations should avoid occupied, reserved, or maintenance slots.",
+              "If preferred parking areas are unavailable, the system must automatically provide fallback recommendations.",
+              "Recommendation APIs must not reserve parking slots automatically."
+            ],
+            dbExistingTables: ["floors", "areas", "slots", "vehicle_types", "parking_sessions"],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Recommendations are generated from floor, area, and parking slot hierarchy.",
+              "Parking slot status is used to determine availability.",
+              "Vehicle type compatibility is validated before recommending a slot.",
+              "Recommendation results are computed dynamically and are not permanently stored."
+            ],
+            validationRules: [
+              { field: "vehicleTypeId", rule: "Required, must refer to an existing vehicle type", errorMessage: "VALIDATION_FAILED" },
+              { field: "preferredFloorId", rule: "Optional, must reference existing floor if provided", errorMessage: "VALIDATION_FAILED" },
+              { field: "preferredAreaId", rule: "Optional, must reference existing area if provided", errorMessage: "VALIDATION_FAILED" }
+            ],
+            securityRules: [
+              "Validate JWT.",
+              "Require Driver, Staff, or Manager role.",
+              "Prevent unauthorized access.",
+              "Use global exception handling.",
+              "Prevent stack trace leakage.",
+              "Recommendation API must not expose internal optimization logic."
+            ],
+            logEvents: [
+              "Recommendation requests.",
+              "Recommendation generation duration.",
+              "Recommendation failures.",
+              "Fallback recommendation execution.",
+              "API response status."
+            ],
+            noLogEvents: [
+              "Passwords.",
+              "Access tokens.",
+              "Refresh tokens.",
+              "Personal payment information.",
+              "Driver preference details beyond operational necessity."
+            ],
+            integrationPoints: [
+              { system: "Parking Session Management", responsibility: "Read active sessions and exclude occupied slots." },
+              { system: "Parking Slot Management", responsibility: "Verify physical slot existence and status." },
+              { system: "Floor Management", responsibility: "Map floor layout and restrictions." },
+              { system: "Area Management", responsibility: "Identify zones and allowed vehicles in areas." },
+              { system: "Vehicle Type Management", responsibility: "Validate compatibility of requested vehicle categories." },
+              { system: "Real-time Occupancy Service", responsibility: "Supply occupancy metrics to algorithm." }
+            ],
+            uiPage: "/available-slots",
+            uiComponents: "Availability Summary Card, Floor Availability List, Area Availability List, Refresh Indicator.",
+            uiStateLoading: "Show recommendation loading indicator.",
+            uiStateEmpty: "Display \"No suitable parking location available.\"",
+            uiStateError: "Display recommendation unavailable message.",
+            uiStateSuccess: "Highlight the recommended parking location with explanation.",
+            endpoints: [
+              "POST /api/core/parking-sessions/suggest-slot"
+            ],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/parking-sessions/suggest-slot"),
-            testCases: defaultApiTests("Location / Slot Suggestion", ["Driver"], ["POST /api/core/parking-sessions/suggest-slot"]),
-            doneCriteria: defaultDoneCriteria("Location / Slot Suggestion")
+            apiContracts: [
+              {
+                id: "contract-post-suggest-slot",
+                name: "POST /api/core/parking-sessions/suggest-slot",
+                content: "Method: POST\nPath: /api/core/parking-sessions/suggest-slot\nAuth:\n  JWT required\nRole:\n  DRIVER, STAFF, MANAGER\nRequest Body:\n{\n  \"vehicleTypeId\": 2,\n  \"preferredFloorId\": 1,\n  \"preferredAreaId\": null\n}\n\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"Parking recommendation generated successfully\",\n  \"data\": {\n    \"floorId\": 2,\n    \"floorName\": \"B1\",\n    \"areaId\": 5,\n    \"areaName\": \"Zone A\",\n    \"slotId\": 108,\n    \"slotCode\": \"A-108\",\n    \"slotType\": \"STANDARD\",\n    \"reason\": \"Nearest available compatible parking slot\"\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:20:00+07:00\"\n}"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-suggest-driver",
+                title: "Driver receives parking recommendation",
+                type: "api",
+                expectedResult: "Recommended floor, area, and slot are returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-suggest-staff",
+                title: "Staff can request recommendation",
+                type: "api",
+                expectedResult: "Recommendation is generated successfully.",
+                status: "not_started"
+              },
+              {
+                id: "tc-suggest-manager",
+                title: "Manager can request recommendation",
+                type: "api",
+                expectedResult: "Recommendation is generated successfully.",
+                status: "not_started"
+              },
+              {
+                id: "tc-suggest-vehicle-match",
+                title: "Recommended slot matches vehicle type",
+                type: "api",
+                expectedResult: "Only compatible slot types are returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-suggest-exclude-reserved",
+                title: "Reserved slots are never recommended",
+                type: "api",
+                expectedResult: "Reserved slots are excluded.",
+                status: "not_started"
+              },
+              {
+                id: "tc-suggest-exclude-maintenance",
+                title: "Maintenance slots are never recommended",
+                type: "api",
+                expectedResult: "Maintenance slots are excluded.",
+                status: "not_started"
+              },
+              {
+                id: "tc-suggest-fallback",
+                title: "Fallback recommendation works when preferred area is full",
+                type: "integration",
+                expectedResult: "Alternative parking location is returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-suggest-no-reserve",
+                title: "Recommendation does not reserve parking slot",
+                type: "integration",
+                expectedResult: "Slot status remains unchanged.",
+                status: "not_started"
+              },
+              {
+                id: "tc-suggest-anonymous",
+                title: "Anonymous user cannot access recommendation API",
+                type: "api",
+                expectedResult: "Status 401 Unauthorized.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-suggest-algorithm", content: "Recommendation algorithm is implemented.", checked: false },
+              { id: "dc-suggest-return-fields", content: "APIs return floor, area, and slot recommendations.", checked: false },
+              { id: "dc-suggest-occupancy", content: "Recommendations consider real-time occupancy.", checked: false },
+              { id: "dc-suggest-vehicle-check", content: "Vehicle type compatibility is enforced.", checked: false },
+              { id: "dc-suggest-fallback", content: "Fallback recommendations are generated when preferred locations are unavailable.", checked: false },
+              { id: "dc-suggest-no-reserve", content: "Recommendation API does not reserve parking slots.", checked: false },
+              { id: "dc-suggest-jwt", content: "JWT authentication is required.", checked: false },
+              { id: "dc-suggest-roles", content: "Driver, Staff, and Manager can access the API.", checked: false },
+              { id: "dc-suggest-response-format", content: "Responses use the common API response format.", checked: false },
+              { id: "dc-suggest-tests-pass", content: "Automated tests pass successfully.", checked: false }
+            ]
           }
         ]
       },

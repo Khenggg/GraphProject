@@ -1105,6 +1105,8 @@ export default function RightDetailPanel() {
               onAdd={(row) => updateNode(activeNode.id, { integrationPoints: [...(activeNode.integrationPoints || []), { system: row.system, responsibility: row.responsibility }] })}
               onRemove={(idx) => updateNode(activeNode.id, { integrationPoints: (activeNode.integrationPoints || []).filter((_, i) => i !== idx) })}
               noItemsLabel={language === "en" ? "No integration points documented." : "Chưa có liên kết tích hợp nào."}
+              language={language}
+              required={false}
             />
 
             {/* Frontend UI Behavior */}
@@ -1674,7 +1676,7 @@ export default function RightDetailPanel() {
               <div>
                 <div className="flex justify-between items-center mb-1">
                   <label className="block text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                    {t.stepsLabel}
+                    {t.steps}
                   </label>
                   <button
                     type="button"
@@ -1692,7 +1694,7 @@ export default function RightDetailPanel() {
                         type="text"
                         value={step}
                         onChange={(e) => {
-                          const newSteps = [...editingTestCase.steps];
+                          const newSteps = [...(editingTestCase.steps || [])];
                           newSteps[sIdx] = e.target.value;
                           setEditingTestCase({ ...editingTestCase, steps: newSteps });
                         }}
@@ -1701,7 +1703,7 @@ export default function RightDetailPanel() {
                       <button
                         type="button"
                         onClick={() => {
-                          const newSteps = editingTestCase.steps.filter((_, idx) => idx !== sIdx);
+                          const newSteps = (editingTestCase.steps || []).filter((_, idx) => idx !== sIdx);
                           setEditingTestCase({ ...editingTestCase, steps: newSteps });
                         }}
                         className="text-slate-400 hover:text-rose-600 cursor-pointer"
