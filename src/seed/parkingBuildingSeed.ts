@@ -1992,40 +1992,387 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-driver-vehicles-list",
             title: "Driver Registered Vehicles",
             type: "leaf_feature",
-            clients: ["Driver"],
+            clients: ["Admin", "Manager", "Staff", "Driver"],
+            status: "ready",
+            priority: "medium",
+            tags: ["driver", "vehicles"],
+            summary: "Allows Drivers to register and manage their vehicles, and Staff/Managers/Admins to approve and review them.",
+            objective: "Implement a complete Driver Registered Vehicles management feature that allows Drivers to register, update, and remove their own vehicles while enabling Staff and Managers to review and approve registered vehicles. The feature provides a verified vehicle dataset used as the reference source for Automatic Number Plate Recognition (ANPR) and monthly parking pass registration.",
+            inScope: [
+              "CRUD operations for vehicle information linked to a specific Driver.",
+              "Drivers can register, view, update, and delete their own vehicles.",
+              "Staff and Managers can search, review, update vehicle information, and modify approval status.",
+              "Validate duplicate license plates before saving.",
+              "Role-based access control.",
+              "Common API response format."
+            ],
+            outOfScope: [
+              "Real-time ANPR camera recognition.",
+              "Guest vehicle management.",
+              "Parking session processing.",
+              "Monthly pass management."
+            ],
+            permissions: [
+              { role: "Driver", permission: "Manage own registered vehicles only" },
+              { role: "Staff", permission: "View all vehicles, modify information, approve/reject vehicles" },
+              { role: "Manager", permission: "Full management of all registered vehicles" },
+              { role: "Admin", permission: "Full management of all registered vehicles" }
+            ],
+            dbExistingTables: ["users", "vehicles"],
+            dbRelationships: [
+              "One Driver can register multiple vehicles.",
+              "Each vehicle belongs to exactly one Driver.",
+              "License Plate must be unique."
+            ],
+            validationRules: [
+              { field: "licensePlate", rule: "Required, unique across the system", errorMessage: "VALIDATION_FAILED" },
+              { field: "vehicleType", rule: "Required (CAR or MOTORBIKE)", errorMessage: "VALIDATION_FAILED" },
+              { field: "brand", rule: "Required", errorMessage: "VALIDATION_FAILED" },
+              { field: "color", rule: "Required", errorMessage: "VALIDATION_FAILED" }
+            ],
+            securityRules: [
+              "Validate JWT.",
+              "Validate role permissions.",
+              "Driver can only access their own vehicles.",
+              "Staff, Manager, and Admin can manage all vehicles.",
+              "Prevent duplicate license plates.",
+              "Use global exception handling.",
+              "Prevent stack trace leakage."
+            ],
+            logEvents: [
+              "Vehicle registration (VEHICLE_REGISTERED)",
+              "Vehicle update (VEHICLE_UPDATED)",
+              "Vehicle deletion (VEHICLE_DELETED)",
+              "Vehicle approval status change (VEHICLE_APPROVAL_STATUS_CHANGED)"
+            ],
+            noLogEvents: [
+              "Passwords",
+              "Access tokens",
+              "Refresh tokens"
+            ],
+            integrationPoints: [
+              { system: "Automatic Number Plate Recognition (ANPR)", responsibility: "Reference dataset for vehicle recognition" },
+              { system: "Monthly Parking Pass Registration", responsibility: "Reference dataset for monthly pass registration" }
+            ],
+            uiPage: "/driver/vehicles",
+            uiComponents: "Vehicle Table, Add Vehicle Form, Edit Vehicle Dialog, Delete Confirmation, Approval Status Badge, Pagination",
+            uiStateLoading: "Show loading indicator while fetching vehicles.",
+            uiStateEmpty: "No registered vehicles.",
+            uiStateError: "Display general error notification.",
+            uiStateSuccess: "Display updated vehicle list.",
             endpoints: [
-              "GET /api/core/driver/vehicles"
+              "GET /api/core/driver/vehicles",
+              "GET /api/core/driver/vehicles/{id}",
+              "POST /api/core/driver/vehicles",
+              "PUT /api/core/driver/vehicles/{id}",
+              "DELETE /api/core/driver/vehicles/{id}",
+              "PATCH /api/core/driver/vehicles/{id}/approval-status"
             ],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("GET /api/core/driver/vehicles"),
-            testCases: defaultApiTests("Driver Registered Vehicles", ["Driver"], ["GET /api/core/driver/vehicles"]),
-            doneCriteria: defaultDoneCriteria("Driver Registered Vehicles")
+            apiContracts: [
+              {
+                id: "contract-get-vehicles",
+                name: "GET /api/core/driver/vehicles",
+                content: "Description:\nRetrieve registered vehicles.\nDriver returns only their own vehicles. Staff/Manager/Admin returns all with keyword, type, and status filters.\n\nQuery Parameters:\n- keyword: string (optional)\n- vehicleType: string (optional)\n- approvalStatus: string (optional)\n- page: int (default 1)\n- pageSize: int (default 20, max 100)\n\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"Get registered vehicles successfully\",\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": 1,\n        \"driverId\": 12,\n        \"licensePlate\": \"51A12345\",\n        \"vehicleType\": \"CAR\",\n        \"brand\": \"Toyota\",\n        \"color\": \"White\",\n        \"approvalStatus\": \"APPROVED\",\n        \"createdAt\": \"2026-07-05T17:20:00+07:00\"\n      }\n    ],\n    \"page\": 1,\n    \"pageSize\": 20,\n    \"totalItems\": 1,\n    \"totalPages\": 1\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:20:00+07:00\"\n}"
+              },
+              {
+                id: "contract-get-vehicle-detail",
+                name: "GET /api/core/driver/vehicles/{id}",
+                content: "Description:\nRetrieve vehicle detail. Driver can only retrieve their own vehicle.\n\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"Get vehicle successfully\",\n  \"data\": {\n    \"id\": 1,\n    \"driverId\": 12,\n    \"licensePlate\": \"51A12345\",\n    \"vehicleType\": \"CAR\",\n    \"brand\": \"Toyota\",\n    \"color\": \"White\",\n    \"approvalStatus\": \"APPROVED\",\n    \"createdAt\": \"2026-07-05T17:20:00+07:00\",\n    \"updatedAt\": \"2026-07-05T17:20:00+07:00\"\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:20:00+07:00\"\n}"
+              },
+              {
+                id: "contract-post-vehicle",
+                name: "POST /api/core/driver/vehicles",
+                content: "Description:\nRegister a new vehicle. Driver role only. Sets approval status to PENDING.\n\nRequest Body:\n{\n  \"licensePlate\": \"51A-12345\",\n  \"vehicleType\": \"CAR\",\n  \"brand\": \"Toyota\",\n  \"color\": \"White\",\n  \"description\": \"My personal car\"\n}\n\nResponse 201 Created:\n{\n  \"success\": true,\n  \"message\": \"Vehicle registered successfully\",\n  \"data\": {\n    \"id\": 1,\n    \"driverId\": 12,\n    \"licensePlate\": \"51A-12345\",\n    \"vehicleType\": \"CAR\",\n    \"brand\": \"Toyota\",\n    \"color\": \"White\",\n    \"approvalStatus\": \"PENDING\",\n    \"createdAt\": \"2026-07-05T17:20:00+07:00\",\n    \"updatedAt\": \"2026-07-05T17:20:00+07:00\"\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:20:00+07:00\"\n}"
+              },
+              {
+                id: "contract-put-vehicle",
+                name: "PUT /api/core/driver/vehicles/{id}",
+                content: "Description:\nUpdate registered vehicle. Driver can update own vehicle. Staff/Manager/Admin can update any vehicle.\n\nRequest Body:\n{\n  \"licensePlate\": \"51A-12345\",\n  \"vehicleType\": \"CAR\",\n  \"brand\": \"Toyota\",\n  \"color\": \"White\",\n  \"description\": \"My updated car\"\n}\n\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"Vehicle updated successfully\",\n  \"data\": {\n    \"id\": 1,\n    \"driverId\": 12,\n    \"licensePlate\": \"51A-12345\",\n    \"vehicleType\": \"CAR\",\n    \"brand\": \"Toyota\",\n    \"color\": \"White\",\n    \"approvalStatus\": \"APPROVED\",\n    \"createdAt\": \"2026-07-05T17:20:00+07:00\",\n    \"updatedAt\": \"2026-07-05T17:25:00+07:00\"\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:25:00+07:00\"\n}"
+              },
+              {
+                id: "contract-delete-vehicle",
+                name: "DELETE /api/core/driver/vehicles/{id}",
+                content: "Description:\nSoft-delete registered vehicle. Driver can delete own. Staff/Manager/Admin can delete any.\n\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"Vehicle deleted successfully\",\n  \"data\": \"Vehicle deleted successfully\",\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:30:00+07:00\"\n}"
+              },
+              {
+                id: "contract-patch-approval-status",
+                name: "PATCH /api/core/driver/vehicles/{id}/approval-status",
+                content: "Description:\nApprove or reject registered vehicle. Roles: Staff, Manager, Admin.\n\nRequest Body:\n{\n  \"approvalStatus\": \"APPROVED\"\n}\n\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"Vehicle approval status updated successfully\",\n  \"data\": {\n    \"id\": 1,\n    \"driverId\": 12,\n    \"licensePlate\": \"51A-12345\",\n    \"brand\": \"Toyota\",\n    \"color\": \"White\",\n    \"approvalStatus\": \"APPROVED\",\n    \"createdAt\": \"2026-07-05T17:20:00+07:00\",\n    \"updatedAt\": \"2026-07-05T17:35:00+07:00\"\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:35:00+07:00\"\n}"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-veh-01",
+                title: "Driver can register a vehicle",
+                type: "api",
+                expectedResult: "Vehicle created successfully with PENDING status.",
+                status: "not_started"
+              },
+              {
+                id: "tc-veh-02",
+                title: "Duplicate license plate is rejected",
+                type: "api",
+                expectedResult: "Validation error returned with status code 400.",
+                status: "not_started"
+              },
+              {
+                id: "tc-veh-03",
+                title: "Driver can retrieve own vehicles",
+                type: "api",
+                expectedResult: "Only own vehicles are returned in list query.",
+                status: "not_started"
+              },
+              {
+                id: "tc-veh-04",
+                title: "Driver cannot access another Driver's vehicle",
+                type: "api",
+                expectedResult: "Status 403 Forbidden is returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-veh-05",
+                title: "Staff can approve vehicle",
+                type: "api",
+                expectedResult: "Approval status updated to APPROVED, audit log written.",
+                status: "not_started"
+              },
+              {
+                id: "tc-veh-06",
+                title: "Manager can view all vehicles",
+                type: "api",
+                expectedResult: "All vehicles from all drivers returned with status 200.",
+                status: "not_started"
+              },
+              {
+                id: "tc-veh-07",
+                title: "Anonymous user cannot access",
+                type: "api",
+                expectedResult: "Status 401 Unauthorized is returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-veh-08",
+                title: "Vehicle responses use common API response format",
+                type: "api",
+                expectedResult: "All responses contain success, message, data, errors, and timestamp fields.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-veh-01", content: "CRUD APIs for Driver Registered Vehicles are implemented.", checked: false },
+              { id: "dc-veh-02", content: "Drivers can only manage their own vehicles.", checked: false },
+              { id: "dc-veh-03", content: "Staff, Manager, and Admin can manage all vehicles.", checked: false },
+              { id: "dc-veh-04", content: "Duplicate license plates are prevented.", checked: false },
+              { id: "dc-veh-05", content: "Vehicle approval workflow is implemented.", checked: false },
+              { id: "dc-veh-06", content: "JWT authentication is required.", checked: false },
+              { id: "dc-veh-07", content: "Role-based authorization is enforced.", checked: false },
+              { id: "dc-veh-08", content: "Common API response format is used.", checked: false },
+              { id: "dc-veh-09", content: "Vehicle data is available for ANPR and Monthly Pass modules.", checked: false }
+            ]
           },
           {
             id: "leaf-driver-vehicle-history",
             title: "Driver Vehicle Entry Exit History",
             type: "leaf_feature",
-            clients: ["Driver"],
+            clients: ["Admin", "Manager", "Staff", "Driver", "System"],
+            status: "ready",
+            priority: "medium",
+            tags: ["driver", "vehicles", "history", "entry", "exit"],
+            summary: "Allows Drivers to view their own vehicle entry/exit history, and Staff/Managers/Admins to search and audit all vehicle history.",
+            objective: "Implement a read-only Driver Vehicle Entry Exit History feature that provides a complete, transparent, and immutable history of vehicle entry and exit transactions. The feature enables Drivers to review their own parking history while allowing Staff and Managers to perform operational auditing, parking duration verification, and parking fee dispute resolution. The system also serves as the reporting layer for vehicle entry and exit events automatically recorded by the parking system.",
+            inScope: [
+              "Read-only APIs for vehicle entry and exit history.",
+              "Drivers can view only their own vehicle history.",
+              "Staff, Managers, and Admins can search all vehicle history records.",
+              "Filter by time range.",
+              "Filter by license plate.",
+              "Filter by current parking status (IN_BUILDING / DEPARTED).",
+              "Display entry time, exit time, parking duration, parking fee, and captured license plate image URLs if available.",
+              "Automatically display records generated by the parking system.",
+              "Common API response format."
+            ],
+            outOfScope: [
+              "Logging administrative configuration changes.",
+              "Sending commands to physical gate hardware.",
+              "Editing or deleting parking history.",
+              "Real-time gate control."
+            ],
+            permissions: [
+              { role: "Driver", permission: "View own vehicle entry/exit history" },
+              { role: "Staff", permission: "View and search all vehicle history" },
+              { role: "Manager", permission: "View and search all vehicle history" },
+              { role: "Admin", permission: "View and search all vehicle history" },
+              { role: "System", permission: "Automatically creates entry/exit history records" }
+            ],
+            dbExistingTables: ["parking_sessions", "vehicles", "users", "parking_gates"],
+            dbRelationships: [
+              "One Driver can have multiple parking history records.",
+              "Each history record belongs to exactly one vehicle.",
+              "Each history record references one parking session.",
+              "History records are read-only after creation."
+            ],
+            validationRules: [
+              { field: "driverId", rule: "Driver can only access their own parking history", errorMessage: "FORBIDDEN" },
+              { field: "dateRange", rule: "fromDate must not be later than toDate", errorMessage: "VALIDATION_FAILED" },
+              { field: "status", rule: "Must be IN_BUILDING or DEPARTED if provided", errorMessage: "VALIDATION_FAILED" }
+            ],
+            securityRules: [
+              "Validate JWT.",
+              "Validate role permissions.",
+              "Driver can only view their own records.",
+              "Staff, Manager, and Admin can view all records.",
+              "History records cannot be modified through this feature.",
+              "Prevent stack trace leakage."
+            ],
+            logEvents: [
+              "History search requests (GET /api/support/driver/vehicles/entry-exit-history)",
+              "History detail requests (GET /api/support/driver/vehicles/entry-exit-history/{id})"
+            ],
+            noLogEvents: [
+              "Passwords",
+              "Access tokens",
+              "Refresh tokens"
+            ],
+            integrationPoints: [
+              { system: "Parking Session Module", responsibility: "Creates history records automatically" },
+              { system: "ANPR Module", responsibility: "Feeds license plate recognition data" },
+              { system: "Gate Sensor Events", responsibility: "Triggers record generation on entry/exit" }
+            ],
+            uiPage: "/driver/history",
+            uiComponents: "History Table, License Plate Search, Status Filter, Date Range Picker, Pagination, Vehicle Snapshot Viewer",
+            uiStateLoading: "Show loading indicator while fetching history.",
+            uiStateEmpty: "No parking history found.",
+            uiStateError: "Display general error notification.",
+            uiStateSuccess: "Display paginated parking history.",
             endpoints: [
-              "GET /api/support/driver/vehicles/entry-exit-history"
+              "GET /api/support/driver/vehicles/entry-exit-history",
+              "GET /api/support/driver/vehicles/entry-exit-history/{id}"
             ],
             ownerService: "Spring Boot Support API",
-            apiContracts: createApiContract("GET /api/support/driver/vehicles/entry-exit-history"),
-            testCases: defaultApiTests("Driver Vehicle Entry Exit History", ["Driver"], ["GET /api/support/driver/vehicles/entry-exit-history"]),
-            doneCriteria: defaultDoneCriteria("Driver Vehicle Entry Exit History")
+            apiContracts: [
+              {
+                id: "contract-get-history",
+                name: "GET /api/support/driver/vehicles/entry-exit-history",
+                content: "Description:\nRetrieve vehicle entry and exit history.\n\nQuery Parameters:\n- keyword: string (optional, license plate)\n- status: string (optional, IN_BUILDING / DEPARTED)\n- fromDate: datetime (optional)\n- toDate: datetime (optional)\n- page: int (default 1)\n- pageSize: int (default 20, max 100)\n\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"Get vehicle entry exit history successfully\",\n  \"data\": {\n    \"items\": [\n      {\n        \"id\": 101,\n        \"driverId\": 12,\n        \"licensePlate\": \"51A12345\",\n        \"vehicleType\": \"CAR\",\n        \"entryTime\": \"2026-07-05T08:10:00+07:00\",\n        \"exitTime\": \"2026-07-05T17:35:00+07:00\",\n        \"parkingDuration\": \"09:25:00\",\n        \"parkingFee\": 50000,\n        \"status\": \"DEPARTED\",\n        \"entryImageUrl\": \"https://example.com/images/entry.jpg\",\n        \"exitImageUrl\": \"https://example.com/images/exit.jpg\"\n      }\n    ],\n    \"page\": 1,\n    \"pageSize\": 20,\n    \"totalItems\": 1,\n    \"totalPages\": 1\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:20:00+07:00\"\n}"
+              },
+              {
+                id: "contract-get-history-detail",
+                name: "GET /api/support/driver/vehicles/entry-exit-history/{id}",
+                content: "Description:\nRetrieve detailed vehicle entry and exit history.\nDriver can only retrieve records belonging to their own account.\n\nResponse 200 OK:\n{\n  \"success\": true,\n  \"message\": \"Get vehicle entry exit history successfully\",\n  \"data\": {\n    \"id\": 101,\n    \"driverId\": 12,\n    \"licensePlate\": \"51A12345\",\n    \"vehicleType\": \"CAR\",\n    \"entryTime\": \"2026-07-05T08:10:00+07:00\",\n    \"exitTime\": \"2026-07-05T17:35:00+07:00\",\n    \"parkingDuration\": \"09:25:00\",\n    \"parkingFee\": 50000,\n    \"status\": \"DEPARTED\",\n    \"entryImageUrl\": \"https://example.com/images/entry.jpg\",\n    \"exitImageUrl\": \"https://example.com/images/exit.jpg\"\n  },\n  \"errors\": null,\n  \"timestamp\": \"2026-07-05T17:20:00+07:00\"\n}"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-hist-01",
+                title: "Driver can view own parking history",
+                type: "api",
+                expectedResult: "Only driver's own history is returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-hist-02",
+                title: "Driver cannot view another driver's history",
+                type: "api",
+                expectedResult: "Status 403 Forbidden is returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-hist-03",
+                title: "Staff can search history by license plate",
+                type: "api",
+                expectedResult: "Matching vehicle history records returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-hist-04",
+                title: "Manager can filter by date range",
+                type: "api",
+                expectedResult: "Only records within the date range are returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-hist-05",
+                title: "Manager can filter by parking status",
+                type: "api",
+                expectedResult: "Only vehicles with the specified parking status (e.g., IN_BUILDING) are returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-hist-06",
+                title: "History detail contains parking duration and fee",
+                type: "api",
+                expectedResult: "Entry time, exit time, duration, fee, and image URLs are returned in detail.",
+                status: "not_started"
+              },
+              {
+                id: "tc-hist-07",
+                title: "Anonymous user cannot access history",
+                type: "api",
+                expectedResult: "Status 401 Unauthorized is returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-hist-08",
+                title: "History responses use common API response format",
+                type: "api",
+                expectedResult: "All responses contain success, message, data, errors, and timestamp.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-hist-01", content: "Read-only history APIs are implemented.", checked: false },
+              { id: "dc-hist-02", content: "Drivers can only access their own history.", checked: false },
+              { id: "dc-hist-03", content: "Staff, Manager, and Admin can search all history.", checked: false },
+              { id: "dc-hist-04", content: "History supports filtering by date range.", checked: false },
+              { id: "dc-hist-05", content: "History supports filtering by license plate.", checked: false },
+              { id: "dc-hist-06", content: "History supports filtering by parking status.", checked: false },
+              { id: "dc-hist-07", content: "Entry time, exit time, duration, parking fee, and image URLs are returned.", checked: false },
+              { id: "dc-hist-08", content: "History records are immutable.", checked: false },
+              { id: "dc-hist-09", content: "JWT authentication is required.", checked: false },
+              { id: "dc-hist-10", content: "Role-based authorization is enforced.", checked: false },
+              { id: "dc-hist-11", content: "Common API response format is used.", checked: false }
+            ]
           },
           {
             id: "leaf-driver-mp-application",
             title: "Driver Monthly Pass Application",
             type: "leaf_feature",
-            clients: ["Driver"],
+            status: "ready",
+            priority: "medium",
+            clients: ["Admin", "Manager", "Staff", "Driver"],
             endpoints: [
               "POST /api/core/monthly-passes/applications",
-              "GET /api/support/monthly-passes/applications/me"
+              "GET /api/core/monthly-passes/applications",
+              "GET /api/core/monthly-passes/applications/{id}",
+              "PUT /api/core/monthly-passes/applications/{id}",
+              "PATCH /api/core/monthly-passes/applications/{id}/status",
+              "PATCH /api/core/monthly-passes/applications/{id}/payment",
+              "PATCH /api/core/monthly-passes/applications/{id}/assign-rfid"
             ],
             ownerService: ".NET Core API",
+            summary: "Allows Drivers to submit monthly parking pass applications using one of their approved vehicles. Managers review applications, and upon approval, Drivers or Staff can process payment. Finally, Staff assigns a physical RFID card to activate the monthly pass.",
+            objective: "Implement a complete monthly parking pass application workflow that digitalizes the submission, approval, payment, and issuance process for Drivers.",
+            inScope: [
+              "Submit monthly parking pass applications using approved vehicles",
+              "Review and update application status (PENDING -> APPROVED_AWAITING_PAYMENT / REJECTED)",
+              "Record cash or bank transfer payment details",
+              "Assign physical RFID card and activate monthly pass",
+              "Verify slot availability and pricing rules before approval"
+            ],
+            outOfScope: [
+              "Payment gateway integration (PayOS/Stripe)",
+              "Automated RFID hardware scanner reader communication"
+            ],
+            businessRules: [
+              "Only approved vehicles belonging to the driver can be registered for a monthly pass.",
+              "A vehicle can have at most one active monthly pass or application at any time.",
+              "Pricing must be retrieved dynamically from pricing rules based on the vehicle type.",
+              "The starting date of the monthly pass must be in the future (within 30 days).",
+              "Upon RFID card assignment, the card status is kept AVAILABLE so it can scan at gates."
+            ],
             apiContracts: createApiContract("POST /api/core/monthly-passes/applications"),
-            testCases: defaultApiTests("Driver Monthly Pass Application", ["Driver"], ["POST /api/core/monthly-passes/applications"]),
+            testCases: defaultApiTests("Driver Monthly Pass Application", ["Admin", "Manager", "Staff", "Driver"], ["POST /api/core/monthly-passes/applications"]),
             doneCriteria: defaultDoneCriteria("Driver Monthly Pass Application")
           }
         ]
