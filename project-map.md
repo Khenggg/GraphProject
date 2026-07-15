@@ -1,6 +1,6 @@
 # Project Map
 
-> Generated: 2026-07-12 19:10:09
+> Generated: 2026-07-15 16:01:22
 > Generator: `scripts/export-project-map.ps1`
 
 This file contains the project architecture and a direct source-code snapshot. The snapshot is generated from the source tree and filtered by `projectmapignore`.
