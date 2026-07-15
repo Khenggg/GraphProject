@@ -3,6 +3,8 @@ import { Sparkles } from "lucide-react";
 import { useFeatureTreeStore } from "../../store/featureTreeStore";
 import ConfirmDialog from "../common/ConfirmDialog";
 import Toast from "../common/Toast";
+import { getProjectRoleRegistry } from "../../domain/taxonomy";
+import { CURRENT_PROJECT_VERSION } from "../../domain/projectBackup";
 
 export default function ProjectInitializerButton() {
   const {
@@ -13,6 +15,7 @@ export default function ProjectInitializerButton() {
     replaceTreeWithParkingBuildingProject,
     language
   } = useFeatureTreeStore();
+  const nodes = useFeatureTreeStore(state => state.nodes);
 
   const [isConfirmOpen, setIsConfirmOpen] = React.useState(false);
   const [toastMessage, setToastMessage] = React.useState("");
@@ -45,9 +48,9 @@ export default function ProjectInitializerButton() {
     const projName = activeProject ? activeProject.name : "workspace_backup";
     
     const data = {
-      version: "1.0.0",
+      version: CURRENT_PROJECT_VERSION,
       projectName: projName,
-      clients: ["Admin", "Manager", "Staff", "Driver", "Guest", "System"].map(name => ({ id: name, name })),
+      clients: getProjectRoleRegistry(nodes).map(name => ({ id: name, name })),
       nodes: exportTree()
     };
     

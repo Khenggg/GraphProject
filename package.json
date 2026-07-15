@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "project-data": "powershell -ExecutionPolicy Bypass -File scripts/export-ai-context.ps1",
+    "project-map": "powershell -ExecutionPolicy Bypass -File scripts/export-project-map.ps1",
     "preview": "vite preview"
   },
   "dependencies": {

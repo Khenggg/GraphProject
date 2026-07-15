@@ -173,18 +173,13 @@ describe("Tree Actions in Zustand Store", () => {
     expect(dupFeat!.testCases[0].id).not.toBe("t1"); // Must have new unique ID
   });
 
-  it("moveNode changes parent and recalculates order", () => {
+  it("moveNode blocks a feature from being moved directly under the project root", () => {
     const store = useFeatureTreeStore.getState();
     // Move feat1 from cat1 to root
     store.moveNode("feat1", "root", 1);
 
     const state = useFeatureTreeStore.getState();
     const feat = state.nodes.find(n => n.id === "feat1")!;
-    expect(feat.parentId).toBe("root");
-    
-    // Check ordering among root children (cat1, feat1)
-    const rootChildren = state.nodes.filter(n => n.parentId === "root").sort((a, b) => a.order - b.order);
-    expect(rootChildren[0].id).toBe("cat1");
-    expect(rootChildren[1].id).toBe("feat1");
+    expect(feat.parentId).toBe("cat1");
   });
 });

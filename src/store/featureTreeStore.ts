@@ -1,9 +1,10 @@
 import { create } from "zustand";
-import type { FeatureNode, Project, ClientType, TestCase } from "../domain/featureNode.types";
+import { DEFAULT_CLIENT_ROLES, type FeatureNode, type Project, type ClientType, type TestCase } from "../domain/featureNode.types";
 import { db } from "../db/dexieDb";
 import { createParkingBuildingSeedTree, uuidv4 } from "../seed/parkingBuildingSeed";
 import { flattenNodeTree } from "../domain/featureNodeFactory";
 import { buildTreeFromFlat } from "../domain/export.utils";
+import { canContainChild, getSuggestedChildType, validateFeatureTree } from "../domain/taxonomy";
 
 interface FeatureTreeStore {
   // State
@@ -132,16 +133,24 @@ function duplicateSubtree(
 
 // Store implementation
 export const useFeatureTreeStore = create<FeatureTreeStore>((set, get) => {
+  const syncQueues = new Map<string, Promise<void>>();
+
   // Sync helper
-  const syncNodesToDb = async (projectId: string, nodesList: FeatureNode[]) => {
-    await db.transaction("rw", db.features, async () => {
-      // Clear current project nodes
-      const currentIds = await db.features.where("projectId").equals(projectId).primaryKeys();
-      await db.features.bulkDelete(currentIds);
-      // Bulk add
-      const toInsert = nodesList.map(node => ({ ...node, projectId }));
-      await db.features.bulkAdd(toInsert);
+  const syncNodesToDb = (projectId: string, nodesList: FeatureNode[]) => {
+    const snapshot = nodesList.map(node => ({ ...node }));
+    const previous = syncQueues.get(projectId) || Promise.resolve();
+    const next = previous.catch(() => undefined).then(async () => {
+      await db.transaction("rw", db.features, async () => {
+        const currentIds = await db.features.where("projectId").equals(projectId).primaryKeys();
+        await db.features.bulkDelete(currentIds);
+        await db.features.bulkAdd(snapshot.map(node => ({ ...node, projectId })));
+      });
     });
+    syncQueues.set(projectId, next);
+    void next.finally(() => {
+      if (syncQueues.get(projectId) === next) syncQueues.delete(projectId);
+    });
+    return next;
   };
 
   const recomputeTree = (nodes: FeatureNode[]) => {
@@ -240,6 +249,7 @@ export const useFeatureTreeStore = create<FeatureTreeStore>((set, get) => {
         dependencies: [],
         risks: [],
         notes: "",
+        metadata: { roles: [...DEFAULT_CLIENT_ROLES] },
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         order: 0
@@ -287,6 +297,9 @@ export const useFeatureTreeStore = create<FeatureTreeStore>((set, get) => {
       if (!selectedProjectId) return;
 
       const parentNode = nodes.find(n => n.id === parentId);
+      if (!parentNode) return;
+      const childType = getSuggestedChildType(parentNode.type);
+      if (!childType) return;
       const parentClients = parentNode ? parentNode.clients : ([] as ClientType[]);
 
       // Max order sibling
@@ -298,7 +311,7 @@ export const useFeatureTreeStore = create<FeatureTreeStore>((set, get) => {
         id: newId,
         parentId,
         title: "New Feature",
-        type: "leaf_feature",
+        type: childType,
         clients: [...parentClients], // Inherit parent clients
         status: "draft",
         priority: "medium",
@@ -347,7 +360,7 @@ export const useFeatureTreeStore = create<FeatureTreeStore>((set, get) => {
         id: newId,
         parentId,
         title: "New Sibling Feature",
-        type: "leaf_feature",
+        type: node.type,
         clients: [...node.clients],
         status: "draft",
         priority: "medium",
@@ -474,6 +487,9 @@ export const useFeatureTreeStore = create<FeatureTreeStore>((set, get) => {
 
       const node = nodes.find(n => n.id === nodeId);
       if (!node) return;
+      if (node.type === "project" || newParentId === null) return;
+      const newParent = nodes.find(n => n.id === newParentId);
+      if (!newParent || !canContainChild(newParent.type, node.type)) return;
 
       // Prevent moving a node into its own descendant
       const descendants = getDescendantIds(nodeId, nodes);
@@ -589,7 +605,15 @@ export const useFeatureTreeStore = create<FeatureTreeStore>((set, get) => {
     },
 
     // Import/Export
-    importTree: async (projectName, desc, _clientsList, nodesList) => {
+    importTree: async (projectName, desc, clientsList, nodesList) => {
+      const roles = clientsList.map(client => client.name.trim()).filter(Boolean);
+      const preparedNodes = nodesList.map(node => node.parentId === null && node.type === "project"
+        ? { ...node, metadata: { ...node.metadata, roles } }
+        : node);
+      const blockingIssues = validateFeatureTree(preparedNodes).filter(issue => issue.blocksSave);
+      if (blockingIssues.length) {
+        throw new Error(blockingIssues.slice(0, 5).map(issue => issue.message).join("\n"));
+      }
       const id = uuidv4();
       const project: Project = {
         id,
@@ -601,7 +625,7 @@ export const useFeatureTreeStore = create<FeatureTreeStore>((set, get) => {
       await db.projects.add(project);
       
       // Format nodes with new projectId
-      const processedNodes = nodesList.map(n => ({
+      const processedNodes = preparedNodes.map(n => ({
         ...n,
         projectId: id
       }));

@@ -1,0 +1,38 @@
+# Dependencies and generated output
+node_modules/
+dist/
+.codebase-memory/
+coverage/
+
+# Version-control and editor metadata
+.git/
+.vscode/
+.idea/
+
+# Environment, secrets and local machine files
+.env
+.env.*
+*.local
+
+# Build/tooling/configuration files
+package-lock.json
+package.json
+README.md
+index.html
+tsconfig*.json
+vite.config.*
+*.config.*
+.oxlintrc.json
+.gitignore
+
+# Static/generated documentation pages
+docs/
+
+# Binary/static assets (not source code)
+src/assets/
+ai-context/
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.ico
