@@ -3326,20 +3326,12 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-pub-info",
             title: "Parking Info",
             type: "leaf_feature",
-            status: "draft",
-            priority: "medium",
             clients: ["Guest", "Driver"],
             status: "ready",
             priority: "medium",
             tags: ["public", "info", "pricing", "rules", "capacity"],
             summary: "Public read-only parking building information including capacity, pricing, and rules.",
-            dependencies: [],
-            risks: [],
-            notes: "This is a read-only display feature for the frontend to show parking information to users. No user input or forms are required.",
             ownerService: "Spring Boot Support API",
-
-
-
             endpoints: ["GET /api/public/parking-info"],
             objective: "Purpose: Provide a public, high-level overview of the parking building, including a capacity summary, current pricing summary, accepted vehicle types, and general parking rules.\nOffload Core API: Completely separate this public, read-heavy query flow to the Spring Boot Support API to safeguard the performance of transactional, write-heavy core operations managed by the .NET Core API.\nServe Guest/Driver: Enable public guests and arriving drivers to easily look up information and prepare comprehensive details before entering the parking facility.\nRead-Only Nature: This feature operates strictly under a read-only mode, absolutely prohibiting the opening of any write transactions or modifying any data states within the system.",
             inScope: [
@@ -3356,50 +3348,8 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             permissions: [
               { role: "Guest", permission: "Public Access - Authorized to access freely without any authentication token via permitAll() configurations on the /api/public/** path." },
               { role: "Driver", permission: "Public Access - Authorized to access freely without any authentication token via permitAll() configurations on the /api/public/** path." }
->>>>>>> ab230d1103186613906ac35e7ae20379bf594838
             ],
             businessRules: [
-              "The system manages parking building operations for public guests, drivers, staff, managers, and admins.",
-              "The backend is split into .NET Core API for transactional/write operations and Spring Boot Support API for support/read/report/public operations.",
-              "All APIs should return a consistent success/error response format.",
-              "Authenticated APIs must validate JWT and role permissions.",
-              "Both backend services access a shared PostgreSQL database, maintaining strict entity ownership.",
-              "Global error handling middleware must prevent internal stack traces from leaking to clients.",
-              "A request logging system must log all incoming API requests for security tracing.",
-              "All manager/admin mutating operations must be logged to a dedicated audit schema.",
-              "Public APIs must not expose private user/session/payment details.",
-<<<<<<< HEAD
-              "Public parking information, pricing, rules, and available slots should be readable without login."
-            ],
-            dbExistingTables: [
-              "Reuse existing tables where applicable."
-            ],
-            dbNewTablesSql: "-- No new database schema defined.",
-            dbRelationships: [
-              "None specified."
-            ],
-            validationRules: [
-              { field: "Request", rule: "Standard request validation is expected.", errorMessage: "" }
-            ],
-            apiContracts: createApiContract("GET /api/public/parking-info"),
-            securityRules: [
-              "Validate role permissions.",
-              "Prevent unauthorized access.",
-              "Do not log sensitive data."
-            ],
-            logEvents: [
-              "Log request access, inputs, duration, and response code."
-            ],
-            noLogEvents: [
-              "Passwords, access tokens, refresh tokens, and credit card details."
-            ],
-            integrationPoints: [
-              { system: "None", responsibility: "No external integration points specified." }
-            ],
-            uiPage: "No frontend behavior specified.",
-            testCases: defaultApiTests("Parking Info", ["Guest"], ["GET /api/public/parking-info"]),
-            doneCriteria: defaultDoneCriteria("Parking Info")
-=======
               "Public parking information, pricing, rules, and available slots should be readable without login.",
               "Read-Only Constraint: The Spring Boot Support API serves strictly as a presentation/reporting layer; the JPA configuration must be explicitly set to spring.jpa.hibernate.ddl-auto: validate. Mutation methods (save, delete, flush) are strictly prohibited within the Repositories designated for this feature.",
               "Naming Mapping: All PostgreSQL table and column identifiers adhere to snake_case, which the Spring Boot Entity layer maps automatically to Java camelCase fields.",
@@ -3508,8 +3458,8 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
               { id: "dc-parking-info-10", content: "The operation remains decoupled from the transactional backend, producing no write overhead on core workflows (No Core API transaction).", checked: false },
               { id: "dc-parking-info-11", content: "The implementation fully respects and adheres to the functional boundaries of the Spring Boot Support API (Spring Boot ownership respected).", checked: false }
             ]
-          },
-          {
+              },
+              {
             id: "leaf-pub-price",
             title: "Public Pricing",
             type: "leaf_feature",
