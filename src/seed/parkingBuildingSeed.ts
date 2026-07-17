@@ -3408,12 +3408,138 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-rep-card",
             title: "Card Session Report",
             type: "leaf_feature",
+            status: "in_progress",
+            priority: "medium",
             clients: ["Manager", "Admin"],
+            tags: ["reporting", "cards", "excel", "analytics"],
+            summary: "Cung cấp API để truy xuất, thống kê và phân tích chi tiết các phiên đỗ xe (Card Sessions) dựa trên lịch sử quẹt thẻ.",
+            objective: "Cung cấp API để truy xuất, thống kê và phân tích chi tiết các phiên đỗ xe (Card Sessions) dựa trên lịch sử quẹt thẻ. Báo cáo này giúp ban quản lý giám sát vòng đời của một phiên gửi xe từ lúc xe vào (Check-in) đến lúc xe ra (Check-out), phát hiện các phiên đỗ xe bất thường (đỗ quá lâu, thẻ bị báo mất) và rà soát các mã đặt chỗ (Reservations) đã hết hạn mà khách không đến.",
+            inScope: [
+              "Truy xuất danh sách các phiên đỗ xe trong một khoảng thời gian nhất định (startDate, endDate).",
+              "Hỗ trợ bộ lọc mở rộng theo trạng thái phiên đỗ xe (Active, Completed, Lost_Card, Expired_Reservation) hoặc lọc theo mã sessionToken.",
+              "Thống kê các trạng thái chuyển đổi (State Transitions) của thẻ.",
+              "Hỗ trợ trả về định dạng dữ liệu JSON cho giao diện hiển thị.",
+              "Hỗ trợ xuất dữ liệu ra tệp Excel (.xlsx) để lưu trữ và đối soát."
+            ],
+            outOfScope: [
+              "Cập nhật, chỉnh sửa hoặc xóa trạng thái của thẻ/phiên đỗ xe (thuộc phân hệ Transactional API của .NET Core).",
+              "Tích hợp trực tiếp với phần cứng đầu đọc thẻ RFID."
+            ],
+            permissions: [
+              { role: "Admin", permission: "Xem báo cáo phiên thẻ trên toàn bộ các tòa nhà/bãi đỗ trong hệ thống." },
+              { role: "Manager", permission: "Chỉ xem báo cáo phiên thẻ của tòa nhà/bãi đỗ thuộc quyền quản lý." }
+            ],
+            businessRules: [
+              "Standard Lifecycle: 1. Reserved (Tùy chọn: quá hạn check-in -> Expired_Reservation) -> 2. Active (quẹt cổng vào check-in, thanh toán: Pending) -> 3. Completed (Check-out và thanh toán thành công) OR Lost_Card (báo mất thẻ khi đang Active).",
+              "Edge Case Handling - Overstay: Các phiên có trạng thái Active liên tục trên 24 giờ sẽ được gắn cờ isAbnormal = true trong báo cáo.",
+              "Edge Case Handling - Session Token Validation: Nếu API nhận được truy vấn yêu cầu xem chi tiết một sessionToken hoặc mã reservationToken đã bị hệ thống đánh dấu là hết hạn hoặc không hợp lệ, API phải trả về lỗi Validation.",
+              "Read-Only Transaction Isolation: Bắt buộc sử dụng @Transactional(readOnly = true) để tối ưu hóa truy vấn."
+            ],
+            dbExistingTables: ["ParkingSessions", "Cards", "Reservations"],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Sử dụng LEFT JOIN giữa ParkingSessions, Cards và Reservations."
+            ],
+            validationRules: [
+              { field: "startDate", rule: "Định dạng yyyy-MM-dd.", errorMessage: "INVALID_START_DATE" },
+              { field: "endDate", rule: "Định dạng yyyy-MM-dd. Phải >= startDate.", errorMessage: "INVALID_END_DATE" },
+              { field: "format", rule: "Chỉ nhận json hoặc excel.", errorMessage: "INVALID_FORMAT_TYPE" },
+              { field: "sessionToken", rule: "(Optional) Nếu truyền vào, token phải còn hiệu lực truy vấn.", errorMessage: "TOKEN_EXPIRED" }
+            ],
+            securityRules: [
+              "Role Validation: Kiểm tra role Manager và Admin.",
+              "Data Isolation (Tenant): Các truy vấn của Manager phải tự động chèn thêm điều kiện BuildingId = [User_Building_Id]."
+            ],
+            logEvents: [
+              "Tham số truy vấn (Date range, Filters, Format) và thời gian thực thi (Duration) của API.",
+              "Cảnh báo (Warn) trong log nếu phát hiện cố tình truy vấn bằng sessionToken đã hết hạn."
+            ],
+            noLogEvents: [
+              "Token người dùng, mật khẩu."
+            ],
+            integrationPoints: [
+              { system: "Apache POI Library", responsibility: "Sử dụng để thao tác và xuất stream nhị phân (Binary stream) ra định dạng file .xlsx." }
+            ],
+            uiComponents: "Page: /admin/reports/card-sessions. Components: Bảng dữ liệu có phân trang; Status Badges: Active (Xanh lá), Completed (Xanh dương), Lost_Card (Đỏ), Expired (Xám); Nút 'Export to Excel'; Highlight màu vàng nhạt cho hàng có isAbnormal = true.",
+            uiStateSuccess: "The data table displays all relevant card sessions with color-coded status badges. Abnormal rows are highlighted. Under format=excel, the browser triggers a file download.",
             endpoints: ["GET /api/support/reports/card-session"],
             ownerService: "Spring Boot Support API",
-            apiContracts: createApiContract("GET /api/support/reports/card-session"),
-            testCases: defaultApiTests("Card Session Report", ["Manager"], ["GET /api/support/reports/card-session"]),
-            doneCriteria: defaultDoneCriteria("Card Session Report")
+            apiContracts: [
+              {
+                id: "contract-card-session-report-json",
+                name: "GET /api/support/reports/card-session (JSON)",
+                content: `Method: GET\nPath: /api/support/reports/card-session?startDate=2026-07-01&endDate=2026-07-17&status=Active&format=json\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "data": {\n    "summary": {\n      "totalSessions": 1250,\n      "abnormalSessions": 15,\n      "expiredReservations": 8\n    },\n    "sessions": [\n      {\n        "sessionId": "550e8400-e29b-41d4-a716-446655440000",\n        "cardNumber": "RFID-998877",\n        "vehicleType": "Car",\n        "licensePlate": "51G-123.45",\n        "checkInTime": "2026-07-16T08:30:00Z",\n        "checkOutTime": null,\n        "status": "Active",\n        "isAbnormal": true,\n        "durationHours": 33.5\n      }\n    ]\n  }\n}`
+              },
+              {
+                id: "contract-card-session-report-error",
+                name: "GET /api/support/reports/card-session (Expired Token Error)",
+                content: `Method: GET\nPath: /api/support/reports/card-session?sessionToken=EXPIRED_TOKEN_123\nHeaders:\n  Authorization: Bearer <token>\nResponse 400 Bad Request:\n{\n  "success": false,\n  "error": "VALIDATION_ERROR",\n  "message": "The provided reservation or session token has expired."\n}`
+              },
+              {
+                id: "contract-card-session-report-excel",
+                name: "GET /api/support/reports/card-session (Excel)",
+                content: `Method: GET\nPath: /api/support/reports/card-session?startDate=2026-07-01&endDate=2026-07-17&format=excel\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\nHeaders:\n  Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\n  Content-Disposition: attachment; filename="Card_Session_Report.xlsx"\nBody: [Binary Stream]`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-card-session-manager-success",
+                title: "Verify authorized client (Manager) can access Card Session Report successfully",
+                type: "integration",
+                precondition: "Client is authenticated with role: Manager",
+                steps: [
+                  "Authenticate user as Manager",
+                  "Invoke endpoint: GET /api/support/reports/card-session?startDate=2026-07-01&endDate=2026-07-02&format=json"
+                ],
+                expectedResult: "Request succeeds and returns correct payload with summary and sessions array.",
+                status: "not_started"
+              },
+              {
+                id: "tc-card-session-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing Card Session Report",
+                type: "api",
+                precondition: "User is anonymous or lacks required role (e.g., Staff)",
+                steps: [
+                  "Attempt to invoke endpoint: GET /api/support/reports/card-session without token/role"
+                ],
+                expectedResult: "Request is blocked and returns 401 Unauthorized or 403 Forbidden.",
+                status: "not_started"
+              },
+              {
+                id: "tc-card-session-expired-token",
+                title: "Verify request with expired reservation or session token is rejected",
+                type: "integration",
+                precondition: "User has valid Manager token but provides an expired sessionToken in query string.",
+                steps: [
+                  "Invoke endpoint: GET /api/support/reports/card-session?sessionToken=EXPIRED_123"
+                ],
+                expectedResult: "System returns HTTP 400 validation error stating the resource/token has expired.",
+                status: "not_started"
+              },
+              {
+                id: "tc-card-session-excel-export",
+                title: "Verify export endpoint returns correct spreadsheet binary type",
+                type: "integration",
+                precondition: "Client authenticated as Admin.",
+                steps: [
+                  "Invoke endpoint: GET /api/support/reports/card-session?format=excel"
+                ],
+                expectedResult: "Response code is 200 OK. Response content-type is application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-card-session-contract", content: "API contract is documented in this node.", checked: true },
+              { id: "dc-card-session-roles", content: "Required clients/roles are assigned.", checked: true },
+              { id: "dc-card-session-rules", content: "Business rules and inherited rules are visible in AI export.", checked: true },
+              { id: "dc-card-session-json", content: "Success response uses common API response format where applicable.", checked: true },
+              { id: "dc-card-session-error", content: "Error response is clear and does not leak sensitive data.", checked: true },
+              { id: "dc-card-session-tests", content: "All 4 required test cases are defined exactly as requested.", checked: true },
+              { id: "dc-card-session-markdown", content: "Feature can be exported as AI-readable Markdown.", checked: true },
+              { id: "dc-card-session-edge-cases", content: "Edge cases are documented (e.g., Abnormal/Overstay sessions).", checked: true },
+              { id: "dc-card-session-transitions", content: "Payment/session/reservation state transition is fully documented.", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing Spring Boot Support API project structure.\nFormulate JPA/Hibernate or Native SQL queries to fetch ParkingSessions joined with Cards and Reservations. Avoid the N+1 query problem.\nUse the Apache POI implementation from previous reports to support the format=excel requirement. Stream the output via HttpServletResponse.\nEnsure the validation block explicitly checks the validity of sessionToken (if provided) and throws a structured Validation Exception if it is expired.\nApply @Transactional(readOnly = true) to all repository and service methods.\nCheck existing tests before adding new ones. Implement all 4 test cases listed.\nReport changed files, reason, verification, and remaining risks. Do not mark this task as complete unless all tests pass."
           },
           {
             id: "leaf-rep-export",
