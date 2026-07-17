@@ -1,6 +1,6 @@
 # Project Map
 
-> Generated: 2026-07-17 17:52:56
+> Generated: 2026-07-17 17:57:34
 > Generator: `scripts/export-project-map.ps1`
 
 This file contains the project architecture and a direct source-code snapshot. The snapshot is generated from the source tree and filtered by `projectmapignore`.
@@ -48,7 +48,7 @@ src/main.tsx -> src/App.tsx
 | `src/domain/taxonomy.ts` | 8301 |
 | `src/index.css` | 1592 |
 | `src/main.tsx` | 240 |
-| `src/seed/parkingBuildingSeed.ts` | 237096 |
+| `src/seed/parkingBuildingSeed.ts` | 248036 |
 | `src/seed/parkingTaxonomyMigration.ts` | 26983 |
 | `src/store/featureTreeStore.ts` | 24426 |
 | `src/tests/aiExport.test.ts` | 1952 |
@@ -8355,12 +8355,116 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-rep-occupancy",
             title: "Occupancy Report",
             type: "leaf_feature",
+            status: "in_progress",
+            priority: "medium",
             clients: ["Manager", "Admin"],
+            tags: ["reporting", "occupancy", "excel", "analytics"],
+            summary: "Cung cấp API phân tích hiệu suất sử dụng vị trí đỗ (Occupancy Rate) thời gian thực và lịch sử biến động mật độ đỗ xe theo ngày/giờ.",
+            objective: "Cung cấp API phân tích hiệu suất sử dụng vị trí đỗ (Occupancy Rate) thời gian thực và lịch sử biến động mật độ đỗ xe theo ngày/giờ. API hỗ trợ trả về dữ liệu cấu trúc JSON phục vụ vẽ biểu đồ trực quan (mật độ hiện tại, xu hướng lấp đầy) và xuất file báo cáo Excel chi tiết phục vụ cho việc lập kế hoạch vận hành và quy hoạch bãi đỗ.",
+            inScope: [
+              "Tính toán các chỉ số sử dụng mặt bằng thời gian thực: Tổng số chỗ đỗ, số chỗ đang trống, số chỗ đang đỗ và tỷ lệ lấp đầy hiện tại (Real-time Occupancy Rate).",
+              "Thống kê hiệu suất sử dụng chỗ đỗ lịch sử (Historical Occupancy) theo khoảng thời gian được chọn (startDate đến endDate).",
+              "Phân tích mật độ lấp đầy trung bình và mật độ lấp đầy đỉnh điểm (Peak Occupancy) theo từng khung giờ trong ngày để phát hiện trạng thái quá tải.",
+              "Phân loại mật độ sử dụng theo phân khu hoặc loại phương tiện (Car, Motorbike).",
+              "Hỗ trợ xuất dữ liệu thô ra file Excel (.xlsx) thông qua tham số format=excel."
+            ],
+            outOfScope: [
+              "Thao tác trực tiếp giữ chỗ đỗ (Reservation) hoặc thay đổi sơ đồ bãi đỗ (Layout).",
+              "Tích hợp hệ thống cảm biến hồng ngoại vật lý trực tiếp (API chỉ đọc trạng thái gián tiếp qua logic của ParkingSessions và bảng sơ đồ ParkingSlots)."
+            ],
+            permissions: [
+              { role: "Admin", permission: "Xem báo cáo hiệu suất lấp đầy của toàn bộ hệ thống hoặc lọc linh hoạt theo từng tòa nhà." },
+              { role: "Manager", permission: "Chỉ xem được báo cáo hiệu suất của tòa nhà/bãi đỗ cụ thể được phân quyền quản lý." }
+            ],
+            businessRules: [
+              "Formula Rules - Real-time Occupancy Rate: Occupancy Rate = (Active Sessions / Total Slots) * 100%",
+              "Formula Rules - Peak Occupancy Rate: Là giá trị lấp đầy lớn nhất được ghi nhận tại bất kỳ thời điểm nào trong ngày đó.",
+              "Date Range Limitation: Khoảng thời gian truy vấn lịch sử tối đa cho phép là 90 ngày để tránh thực hiện các phép toán phức tạp trên lượng dữ liệu quá lớn.",
+              "Read-Only Transaction Isolation: Bắt buộc sử dụng @Transactional(readOnly = true) tại lớp Service của Spring Boot để tối ưu hóa tài nguyên kết nối cơ sở dữ liệu."
+            ],
+            dbExistingTables: ["Buildings", "ParkingLots", "ParkingSessions", "ParkingSlots"],
+            dbNewTablesSql: "",
+            dbRelationships: [],
+            validationRules: [
+              { field: "startDate", rule: "Định dạng yyyy-MM-dd. Bắt buộc truyền nếu muốn xem historical trends.", errorMessage: "INVALID_START_DATE" },
+              { field: "endDate", rule: "Định dạng yyyy-MM-dd. Bắt buộc >= startDate.", errorMessage: "INVALID_END_DATE" },
+              { field: "Range", rule: "endDate - startDate <= 90 ngày.", errorMessage: "DATE_RANGE_EXCEEDS_90_DAYS" },
+              { field: "format", rule: "Chỉ nhận giá trị json hoặc excel. Mặc định là json.", errorMessage: "INVALID_FORMAT_TYPE" }
+            ],
+            securityRules: [
+              "Role Validation: Chỉ chấp nhận JWT có claim role là Manager hoặc Admin.",
+              "Tenant Isolation: Nếu client có quyền Manager, hệ thống tự động chèn thêm điều kiện lọc BuildingId = [Manager_Building_Id] lấy trực tiếp từ JWT Claims của người dùng để cô lập dữ liệu."
+            ],
+            logEvents: [
+              "Log các hành động truy vấn báo cáo mật độ, đặc biệt là hoạt động xuất file Excel (ghi lại bộ lọc thời gian, người thực hiện và số giây xử lý truy vấn)."
+            ],
+            noLogEvents: [
+              "Không lưu trữ token bảo mật hay bất kỳ dữ liệu nhạy cảm nào vào log file."
+            ],
+            integrationPoints: [
+              { system: "Apache POI", responsibility: "Sử dụng thư viện Java Apache POI để khởi tạo, dựng style ô dữ liệu (Header xanh, dữ liệu lưới, các ô tỷ lệ phần trăm được định dạng %) và stream file Excel trực tiếp về Client." }
+            ],
+            uiComponents: "Page: /admin/occupancy-report. Components: Radial Gauge/Donut Chart hiển thị tỷ lệ lấp đầy hiện tại kèm màu cảnh báo; Area Chart/Multi-line Chart cho historical trends (average vs peak); Date Range Picker + Export button.",
+            uiStateSuccess: "When occupancy data is fetched successfully, it renders visual gauges and historical area charts on the frontend. Under format=excel, it streams the .xlsx file directly.",
             endpoints: ["GET /api/support/reports/occupancy"],
             ownerService: "Spring Boot Support API",
-            apiContracts: createApiContract("GET /api/support/reports/occupancy"),
-            testCases: defaultApiTests("Occupancy Report", ["Manager"], ["GET /api/support/reports/occupancy"]),
-            doneCriteria: defaultDoneCriteria("Occupancy Report")
+            apiContracts: [
+              {
+                id: "contract-occupancy-report-json",
+                name: "GET /api/support/reports/occupancy (JSON)",
+                content: `Method: GET\nPath: /api/support/reports/occupancy?startDate=2026-07-01&endDate=2026-07-17&format=json\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "data": {\n    "realTimeStatus": {\n      "totalCapacity": 1000,\n      "currentlyOccupied": 750,\n      "currentlyAvailable": 250,\n      "currentOccupancyRatePercent": 75.0\n    },\n    "occupancyByVehicleType": [\n      { "vehicleType": "Car", "totalCapacity": 400, "occupied": 350, "ratePercent": 87.5 },\n      { "vehicleType": "Motorbike", "totalCapacity": 600, "occupied": 400, "ratePercent": 66.67 }\n    ],\n    "historicalTrends": [\n      {\n        "date": "2026-07-01",\n        "averageOccupancyRatePercent": 65.2,\n        "peakOccupancyRatePercent": 88.0,\n        "peakHour": 9\n      },\n      {\n        "date": "2026-07-02",\n        "averageOccupancyRatePercent": 68.0,\n        "peakOccupancyRatePercent": 92.5,\n        "peakHour": 14\n      }\n    ]\n  }\n}`
+              },
+              {
+                id: "contract-occupancy-report-excel",
+                name: "GET /api/support/reports/occupancy (Excel)",
+                content: `Method: GET\nPath: /api/support/reports/occupancy?startDate=2026-07-01&endDate=2026-07-17&format=excel\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\nHeaders:\n  Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\n  Content-Disposition: attachment; filename="Occupancy_Report_20260701_20260717.xlsx"\nBody: [Binary Stream]`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-occupancy-report-manager-success",
+                title: "Verify authorized client (Manager) can access Occupancy Report successfully",
+                type: "integration",
+                precondition: "Client is authenticated with role: Manager",
+                steps: [
+                  "Authenticate user as Manager",
+                  "Invoke endpoint: GET /api/support/reports/occupancy?startDate=2026-07-01&endDate=2026-07-10&format=json"
+                ],
+                expectedResult: "Request succeeds and returns the correct payload structure (realTimeStatus, occupancyByVehicleType, historicalTrends).",
+                status: "not_started"
+              },
+              {
+                id: "tc-occupancy-report-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing Occupancy Report",
+                type: "api",
+                precondition: "User is anonymous or has role: Staff",
+                steps: [
+                  "Attempt to invoke endpoint: GET /api/support/reports/occupancy without token"
+                ],
+                expectedResult: "Request is blocked with 401 Unauthorized or 403 Forbidden.",
+                status: "not_started"
+              },
+              {
+                id: "tc-occupancy-report-excel-export",
+                title: "Verify export endpoint returns correct spreadsheet binary type",
+                type: "integration",
+                precondition: "Client is authenticated with role: Admin",
+                steps: [
+                  "Invoke endpoint: GET /api/support/reports/occupancy?startDate=2026-07-01&endDate=2026-07-10&format=excel"
+                ],
+                expectedResult: "Response code is 200 OK. Content-Type header must be application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-occupancy-report-contract", content: "API contract is documented in this node (including both json and excel formats).", checked: true },
+              { id: "dc-occupancy-report-roles", content: "Access controls and data isolation rules for Managers are strictly defined.", checked: true },
+              { id: "dc-occupancy-report-business-rules", content: "Business rules for calculations (Real-time and Peak Occupancy Rate) are clearly documented.", checked: true },
+              { id: "dc-occupancy-report-error-handling", content: "Error handling is standardized and does not leak trace logs.", checked: true },
+              { id: "dc-occupancy-report-tests", content: "All three defined test cases (including binary excel spreadsheet validation) are fully implemented and pass successfully.", checked: true },
+              { id: "dc-occupancy-report-markdown", content: "Feature can be exported as AI-readable Markdown.", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing project structure within the Spring Boot Support API.\nReuse existing helper classes for Excel export (Apache POI wrapper) developed in previous reporting tasks (Revenue Report / Traffic Report).\nFormulate highly optimized native SQL queries or database views for calculating historical peak occupancy to prevent massive loops or heap allocation inside JVM.\nSet @Transactional(readOnly = true) for all database operations in this reporting flow.\nStream the Excel file directly using HttpServletResponse output stream instead of compiling the entire document in memory before sending.\nWrite specific unit and integration tests according to the defined automated test cases. Do not mark this task as complete until all tests pass successfully."
           },
           {
             id: "leaf-rep-card",
