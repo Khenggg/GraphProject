@@ -1,6 +1,6 @@
 # Project Map
 
-> Generated: 2026-07-12 19:10:09
+> Generated: 2026-07-17 16:44:52
 > Generator: `scripts/export-project-map.ps1`
 
 This file contains the project architecture and a direct source-code snapshot. The snapshot is generated from the source tree and filtered by `projectmapignore`.
@@ -28,37 +28,37 @@ src/main.tsx -> src/App.tsx
 
 | File | Bytes |
 | --- | ---: |
-| `src/App.css` | 2891 |
-| `src/App.tsx` | 2102 |
-| `src/components/common/ConfirmDialog.tsx` | 2911 |
-| `src/components/common/Toast.tsx` | 968 |
-| `src/components/layout/LeftSidebar.tsx` | 14567 |
-| `src/components/layout/RightDetailPanel.tsx` | 101239 |
-| `src/components/sidebar/ProjectInitializerButton.tsx` | 3350 |
-| `src/components/tree/FeatureTree.tsx` | 8561 |
-| `src/components/tree/FeatureTreeNode.tsx` | 12397 |
-| `src/components/tree/TreeToolbar.tsx` | 4760 |
-| `src/db/dexieDb.ts` | 522 |
-| `src/domain/export.utils.ts` | 16031 |
-| `src/domain/featureNode.types.ts` | 2612 |
-| `src/domain/featureNodeFactory.ts` | 3717 |
-| `src/domain/inheritance.utils.ts` | 3524 |
-| `src/domain/localization.ts` | 11823 |
-| `src/domain/projectBackup.ts` | 5879 |
-| `src/domain/taxonomy.ts` | 8107 |
-| `src/index.css` | 1528 |
-| `src/main.tsx` | 230 |
-| `src/seed/parkingBuildingSeed.ts` | 164553 |
-| `src/seed/parkingTaxonomyMigration.ts` | 26446 |
-| `src/store/featureTreeStore.ts` | 23716 |
-| `src/tests/aiExport.test.ts` | 1906 |
-| `src/tests/export.test.ts` | 2646 |
-| `src/tests/featureTreeStore.test.ts` | 3176 |
-| `src/tests/inheritance.test.ts` | 3418 |
-| `src/tests/parkingBuildingSeed.test.ts` | 4249 |
-| `src/tests/projectBackup.test.ts` | 1013 |
-| `src/tests/taxonomy.test.ts` | 1767 |
-| `src/tests/treeActions.test.ts` | 5501 |
+| `src/App.css` | 3075 |
+| `src/App.tsx` | 2162 |
+| `src/components/common/ConfirmDialog.tsx` | 2982 |
+| `src/components/common/Toast.tsx` | 1000 |
+| `src/components/layout/LeftSidebar.tsx` | 14922 |
+| `src/components/layout/RightDetailPanel.tsx` | 103225 |
+| `src/components/sidebar/ProjectInitializerButton.tsx` | 3446 |
+| `src/components/tree/FeatureTree.tsx` | 8782 |
+| `src/components/tree/FeatureTreeNode.tsx` | 12728 |
+| `src/components/tree/TreeToolbar.tsx` | 4865 |
+| `src/db/dexieDb.ts` | 539 |
+| `src/domain/export.utils.ts` | 16501 |
+| `src/domain/featureNode.types.ts` | 2732 |
+| `src/domain/featureNodeFactory.ts` | 3840 |
+| `src/domain/inheritance.utils.ts` | 3637 |
+| `src/domain/localization.ts` | 12043 |
+| `src/domain/projectBackup.ts` | 6002 |
+| `src/domain/taxonomy.ts` | 8301 |
+| `src/index.css` | 1592 |
+| `src/main.tsx` | 240 |
+| `src/seed/parkingBuildingSeed.ts` | 179773 |
+| `src/seed/parkingTaxonomyMigration.ts` | 26983 |
+| `src/store/featureTreeStore.ts` | 24426 |
+| `src/tests/aiExport.test.ts` | 1952 |
+| `src/tests/export.test.ts` | 2726 |
+| `src/tests/featureTreeStore.test.ts` | 3279 |
+| `src/tests/inheritance.test.ts` | 3534 |
+| `src/tests/parkingBuildingSeed.test.ts` | 4361 |
+| `src/tests/projectBackup.test.ts` | 1036 |
+| `src/tests/taxonomy.test.ts` | 1801 |
+| `src/tests/treeActions.test.ts` | 5686 |
 
 ## Direct Source Code
 
@@ -7515,7 +7515,61 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-price-crud",
             title: "Pricing Rule CRUD",
             type: "leaf_feature",
+            status: "in_progress",
+            priority: "medium",
             clients: ["Admin", "Manager"],
+            tags: ["payments", "pricing", "crud", "admin"],
+            summary: "Cung cấp đầy đủ các thao tác CRUD danh sách quy tắc giá cho Admin và Manager.",
+            objective: "Thiết lập các API quản trị (CRUD) để Admin và Manager cấu hình bảng giá và các quy tắc tính phí đỗ xe. Hệ thống hỗ trợ cấu hình giá linh hoạt theo từng loại phương tiện (Vehicle Type), phí phạt mất thẻ (Lost Card Fee), giá vé tháng (Monthly Price) và đơn giá đặt chỗ trước theo giờ (Reservation Hourly Price). Bản ghi bảng giá đang hoạt động sẽ được sử dụng trực tiếp làm tham số đầu vào cho bộ máy tính toán phí đỗ xe tại cổng ra.",
+            inScope: [
+              "Cung cấp đầy đủ các thao tác CRUD danh sách quy tắc giá.",
+              "Hỗ trợ cập nhật nhanh (PATCH) đơn giá đặt chỗ trước (ReservationHourlyPrice) để phản hồi nhanh với biến động cung-cầu thị trường.",
+              "Ràng buộc nghiệp vụ: Đảm bảo tại một thời điểm chỉ có duy nhất một bộ quy tắc giá ở trạng thái hoạt động (IsActive = true) đối với mỗi loại phương tiện.",
+              "Tự động lưu vết lịch sử thay đổi (Audit Trail) vào schema quản trị khi có bất kỳ thao tác thay đổi dữ liệu nào (Create, Update, Delete, Patch)."
+            ],
+            outOfScope: [
+              "Logic tính toán chi tiết hóa đơn đỗ xe thực tế (sẽ do service/feature tính phí tại cổng gọi sang để lấy cấu hình).",
+              "Đồng bộ hóa bảng giá sang các hệ thống thanh toán bên thứ ba."
+            ],
+            permissions: [
+              { role: "Admin", permission: "Full Access. Có toàn quyền CRUD, kích hoạt/vô hiệu hóa quy tắc giá và xem toàn bộ lịch sử Audit Log." },
+              { role: "Manager", permission: "Write/Update. Có quyền Xem, Tạo mới và Chỉnh sửa bảng giá. Không có quyền DELETE các cấu hình giá cũ để đảm bảo tính toàn vẹn dữ liệu lịch sử." }
+            ],
+            businessRules: [
+              "Active Status Constraint: Với mỗi loại phương tiện (VehicleType), chỉ cho phép tối đa một cấu hình có trạng thái IsActive = true. Khi kích hoạt một cấu hình mới, hệ thống tự động chuyển các cấu hình cũ của phương tiện đó về IsActive = false.",
+              "Zero or Positive Bounds: Tất cả các giá trị tiền tệ như HourlyRate, ReservationHourlyRate, LostCardFee, và MonthlyPrice phải lớn hơn hoặc bằng 0.",
+              "Audit Tracking: Mọi thao tác POST/PUT/DELETE/PATCH đều phải ghi nhận thông tin tài khoản thực hiện (CreatedBy / UpdatedBy) thông qua Claims của JWT Token."
+            ],
+            dbExistingTables: ["AuditLogs"],
+            dbNewTablesSql: `-- Table for pricing rules\nCREATE TABLE PricingRules (\n  Id UUID PRIMARY KEY,\n  VehicleType VARCHAR(50) NOT NULL,\n  HourlyRate DECIMAL(18, 2) NOT NULL DEFAULT 0.00,\n  ReservationHourlyPrice DECIMAL(18, 2) NOT NULL DEFAULT 0.00,\n  LostCardFee DECIMAL(18, 2) NOT NULL DEFAULT 0.00,\n  MonthlyPrice DECIMAL(18, 2) NOT NULL DEFAULT 0.00,\n  IsActive BOOLEAN NOT NULL DEFAULT FALSE,\n  CreatedAt TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  CreatedBy VARCHAR(100),\n  UpdatedAt TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  UpdatedBy VARCHAR(100)\n);\n\nCREATE UNIQUE INDEX IX_PricingRules_VehicleType_Active ON PricingRules (VehicleType) WHERE IsActive = TRUE;`,
+            dbRelationships: [],
+            validationRules: [
+              { field: "vehicleType", rule: "Không được trống, phải là loại xe được hỗ trợ (Car, Motorbike, Bicycle).", errorMessage: "INVALID_VEHICLE_TYPE" },
+              { field: "hourlyRate", rule: "Bắt buộc >= 0.", errorMessage: "HOURLY_RATE_MUST_BE_POSITIVE" },
+              { field: "reservationHourlyPrice", rule: "Bắt buộc >= 0.", errorMessage: "RESERVATION_RATE_MUST_BE_POSITIVE" },
+              { field: "lostCardFee", rule: "Bắt buộc >= 0.", errorMessage: "LOST_CARD_FEE_MUST_BE_POSITIVE" },
+              { field: "monthlyPrice", rule: "Bắt buộc >= 0.", errorMessage: "MONTHLY_PRICE_MUST_BE_POSITIVE" }
+            ],
+            securityRules: [
+              "Role-Based Access Control (RBAC): Chỉ cho phép User có claim role là Admin hoặc Manager gọi các API thay đổi dữ liệu (POST, PUT, PATCH, DELETE).",
+              "Ngăn chặn hành động xóa cấu hình đang được sử dụng ở trạng thái IsActive = true. Chỉ được phép xóa các cấu hình cũ không còn hoạt động (và chỉ dành riêng cho role Admin)."
+            ],
+            logEvents: [
+              "Ghi log cụ thể nội dung thay đổi cấu hình giá, bao gồm các tham số cũ (Old Values) và tham số mới (New Values) vào bảng AuditLogs.",
+              "Log chi tiết ID người dùng thực hiện thao tác thay đổi."
+            ],
+            noLogEvents: [
+              "Bearer Token, mật khẩu định danh của Admin/Manager trong header hoặc log payload."
+            ],
+            integrationPoints: [
+              { system: "Payment Fee Calculation Service", responsibility: "Sử dụng cấu hình từ API này để tự động tính toán số tiền khách cần thanh toán khi Exit." }
+            ],
+            uiPage: "/admin/pricing-management",
+            uiComponents: "Pricing rules table with status badges (Active/Inactive), Dynamic reservation hourly rate slider/dialog, Activation confirmation dialog",
+            uiStateLoading: "Disable interactions, show saving/updating indicator.",
+            uiStateEmpty: "No pricing rules configured.",
+            uiStateError: "Show toast notification with specific business rule validation error.",
+            uiStateSuccess: "Show success toast, refresh pricing rules list.",
             endpoints: [
               "GET /api/core/pricing-rules",
               "GET /api/core/pricing-rules/{id}",
@@ -7525,13 +7579,75 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
               "PATCH /api/core/pricing-rules/{id}/reservation-hourly-price"
             ],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("GET /api/core/pricing-rules"),
-            testCases: defaultApiTests("Pricing Rule CRUD", ["Manager"], ["GET /api/core/pricing-rules"]),
+            apiContracts: [
+              {
+                id: "contract-price-get",
+                name: "GET /api/core/pricing-rules",
+                content: `Method: GET\nPath: /api/core/pricing-rules\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "data": [\n    {\n      "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",\n      "vehicleType": "Car",\n      "hourlyRate": 20000.00,\n      "reservationHourlyPrice": 10000.00,\n      "lostCardFee": 100000.00,\n      "monthlyPrice": 1500000.00,\n      "isActive": true,\n      "createdAt": "2026-07-17T09:00:00Z"\n    }\n  ]\n}`
+              },
+              {
+                id: "contract-price-post",
+                name: "POST /api/core/pricing-rules",
+                content: `Method: POST\nPath: /api/core/pricing-rules\nHeaders:\n  Authorization: Bearer <token>\nRequest Body:\n{\n  "vehicleType": "Car",\n  "hourlyRate": 20000.00,\n  "reservationHourlyPrice": 10000.00,\n  "lostCardFee": 100000.00,\n  "monthlyPrice": 1500000.00,\n  "isActive": true\n}\nResponse 201 Created:\n{\n  "success": true,\n  "message": "Pricing rule created successfully.",\n  "data": { "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d" }\n}`
+              },
+              {
+                id: "contract-price-put",
+                name: "PUT /api/core/pricing-rules/{id}",
+                content: `Method: PUT\nPath: /api/core/pricing-rules/{id}\nRequest Body:\n{\n  "vehicleType": "Car",\n  "hourlyRate": 25000.00,\n  "reservationHourlyPrice": 12000.00,\n  "lostCardFee": 120000.00,\n  "monthlyPrice": 1800000.00,\n  "isActive": true\n}\nResponse 200 OK:\n{\n  "success": true,\n  "message": "Pricing rule updated successfully."\n}`
+              },
+              {
+                id: "contract-price-patch",
+                name: "PATCH /api/core/pricing-rules/{id}/reservation-hourly-price",
+                content: `Method: PATCH\nPath: /api/core/pricing-rules/{id}/reservation-hourly-price\nRequest Body:\n{\n  "reservationHourlyPrice": 15000.00\n}\nResponse 200 OK:\n{\n  "success": true,\n  "message": "Reservation hourly price updated successfully.",\n  "data": {\n    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",\n    "newReservationHourlyPrice": 15000.00\n  }\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-price-active-switch",
+                title: "Verify Admin can create and automatically activate a new pricing rule",
+                type: "api",
+                precondition: "Đăng nhập bằng tài khoản có role Admin.",
+                steps: [
+                  "Gọi POST /api/core/pricing-rules để tạo cấu hình Car mới với IsActive = true.",
+                  "Truy xuất lại danh sách qua GET /api/core/pricing-rules."
+                ],
+                expectedResult: "HTTP 201 Created. Cấu hình mới được kích hoạt, đồng thời tất cả các cấu hình Car cũ trước đó tự động chuyển về IsActive = false.",
+                status: "not_started"
+              },
+              {
+                id: "tc-price-delete-manager-rejected",
+                title: "Verify Manager is rejected when attempting to DELETE a pricing rule",
+                type: "api",
+                precondition: "Đăng nhập bằng tài khoản có role Manager.",
+                steps: [
+                  "Gọi DELETE /api/core/pricing-rules/{id}."
+                ],
+                expectedResult: "HTTP 403 Forbidden. Thông báo lỗi chỉ ra Manager không có quyền xóa.",
+                status: "not_started"
+              },
+              {
+                id: "tc-price-validation-bounds",
+                title: "Verify input validations prevent negative price values",
+                type: "api",
+                precondition: "Người dùng đã được xác thực quyền Admin.",
+                steps: [
+                  "Gọi POST /api/core/pricing-rules với payload chứa lostCardFee: -50000 hoặc hourlyRate: -100."
+                ],
+                expectedResult: "HTTP 400 Bad Request kèm mã lỗi chi tiết LOST_CARD_FEE_MUST_BE_POSITIVE hoặc HOURLY_RATE_MUST_BE_POSITIVE.",
+                status: "not_started"
+              }
+            ],
             doneCriteria: [
-              ...defaultDoneCriteria("Pricing Rule CRUD"),
-              { id: "dc-price-patch", content: "Reservation hourly rates can be modified dynamically.", checked: false },
-              { id: "dc-price-lost", content: "Pricing configurations include card loss penalties.", checked: false }
-            ]
+              { id: "dc-price-contract", content: "API contract is documented in this node.", checked: true },
+              { id: "dc-price-clients", content: "Required clients/roles (Admin, Manager) are assigned and validated via Integration Tests.", checked: true },
+              { id: "dc-price-rules", content: "Business rules (e.g., maximum one active rule per vehicle type) are enforced at the DB/Service level.", checked: true },
+              { id: "dc-price-resp", content: "Success response matches the global common API response standard.", checked: true },
+              { id: "dc-price-tests", content: "At least three critical test cases (CRUD validation, role restriction, active constraints) are passed.", checked: true },
+              { id: "dc-price-patch-rate", content: "Dynamic patching for ReservationHourlyPrice is fully supported.", checked: true },
+              { id: "dc-price-required-fields", content: "LostCardFee and MonthlyPrice fields are strictly required and implemented in the DB schema.", checked: true },
+              { id: "dc-price-audit", content: "Mutating actions write accurate trail entries into the Audit Schema.", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing .NET Core API project structure. Ensure standard Clean Architecture patterns (Domain, Application, Infrastructure, WebAPI) are followed.\nDefine the PricingRule Domain Entity with appropriate database mapping constraints using Entity Framework Core Fluent API.\nUtilize Entity Framework Transactions to update existing active rules to inactive when a new active rule is activated, preventing concurrency issues.\nImplement generic or custom Audit Behavior in DB Context or Application Layer to automatically capture who modified the rule and when.\nCheck existing test suites and add newly specified endpoint tests.\nRun all relevant tests to confirm zero regressions.\nReport changed files, verification results, and potential database migration risks."
           },
           {
             id: "leaf-price-public",
