@@ -1,6 +1,6 @@
 # Project Map
 
-> Generated: 2026-07-17 17:47:15
+> Generated: 2026-07-17 17:52:56
 > Generator: `scripts/export-project-map.ps1`
 
 This file contains the project architecture and a direct source-code snapshot. The snapshot is generated from the source tree and filtered by `projectmapignore`.
@@ -48,7 +48,7 @@ src/main.tsx -> src/App.tsx
 | `src/domain/taxonomy.ts` | 8301 |
 | `src/index.css` | 1592 |
 | `src/main.tsx` | 240 |
-| `src/seed/parkingBuildingSeed.ts` | 226635 |
+| `src/seed/parkingBuildingSeed.ts` | 237096 |
 | `src/seed/parkingTaxonomyMigration.ts` | 26983 |
 | `src/store/featureTreeStore.ts` | 24426 |
 | `src/tests/aiExport.test.ts` | 1952 |
@@ -8239,12 +8239,117 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-rep-traffic",
             title: "Traffic Report",
             type: "leaf_feature",
+            status: "in_progress",
+            priority: "medium",
             clients: ["Manager", "Admin"],
+            tags: ["reporting", "traffic", "excel", "analytics"],
+            summary: "Cung cấp API để truy xuất và phân tích lưu lượng phương tiện ra/vào bãi đỗ xe trong một khoảng thời gian cụ thể.",
+            objective: "Cung cấp API để truy xuất và phân tích lưu lượng phương tiện ra/vào bãi đỗ xe trong một khoảng thời gian cụ thể. Báo cáo này giúp ban quản lý nắm bắt được tổng số lượt xe luân chuyển, phân bổ theo loại phương tiện (Car, Motorbike, Bicycle), và đặc biệt là phân tích xu hướng lưu lượng theo từng khung giờ (Hourly Trends) để xác định các khung giờ cao điểm (Peak Hours), từ đó tối ưu hóa việc phân bổ nhân sự trực chốt.",
+            inScope: [
+              "Đếm tổng số lượt xe vào (Check-in) và lượt xe ra (Check-out) trong khoảng thời gian được chọn.",
+              "Thống kê lưu lượng phân bổ theo từng loại phương tiện (VehicleType).",
+              "Phân tích và nhóm dữ liệu theo từng giờ trong ngày để tìm ra khung giờ cao điểm.",
+              "Hỗ trợ định dạng trả về JSON để Frontend vẽ biểu đồ.",
+              "Hỗ trợ tham số format=excel để xuất báo cáo dạng file .xlsx."
+            ],
+            outOfScope: [
+              "Truy xuất hình ảnh camera thời gian thực của các lượt xe ra/vào.",
+              "Thao tác đóng/mở barie (thuộc về luồng xử lý Transactional của .NET Core)."
+            ],
+            permissions: [
+              { role: "Admin", permission: "Read-Only - Được phép xem báo cáo lưu lượng của tất cả các bãi đỗ xe trong hệ thống." },
+              { role: "Manager", permission: "Read-Only - Chỉ được phép xem báo cáo lưu lượng của bãi đỗ xe thuộc quyền quản lý." }
+            ],
+            businessRules: [
+              "Data Source: Dữ liệu báo cáo được tổng hợp chủ yếu từ bảng ParkingSessions dựa trên CheckInTime và CheckOutTime.",
+              "Date Range Limitation: Khoảng thời gian truy vấn startDate và endDate không được vượt quá 365 ngày để bảo vệ hiệu năng Database.",
+              "Read-Only Transaction Isolation: Bắt buộc sử dụng @Transactional(readOnly = true) tại tầng Service để tối ưu bộ nhớ và không block các insert mới từ hệ thống IoT.",
+              "Timezone Handling: Mọi tính toán gom nhóm theo giờ/ngày (GROUP BY) phải được xử lý cẩn thận theo múi giờ vận hành của bãi đỗ xe (mặc định là Asia/Ho_Chi_Minh hoặc UTC+7)."
+            ],
+            dbExistingTables: ["ParkingSessions"],
+            dbNewTablesSql: "",
+            dbRelationships: [],
+            validationRules: [
+              { field: "startDate", rule: "Định dạng yyyy-MM-dd. Bắt buộc truyền.", errorMessage: "INVALID_START_DATE" },
+              { field: "endDate", rule: "Định dạng yyyy-MM-dd. Bắt buộc lớn hơn hoặc bằng startDate.", errorMessage: "INVALID_END_DATE" },
+              { field: "Range", rule: "endDate - startDate <= 365 ngày.", errorMessage: "DATE_RANGE_EXCEEDS_MAX_LIMIT" },
+              { field: "format", rule: "Chỉ nhận giá trị json hoặc excel. Mặc định là json.", errorMessage: "INVALID_FORMAT_TYPE" }
+            ],
+            securityRules: [
+              "Role-Based Access: Chỉ chấp nhận JWT có claim role là Manager hoặc Admin.",
+              "Tenant Isolation: Dữ liệu trả về cho Manager phải được tự động thêm điều kiện WHERE BuildingId = [Manager_Building_Id] ở mọi truy vấn SQL."
+            ],
+            logEvents: [
+              "Ghi log khi hệ thống thực hiện xuất file Excel, bao gồm các thông số thời gian lọc và định danh người dùng."
+            ],
+            noLogEvents: [
+              "Không log chi tiết biển số xe (License Plate) nếu không có sự cho phép đặc biệt. Không log token hoặc mật khẩu."
+            ],
+            integrationPoints: [
+              { system: "Apache POI", responsibility: "Tích hợp thư viện Java Apache POI để khởi tạo, định dạng và stream workbook Excel (.xlsx) xuống Client." }
+            ],
+            uiComponents: "Page: /admin/traffic-report. Components: Bộ lọc khoảng thời gian (Date Range Picker); Biểu đồ đường (Line Chart) theo giờ tìm điểm Peak; Biểu đồ cột (Bar Chart) theo ngày; Biểu đồ tròn (Pie Chart) tỷ trọng phương tiện; Nút 'Export to Excel'.",
+            uiStateSuccess: "When the query succeeds, the charts (line, bar, pie) render accurately on frontend. Excel download triggers automatically with binary stream.",
             endpoints: ["GET /api/support/reports/traffic"],
             ownerService: "Spring Boot Support API",
-            apiContracts: createApiContract("GET /api/support/reports/traffic"),
-            testCases: defaultApiTests("Traffic Report", ["Manager"], ["GET /api/support/reports/traffic"]),
-            doneCriteria: defaultDoneCriteria("Traffic Report")
+            apiContracts: [
+              {
+                id: "contract-traffic-report-json",
+                name: "GET /api/support/reports/traffic (JSON)",
+                content: `Method: GET\nPath: /api/support/reports/traffic?startDate=2026-07-01&endDate=2026-07-17&format=json\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "data": {\n    "summary": {\n      "totalCheckIns": 1450,\n      "totalCheckOuts": 1420,\n      "currentlyActive": 30\n    },\n    "trafficByVehicleType": [\n      { "vehicleType": "Car", "checkIns": 450, "checkOuts": 440 },\n      { "vehicleType": "Motorbike", "checkIns": 900, "checkOuts": 880 },\n      { "vehicleType": "Bicycle", "checkIns": 100, "checkOuts": 100 }\n    ],\n    "hourlyPeakTrends": [\n      { "hourOfDay": 7, "avgCheckIns": 150, "avgCheckOuts": 20 },\n      { "hourOfDay": 8, "avgCheckIns": 200, "avgCheckOuts": 50 },\n      { "hourOfDay": 17, "avgCheckIns": 30, "avgCheckOuts": 220 }\n    ],\n    "dailyTraffic": [\n      { "date": "2026-07-01", "checkIns": 120, "checkOuts": 115 },\n      { "date": "2026-07-02", "checkIns": 135, "checkOuts": 135 }\n    ]\n  }\n}`
+              },
+              {
+                id: "contract-traffic-report-excel",
+                name: "GET /api/support/reports/traffic (Excel)",
+                content: `Method: GET\nPath: /api/support/reports/traffic?startDate=2026-07-01&endDate=2026-07-17&format=excel\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\nHeaders:\n  Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\n  Content-Disposition: attachment; filename="Traffic_Report_20260701_20260717.xlsx"\nBody: [Binary Stream]`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-traffic-report-manager-success",
+                title: "Verify authorized client (Manager) can access Traffic Report successfully",
+                type: "integration",
+                precondition: "Client is authenticated with role: Manager",
+                steps: [
+                  "Authenticate user as Manager",
+                  "Invoke endpoint: GET /api/support/reports/traffic?startDate=2026-07-01&endDate=2026-07-02&format=json"
+                ],
+                expectedResult: "Request succeeds and returns the correct JSON payload containing summary, trafficByVehicleType, hourlyPeakTrends.",
+                status: "not_started"
+              },
+              {
+                id: "tc-traffic-report-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing Traffic Report",
+                type: "api",
+                precondition: "User is anonymous or lacks required role (e.g. Staff)",
+                steps: [
+                  "Attempt to invoke endpoint: GET /api/support/reports/traffic without token/role"
+                ],
+                expectedResult: "Request is blocked and returns 401 Unauthorized or 403 Forbidden.",
+                status: "not_started"
+              },
+              {
+                id: "tc-traffic-report-excel-export",
+                title: "Verify export endpoint returns correct spreadsheet binary type",
+                type: "integration",
+                precondition: "Client is authenticated with role: Admin",
+                steps: [
+                  "Invoke endpoint: GET /api/support/reports/traffic?startDate=2026-07-01&endDate=2026-07-02&format=excel"
+                ],
+                expectedResult: "Response code is 200 OK. Headers contain Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-traffic-report-contract", content: "API contract is documented in this node, including json and excel output formats.", checked: true },
+              { id: "dc-traffic-report-roles", content: "Required clients/roles (Admin, Manager) are assigned and tenant isolation is defined.", checked: true },
+              { id: "dc-traffic-report-business-rules", content: "Business rules regarding Date Range limitations and timezone handling are visible in AI export.", checked: true },
+              { id: "dc-traffic-report-json", content: "Success response uses common API response format.", checked: true },
+              { id: "dc-traffic-report-error", content: "Error response is clear and does not leak sensitive data.", checked: true },
+              { id: "dc-traffic-report-tests", content: "At least three test cases are defined, explicitly covering the Excel export test.", checked: true },
+              { id: "dc-traffic-report-markdown", content: "Feature can be exported as AI-readable Markdown.", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing project structure within the Spring Boot Support API.\nReuse the Excel generation abstraction (e.g., Apache POI wrapper utilities) implemented previously in the Revenue Report if applicable.\nUse Spring Data @Query with native SQL or JPQL to execute COUNT, GROUP BY operations for the hourlyPeakTrends directly in PostgreSQL, avoiding fetching massive amounts of raw ParkingSessions rows into application memory.\nApply @Transactional(readOnly = true) to all read operations in the service layer.\nStream the .xlsx response directly via the HttpServletResponse output stream to prevent OutOfMemory (OOM) issues on large data ranges.\nCheck existing tests before adding new ones, implement the specified integration tests."
           },
           {
             id: "leaf-rep-occupancy",
