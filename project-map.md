@@ -1,6 +1,6 @@
 # Project Map
 
-> Generated: 2026-07-17 17:21:50
+> Generated: 2026-07-17 17:30:56
 > Generator: `scripts/export-project-map.ps1`
 
 This file contains the project architecture and a direct source-code snapshot. The snapshot is generated from the source tree and filtered by `projectmapignore`.
@@ -48,7 +48,7 @@ src/main.tsx -> src/App.tsx
 | `src/domain/taxonomy.ts` | 8301 |
 | `src/index.css` | 1592 |
 | `src/main.tsx` | 240 |
-| `src/seed/parkingBuildingSeed.ts` | 206109 |
+| `src/seed/parkingBuildingSeed.ts` | 205510 |
 | `src/seed/parkingTaxonomyMigration.ts` | 26983 |
 | `src/store/featureTreeStore.ts` | 24426 |
 | `src/tests/aiExport.test.ts` | 1952 |
@@ -7851,7 +7851,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             status: "in_progress",
             priority: "medium",
             clients: ["Staff", "Manager"],
-            tags: ["incidents", "lost-card", "document-upload", "file-storage"],
+            tags: ["incidents", "lost-card", "file-upload", "documents", "audit"],
             summary: "Cung cấp các API quản lý tài liệu minh chứng đi kèm với mỗi sự vụ báo mất thẻ (Lost Card Case).",
             objective: "Cung cấp các API quản lý tài liệu minh chứng (hồ sơ, hình ảnh CCCD, giấy tờ xe, biên bản cam kết) đi kèm với mỗi sự vụ báo mất thẻ (Lost Card Case). Các tài liệu này là điều kiện bắt buộc (bằng chứng pháp lý) để Staff/Manager xác minh chủ xe, áp phí phạt mất thẻ (LostCardFee), lập hóa đơn thanh toán và thực hiện mở cổng cho xe xuất bãi một cách hợp lệ.",
             inScope: [
@@ -7861,7 +7861,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
               "Cho phép xóa tài liệu minh chứng nếu upload nhầm trước khi vụ việc được đóng/hoàn tất."
             ],
             outOfScope: [
-              "Dịch vụ lưu trữ vật lý tệp tin (File Storage Service như AWS S3, Azure Blob, hoặc Local Storage sẽ được gọi qua Interface trừu tượng IStorageService).",
+              "Dịch vụ lưu trữ vật lý tệp tin (File Storage Service như AWS S3, Azure Blob, hoặc Local Storage sẽ được gọi qua một Interface trừu tượng IStorageService).",
               "Quy trình xử lý thanh toán thực tế cho phí mất thẻ (được quản lý bởi luồng Payment)."
             ],
             permissions: [
@@ -7871,14 +7871,12 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             businessRules: [
               "Case Validation: Chỉ cho phép upload hoặc thay đổi tài liệu đối với các vụ việc mất thẻ (LostCardCases) đang ở trạng thái xử lý (Pending, Processing). Một khi sự vụ đã đóng (Resolved, Closed), mọi hành vi thay đổi tài liệu (Thêm, Xóa) đều bị cấm hoàn toàn để bảo vệ tính toàn vẹn hồ sơ pháp lý.",
               "File Validation Constraints: Chỉ chấp nhận các định dạng tệp tin: .jpg, .jpeg, .png, .pdf. Dung lượng tối đa cho mỗi file tải lên là 5MB.",
-              "Database Constraints: Bản ghi thông tin tài liệu phải liên kết chặt chẽ với bảng sự vụ mất thẻ thông qua khóa ngoại kiểu UUID.",
-              "Atomic Transactions: Metadata tài liệu chỉ được ghi vào PostgreSQL sau khi upload vật lý lên Storage thành công. Nếu DB save thất bại, cần trigger rollback task để xóa file vừa upload khỏi storage.",
-              "MIME Type Check: Backend phải kiểm tra MIME Type thực tế của file (không chỉ dựa vào extension) trước khi lưu để ngăn chặn Web Shell hoặc Executable files."
+              "Database Constraints: Bản ghi thông tin tài liệu phải liên kết chặt chẽ với bảng sự vụ mất thẻ thông qua khóa ngoại kiểu UUID."
             ],
             dbExistingTables: ["LostCardCases", "AuditLogs"],
             dbNewTablesSql: `CREATE TABLE LostCardDocuments (\n    Id UUID PRIMARY KEY,\n    CaseId UUID NOT NULL REFERENCES LostCardCases(Id) ON DELETE CASCADE,\n    DocumentType VARCHAR(50) NOT NULL, -- ID_Card, Vehicle_Registration, Handover_Report, Other\n    FileName VARCHAR(255) NOT NULL,\n    FileUrl VARCHAR(512) NOT NULL,\n    FileSize BIGINT NOT NULL,          -- Lưu dung lượng theo bytes để kiểm soát giới hạn\n    FileExtension VARCHAR(10) NOT NULL,-- .jpg, .png, .pdf\n    UploadedAt TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    UploadedBy VARCHAR(100) NOT NULL\n);\n\n-- Index tối ưu tốc độ tìm kiếm tài liệu theo vụ việc\nCREATE INDEX IX_LostCardDocuments_CaseId ON LostCardDocuments(CaseId);`,
             dbRelationships: [
-              "Một sự vụ mất thẻ (LostCardCase) có quan hệ 1 - Nhiều (1-n) với LostCardDocuments."
+              "Một sự vụ mất thẻ (LostCardCase) có quan hệ 1-Nhiều (1-n) với LostCardDocuments."
             ],
             validationRules: [
               { field: "caseId", rule: "Phải là một UUID hợp lệ và tồn tại trong bảng LostCardCases.", errorMessage: "LOST_CARD_CASE_NOT_FOUND" },
@@ -7887,7 +7885,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
               { field: "documentType", rule: "Phải thuộc một trong các nhóm định nghĩa sẵn (ID_Card, Vehicle_Registration, Handover_Report, Other).", errorMessage: "INVALID_DOCUMENT_TYPE" }
             ],
             securityRules: [
-              "RBAC: Chỉ những tài khoản có Claim Role là Staff hoặc Manager mới có quyền truy cập và thao tác trên các endpoints này.",
+              "Role-Based Access Control (RBAC): Chỉ những tài khoản có Claim Role là Staff hoặc Manager mới có quyền truy cập và thao tác trên các endpoints này.",
               "Malicious File Scan: Trước khi ghi file vào Storage, backend phải thực hiện kiểm tra phần mở rộng thực tế của tệp tin (MIME Type check) để ngăn chặn lỗ hổng tải lên mã độc (Web Shell, Executable files)."
             ],
             logEvents: [
@@ -7900,11 +7898,8 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             integrationPoints: [
               { system: "Object Storage Service (S3/Azure/Local)", responsibility: "Tiếp nhận luồng byte dữ liệu từ .NET API, thực hiện lưu trữ vật lý và trả về URL truy cập công khai/bảo mật." }
             ],
-            uiComponents: "Page: /staff/incident-management/lost-cards/{caseId}. Components: Drag & Drop Zone hỗ trợ chọn nhiều file cùng lúc (batch upload); Danh sách tệp đính kèm dạng Card/Thumbnail với Preview; Nút Xóa kèm Pop-over xác nhận.",
-            uiStates: [
-              "Processing State: Hiển thị thanh tiến trình (Progress bar) theo % đối với các file có dung lượng lớn đang được tải lên.",
-              "Success/Error: Toast thông báo chi tiết (ví dụ: 'Đã tải lên thành công 3/3 file' hoặc cảnh báo 'File xxx.exe không đúng định dạng')."
-            ],
+            uiComponents: "Page: /staff/incident-management/lost-cards/{caseId}. Components: Drag & Drop Zone cho batch upload; danh sách tệp hiển thị dạng Card/Thumbnail với Preview; nút Xóa kèm Pop-over xác nhận.",
+            uiStateSuccess: "Processing State: Progress bar theo % cho file lớn đang upload. Success/Error: Toast notification chi tiết (ví dụ: 'Đã tải lên thành công 3/3 file' hoặc 'File xxx.exe không đúng định dạng').",
             endpoints: [
               "POST /api/core/lost-cards/{caseId}/documents",
               "POST /api/core/lost-cards/{caseId}/documents/batch",
@@ -7924,12 +7919,12 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
                 content: `Method: POST\nPath: /api/core/lost-cards/{caseId}/documents/batch\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: multipart/form-data\nRequest Body:\n  files: [Binary File 1, Binary File 2, ...]\n  documentTypes: ["ID_Card", "Vehicle_Registration", ...]\nResponse 201 Created:\n{\n  "success": true,\n  "message": "Batch documents uploaded successfully.",\n  "data": [\n    {\n      "documentId": "4a1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb7a",\n      "fileName": "cccd_mat_truoc.jpg",\n      "fileUrl": "https://storage.parking.com/lost-cards/4a1deb4d/cccd_mat_truoc.jpg"\n    },\n    {\n      "documentId": "5c1fdf4e-4b7e-5cad-8cee-3c0e8c4dda8b",\n      "fileName": "cavet_xe.jpg",\n      "fileUrl": "https://storage.parking.com/lost-cards/4a1deb4d/cavet_xe.jpg"\n    }\n  ]\n}`
               },
               {
-                id: "contract-lost-card-list-documents",
+                id: "contract-lost-card-get-docs",
                 name: "GET /api/core/lost-cards/{caseId}/documents",
                 content: `Method: GET\nPath: /api/core/lost-cards/{caseId}/documents\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "data": [\n    {\n      "documentId": "4a1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb7a",\n      "documentType": "ID_Card",\n      "fileName": "cccd_mat_truoc.jpg",\n      "fileSize": 1542000,\n      "fileUrl": "https://storage.parking.com/lost-cards/4a1deb4d/cccd_mat_truoc.jpg",\n      "uploadedBy": "staff_nguyen_van_a",\n      "uploadedAt": "2026-07-17T10:30:00Z"\n    }\n  ]\n}`
               },
               {
-                id: "contract-lost-card-delete-document",
+                id: "contract-lost-card-delete-doc",
                 name: "DELETE /api/core/lost-cards/{caseId}/documents/{documentId}",
                 content: `Method: DELETE\nPath: /api/core/lost-cards/{caseId}/documents/4a1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb7a\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "message": "Document deleted successfully."\n}`
               }
@@ -7981,6 +7976,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             ],
             notes: "Before coding:\nInspect the existing .NET Core API structure (specifically, where the File Storage layer is abstracted via IStorageService).\nUse a custom validation filter or FluentValidation to enforce file extension limits before saving data.\nEnsure that file upload processes are stream-based where possible to minimize memory allocation on the API host for large payloads.\nImplement atomic DB transactions: The file metadata should only be written to PostgreSQL after the physical file storage upload succeeds. If the DB save fails, trigger a rollback task to delete the uploaded file from the storage.\nCheck and run existing test projects. Add newly specified tests under the LostCardClaim directory.\nVerify code compiles without warnings and run all tests before completing the task."
           },
+
           {
             id: "leaf-inc-mismatch",
             title: "Plate Mismatch Case",
