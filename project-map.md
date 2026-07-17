@@ -1,6 +1,6 @@
 # Project Map
 
-> Generated: 2026-07-12 19:10:09
+> Generated: 2026-07-17 16:35:47
 > Generator: `scripts/export-project-map.ps1`
 
 This file contains the project architecture and a direct source-code snapshot. The snapshot is generated from the source tree and filtered by `projectmapignore`.
@@ -28,37 +28,37 @@ src/main.tsx -> src/App.tsx
 
 | File | Bytes |
 | --- | ---: |
-| `src/App.css` | 2891 |
-| `src/App.tsx` | 2102 |
-| `src/components/common/ConfirmDialog.tsx` | 2911 |
-| `src/components/common/Toast.tsx` | 968 |
-| `src/components/layout/LeftSidebar.tsx` | 14567 |
-| `src/components/layout/RightDetailPanel.tsx` | 101239 |
-| `src/components/sidebar/ProjectInitializerButton.tsx` | 3350 |
-| `src/components/tree/FeatureTree.tsx` | 8561 |
-| `src/components/tree/FeatureTreeNode.tsx` | 12397 |
-| `src/components/tree/TreeToolbar.tsx` | 4760 |
-| `src/db/dexieDb.ts` | 522 |
-| `src/domain/export.utils.ts` | 16031 |
-| `src/domain/featureNode.types.ts` | 2612 |
-| `src/domain/featureNodeFactory.ts` | 3717 |
-| `src/domain/inheritance.utils.ts` | 3524 |
-| `src/domain/localization.ts` | 11823 |
-| `src/domain/projectBackup.ts` | 5879 |
-| `src/domain/taxonomy.ts` | 8107 |
-| `src/index.css` | 1528 |
-| `src/main.tsx` | 230 |
-| `src/seed/parkingBuildingSeed.ts` | 164553 |
-| `src/seed/parkingTaxonomyMigration.ts` | 26446 |
-| `src/store/featureTreeStore.ts` | 23716 |
-| `src/tests/aiExport.test.ts` | 1906 |
-| `src/tests/export.test.ts` | 2646 |
-| `src/tests/featureTreeStore.test.ts` | 3176 |
-| `src/tests/inheritance.test.ts` | 3418 |
-| `src/tests/parkingBuildingSeed.test.ts` | 4249 |
-| `src/tests/projectBackup.test.ts` | 1013 |
-| `src/tests/taxonomy.test.ts` | 1767 |
-| `src/tests/treeActions.test.ts` | 5501 |
+| `src/App.css` | 3075 |
+| `src/App.tsx` | 2162 |
+| `src/components/common/ConfirmDialog.tsx` | 2982 |
+| `src/components/common/Toast.tsx` | 1000 |
+| `src/components/layout/LeftSidebar.tsx` | 14922 |
+| `src/components/layout/RightDetailPanel.tsx` | 103225 |
+| `src/components/sidebar/ProjectInitializerButton.tsx` | 3446 |
+| `src/components/tree/FeatureTree.tsx` | 8782 |
+| `src/components/tree/FeatureTreeNode.tsx` | 12728 |
+| `src/components/tree/TreeToolbar.tsx` | 4865 |
+| `src/db/dexieDb.ts` | 539 |
+| `src/domain/export.utils.ts` | 16501 |
+| `src/domain/featureNode.types.ts` | 2732 |
+| `src/domain/featureNodeFactory.ts` | 3840 |
+| `src/domain/inheritance.utils.ts` | 3637 |
+| `src/domain/localization.ts` | 12043 |
+| `src/domain/projectBackup.ts` | 6002 |
+| `src/domain/taxonomy.ts` | 8301 |
+| `src/index.css` | 1592 |
+| `src/main.tsx` | 240 |
+| `src/seed/parkingBuildingSeed.ts` | 176929 |
+| `src/seed/parkingTaxonomyMigration.ts` | 26983 |
+| `src/store/featureTreeStore.ts` | 24426 |
+| `src/tests/aiExport.test.ts` | 1952 |
+| `src/tests/export.test.ts` | 2726 |
+| `src/tests/featureTreeStore.test.ts` | 3279 |
+| `src/tests/inheritance.test.ts` | 3534 |
+| `src/tests/parkingBuildingSeed.test.ts` | 4361 |
+| `src/tests/projectBackup.test.ts` | 1036 |
+| `src/tests/taxonomy.test.ts` | 1801 |
+| `src/tests/treeActions.test.ts` | 5686 |
 
 ## Direct Source Code
 
@@ -7212,12 +7212,120 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-struct-suggest",
             title: "Location / Slot Suggestion",
             type: "leaf_feature",
+            status: "in_progress",
+            priority: "medium",
             clients: ["Staff", "Manager", "Driver"],
+            tags: ["parking", "operations", "suggestion", "slot"],
+            summary: "Tự động gợi ý slot đỗ xe tối ưu và gần nhất cho phương tiện dựa trên cổng vào.",
+            objective: "The primary objective of this feature is to automatically recommend the nearest and most optimal available parking slot to a vehicle upon entry. This minimizes driver searching time, optimizes traffic flow within the parking building, and ensures slots are allocated correctly based on vehicle type and entry gate proximity.",
+            inScope: [
+              "Receive entry gate information and vehicle type.",
+              "Query the database or in-memory cache for currently available slots.",
+              "Execute a suggestion algorithm to find the closest slot matching the vehicle type.",
+              "Temporarily hold/reserve the suggested slot to prevent race conditions when multiple vehicles enter simultaneously."
+            ],
+            outOfScope: [
+              "3D graphical routing or turn-by-turn navigation UI mapping.",
+              "Physical integrations with LED indicators at the actual parking slots (handled by IoT gateway, not this endpoint).",
+              "Online reservations made hours in advance (this is for immediate entry suggestion only)."
+            ],
+            permissions: [
+              { role: "Staff", permission: "Can trigger a slot suggestion manually if overriding the system at the entry gate." },
+              { role: "Driver", permission: "Can receive slot suggestions via the public driver app or entry kiosk." },
+              { role: "Manager", permission: "Can view logs and configurations related to slot allocation algorithms." },
+              { role: "Admin", permission: "Can view logs and configurations related to slot allocation algorithms." }
+            ],
+            businessRules: [
+              "Proximity Matching: The suggestion must prioritize the shortest physical distance from the specific entryGateId to the parking slot.",
+              "Data Structure Optimization: To ensure high performance during peak hours, the available slots should ideally be managed using optimal data structures (e.g., maintaining a Min-Heap or a Binary Search Tree (BST) sorted by distance for each gate/vehicle type combination) rather than performing full table scans.",
+              "Vehicle Compatibility: A car cannot be suggested a motorcycle slot, and vice versa.",
+              "Race Condition Prevention: Once a slot is suggested, it must be marked with a transient state (e.g., Reserved_Pending) for a short window (e.g., 5 minutes) until the actual parking session is fully confirmed."
+            ],
+            dbExistingTables: ["Gates", "ParkingSessions"],
+            dbNewTablesSql: `-- Table for parking slots\nCREATE TABLE ParkingSlots (\n  Id VARCHAR(50) PRIMARY KEY,\n  Floor VARCHAR(50) NOT NULL,\n  Zone VARCHAR(50) NOT NULL,\n  VehicleType VARCHAR(50) NOT NULL,\n  Status VARCHAR(50) NOT NULL\n);\n\n-- Table for gate slot distances\nCREATE TABLE GateSlotDistances (\n  GateId VARCHAR(50) NOT NULL REFERENCES Gates(Id),\n  SlotId VARCHAR(50) NOT NULL REFERENCES ParkingSlots(Id),\n  Distance DECIMAL(10, 2) NOT NULL,\n  PRIMARY KEY (GateId, SlotId)\n);`,
+            dbRelationships: [
+              "A ParkingSlot has a 1-to-many relationship with GateSlotDistances.",
+              "A ParkingSession will reference one ParkingSlot."
+            ],
+            validationRules: [
+              { field: "entryGateId", rule: "must exist in the database and be an active ENTRY gate.", errorMessage: "INVALID_GATE" },
+              { field: "vehicleType", rule: "must be a valid, supported enum value.", errorMessage: "INVALID_VEHICLE_TYPE" },
+              { field: "Capacity Validation", rule: "If the parking lot is at 100% capacity for the requested vehicle type, the system must return a specific business error code (e.g., ERR_LOT_FULL).", errorMessage: "ERR_LOT_FULL" }
+            ],
+            securityRules: [
+              "Validate role permissions (Staff, Driver, Manager).",
+              "Prevent unauthorized access to the algorithm configuration endpoints."
+            ],
+            logEvents: [
+              "Log request access, inputs, and response code.",
+              "Performance Metric: Log the execution time of the suggestion algorithm to monitor data structure efficiency.",
+              "Log cases where the lot is full (ERR_LOT_FULL)."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, and credit card details."
+            ],
+            integrationPoints: [
+              { system: "Internal API logic only", responsibility: "No external integration points specified." }
+            ],
+            uiPage: "/entry-kiosk",
+            uiComponents: "Staff Kiosk screen, Suggested Slot card, Red Warning Alert for full state",
+            uiStateEmpty: "If the response is ERR_LOT_FULL, the UI flashes a red warning indicating the lot is completely full for that specific vehicle type.",
+            uiStateSuccess: "Upon vehicle arrival and RFID scan, the UI automatically calls this endpoint and prominently displays the suggested slot (e.g., 'Recommend: Zone A, Slot 12') in large text for the staff to direct the driver.",
             endpoints: ["POST /api/core/parking-sessions/suggest-slot"],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/parking-sessions/suggest-slot"),
-            testCases: defaultApiTests("Location / Slot Suggestion", ["Driver"], ["POST /api/core/parking-sessions/suggest-slot"]),
-            doneCriteria: defaultDoneCriteria("Location / Slot Suggestion")
+            apiContracts: [
+              {
+                id: "contract-suggest-slot",
+                name: "POST /api/core/parking-sessions/suggest-slot",
+                content: `Method: POST\nPath: /api/core/parking-sessions/suggest-slot\nHeaders:\n  Authorization: Bearer <token>\nRequest Body:\n{\n  "entryGateId": "GATE-IN-01",\n  "vehicleType": "Car",\n  "requireAccessibleSlot": false\n}\n\nResponse 200 OK:\n{\n  "success": true,\n  "data": {\n    "suggestedSlotId": "SLOT-A12",\n    "floor": "B1",\n    "zone": "A",\n    "distanceMeters": 45.5,\n    "status": "Reserved_Pending"\n  }\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-suggest-nearest-slot",
+                title: "Verify nearest slot is suggested successfully based on vehicle type",
+                type: "api",
+                precondition: "System has 3 available Car slots at distances 10m, 20m, and 50m from GATE-IN-01.",
+                steps: [
+                  "Invoke POST /api/core/parking-sessions/suggest-slot with entryGateId: GATE-IN-01 and vehicleType: Car."
+                ],
+                expectedResult: "HTTP 200. Payload returns the slot with the 10m distance.",
+                status: "not_started"
+              },
+              {
+                id: "tc-suggest-full-capacity",
+                title: "Verify system handles Full Capacity correctly",
+                type: "api",
+                precondition: "All 'Motorbike' slots have Status = Occupied or Reserved_Pending.",
+                steps: [
+                  "Invoke POST /api/core/parking-sessions/suggest-slot for vehicleType: Motorbike."
+                ],
+                expectedResult: "HTTP 400 or 404 with error code ERR_LOT_FULL.",
+                status: "not_started"
+              },
+              {
+                id: "tc-suggest-concurrency",
+                title: "Verify concurrency (Race Condition)",
+                type: "integration",
+                precondition: "Only 1 available slot left.",
+                steps: [
+                  "Send two simultaneous requests for the same vehicle type."
+                ],
+                expectedResult: "One request receives the slot and marks it Reserved_Pending. The second request receives ERR_LOT_FULL.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-suggest-contract", content: "API contract is documented in this node and strictly matches DTOs.", checked: true },
+              { id: "dc-suggest-clients", content: "Required clients/roles are assigned.", checked: true },
+              { id: "dc-suggest-rules", content: "Business rules and inherited rules are visible in AI export.", checked: true },
+              { id: "dc-suggest-resp", content: "Success response uses common API response format where applicable.", checked: true },
+              { id: "dc-suggest-err", content: "Error response is clear and does not leak sensitive data.", checked: true },
+              { id: "dc-suggest-tests", content: "At least three test cases (including concurrency) are defined.", checked: true },
+              { id: "dc-suggest-algo", content: "Suggestion algorithm accurately filters by VehicleType and sorts by proximity.", checked: true },
+              { id: "dc-suggest-concurrency-lock", content: "Concurrency mechanism (locks or transient states) is implemented to prevent double-booking.", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing .NET Core API project structure.\nLocate existing Domain Models. Implement ParkingSlot entity if it does not exist.\nDesign the suggestion algorithm emphasizing algorithmic efficiency (consider mapping distances into an array or tree structure upon service startup for O(1) or O(log n) lookups).\nImplement concurrency control using Entity Framework Core optimistic concurrency (RowVersion) or a brief distributed lock.\nCheck existing tests before adding new ones.\nRun all relevant tests.\nReport changed files, reason, verification, and remaining risks."
           }
         ]
       },
