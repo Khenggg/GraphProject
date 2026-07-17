@@ -1,6 +1,6 @@
 # Project Map
 
-> Generated: 2026-07-17 17:30:56
+> Generated: 2026-07-17 17:45:30
 > Generator: `scripts/export-project-map.ps1`
 
 This file contains the project architecture and a direct source-code snapshot. The snapshot is generated from the source tree and filtered by `projectmapignore`.
@@ -48,7 +48,7 @@ src/main.tsx -> src/App.tsx
 | `src/domain/taxonomy.ts` | 8301 |
 | `src/index.css` | 1592 |
 | `src/main.tsx` | 240 |
-| `src/seed/parkingBuildingSeed.ts` | 205510 |
+| `src/seed/parkingBuildingSeed.ts` | 216377 |
 | `src/seed/parkingTaxonomyMigration.ts` | 26983 |
 | `src/store/featureTreeStore.ts` | 24426 |
 | `src/tests/aiExport.test.ts` | 1952 |
@@ -8011,12 +8011,111 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-rep-dashboard",
             title: "Support Dashboard",
             type: "leaf_feature",
+            status: "in_progress",
+            priority: "medium",
             clients: ["Manager", "Admin"],
+            tags: ["reporting", "dashboard", "analytics", "cache"],
+            summary: "Cung cấp một API tổng hợp dữ liệu thời gian thực (Real-time Aggregation) để xây dựng trang Dashboard Giám sát Vận hành dành cho Manager và Admin.",
+            objective: "Cung cấp một API tổng hợp dữ liệu thời gian thực (Real-time Aggregation) để xây dựng trang Dashboard Giám sát Vận hành dành cho Manager và Admin. API này tổng hợp và phân tích toàn bộ các chỉ số vận hành quan trọng như: trạng thái xử lý sự cố (Incidents), thống kê báo mất thẻ (LostCardCases), danh sách giao dịch lỗi cần duyệt lại (UnderReview Payments), hiệu suất xử lý của nhân viên và xu hướng sự cố phát sinh theo thời gian.",
+            inScope: [
+              "Tổng hợp các chỉ số KPI vận hành theo chu kỳ thời gian (Daily, Weekly, Monthly) hoặc theo khoảng thời gian tùy chọn (startDate đến endDate).",
+              "Đếm số lượng sự vụ theo trạng thái (Pending, Processing, Resolved).",
+              "Thống kê các khoản thanh toán nghi vấn cần rà soát thủ công (Trạng thái UnderReview từ PayOS Webhook).",
+              "Thống kê số lượng mất thẻ và các tài liệu minh chứng đi kèm.",
+              "Trả về danh sách top sự cố khẩn cấp (Critical Incidents) chưa được xử lý để hiển thị trên bảng cảnh báo của Manager."
+            ],
+            outOfScope: [
+              "Biểu đồ hóa dữ liệu trực quan (phần này do Frontend xử lý dựa trên JSON trả về).",
+              "Xuất file báo cáo định dạng Excel, PDF (sẽ do một Feature chuyên dụng khác đảm nhận)."
+            ],
+            permissions: [
+              { role: "Admin", permission: "Read-Only - Truy cập toàn bộ số liệu phân tích vận hành trên toàn bộ các tòa nhà/bãi đỗ thuộc hệ thống." },
+              { role: "Manager", permission: "Read-Only - Truy cập số liệu phân tích vận hành thuộc phạm vi tòa nhà được phân quyền quản lý." }
+            ],
+            businessRules: [
+              "Read-Only Transaction Isolation: Vì Spring Boot Support API chịu trách nhiệm đọc dữ liệu báo cáo từ shared PostgreSQL, tất cả các truy vấn JPA/Hibernate tại service này phải được đánh dấu @Transactional(readOnly = true) để tối ưu hóa hiệu năng bộ nhớ (bypass dirty checking).",
+              "Date Range Limit: Mặc định nếu người dùng không truyền startDate và endDate, hệ thống sẽ tự động lấy dữ liệu trong vòng 30 ngày gần nhất. Giới hạn khoảng cách tối đa giữa 2 ngày truy vấn không được vượt quá 90 ngày để tránh làm nghẽn DB (tránh quét toàn bộ bảng dữ liệu lớn).",
+              "Data Refreshment Cache: Để tránh việc Manager F5 liên tục làm quá tải hệ thống, kết quả của Dashboard có thể được cache tạm thời (In-Memory Cache như Caffeine hoặc Redis) với thời gian sống (TTL) là 1 phút."
+            ],
+            dbExistingTables: ["LostCardCases", "Payments", "Incidents"],
+            dbNewTablesSql: "",
+            dbRelationships: [],
+            validationRules: [
+              { field: "startDate", rule: "Định dạng yyyy-MM-dd hợp lệ. Không được lớn hơn ngày hiện tại.", errorMessage: "INVALID_START_DATE" },
+              { field: "endDate", rule: "Định dạng yyyy-MM-dd hợp lệ. Phải lớn hơn hoặc bằng startDate.", errorMessage: "INVALID_END_DATE" },
+              { field: "Range", rule: "endDate trừ startDate không được vượt quá 90 ngày.", errorMessage: "DATE_RANGE_EXCEEDED_MAX_LIMIT" }
+            ],
+            securityRules: [
+              "Role Validation: Chặn toàn bộ các truy cập từ các Role không phải là Manager hoặc Admin. Trả về 403 Forbidden.",
+              "Data Isolation: Nếu truy cập bằng tài khoản Manager, câu lệnh SQL/JPA đằng sau phải tự động bổ sung điều kiện lọc theo BuildingId của tòa nhà mà Manager đó phụ trách quản lý (đọc từ JWT Claims). Admin sẽ không bị giới hạn này."
+            ],
+            logEvents: [
+              "Log các lượt truy cập dashboard kèm theo bộ lọc thời gian (startDate, endDate), ID người dùng và thời gian xử lý truy vấn (Query execution duration)."
+            ],
+            noLogEvents: [
+              "Không ghi log danh sách chi tiết các vụ việc hoặc thông tin định danh cá nhân của khách hàng nhúng trong danh sách trả về."
+            ],
+            integrationPoints: [
+              { system: "PostgreSQL Shared Database", responsibility: "Kết nối trực tiếp để thực hiện các truy vấn aggregate dữ liệu." },
+              { system: "Caffeine/Redis Cache Manager", responsibility: "Sử dụng cache lớp trung gian để giảm tải cho database khi tần suất gọi API từ phía Admin web tăng cao." }
+            ],
+            uiComponents: "Page: /admin/operational-analytics hoặc /manager/dashboard. UI States: Skeleton Loader cho summary cards và charts; CountUp animation; Badge Pulse màu đỏ cho Critical/UnderReview items; Empty State graphic; Alert Box lỗi.",
+            uiStateSuccess: "KPI numbers rendered with count-up animations, and Critical or UnderReview items have a pulsing red badge to draw attention.",
             endpoints: ["GET /api/support/dashboard"],
             ownerService: "Spring Boot Support API",
-            apiContracts: createApiContract("GET /api/support/dashboard"),
-            testCases: defaultApiTests("Support Dashboard", ["Manager"], ["GET /api/support/dashboard"]),
-            doneCriteria: defaultDoneCriteria("Support Dashboard")
+            apiContracts: [
+              {
+                id: "contract-support-dashboard",
+                name: "GET /api/support/dashboard",
+                content: `Method: GET\nPath: /api/support/dashboard?startDate=2026-07-01&endDate=2026-07-17\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "data": {\n    "summary": {\n      "totalIncidents": 142,\n      "pendingIncidents": 12,\n      "processingIncidents": 8,\n      "resolvedIncidents": 122,\n      "activeLostCardCases": 5,\n      "paymentsUnderReviewCount": 3\n    },\n    "efficiencyKPI": {\n      "avgResolutionTimeMinutes": 45.2,\n      "longestResolutionTimeMinutes": 320.0\n    },\n    "incidentDistribution": [\n      { "category": "Lost_Card", "count": 28 },\n      { "category": "Gate_Failure", "count": 84 },\n      { "category": "Payment_Issue", "count": 22 },\n      { "category": "Other", "count": 8 }\n    ],\n    "unresolvedCriticalIncidents": [\n      {\n        "id": "1a3deb4d-3b7d-4bad-9bdd-2b0d7b3dcb01",\n        "category": "Payment_Issue",\n        "description": "Payment mismatch for Order 123456. Expected 30k but got 20k",\n        "severity": "Critical",\n        "reportedAt": "2026-07-17T15:30:00Z"\n      }\n    ]\n  }\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-support-dashboard-success",
+                title: "Verify Manager can pull Support Dashboard with custom valid dates",
+                type: "integration",
+                precondition: "Người dùng đăng nhập thành công bằng tài khoản Manager.",
+                steps: [
+                  "Gửi request GET tới /api/support/dashboard?startDate=2026-06-01&endDate=2026-06-15."
+                ],
+                expectedResult: "HTTP 200 OK. Phản hồi trả về đúng định dạng JSON chứa các mục summary, efficiencyKPI, và unresolvedCriticalIncidents.",
+                status: "not_started"
+              },
+              {
+                id: "tc-support-dashboard-date-exceeded",
+                title: "Verify query validation fails if date range exceeds 90 days",
+                type: "api",
+                precondition: "Token Admin hợp lệ.",
+                steps: [
+                  "Gửi request GET tới /api/support/dashboard?startDate=2026-01-01&endDate=2026-05-01 (4 tháng)."
+                ],
+                expectedResult: "HTTP 400 Bad Request kèm mã lỗi DATE_RANGE_EXCEEDED_MAX_LIMIT.",
+                status: "not_started"
+              },
+              {
+                id: "tc-support-dashboard-unauthorized",
+                title: "Verify non-authorized users (Staff / Guest) are strictly blocked",
+                type: "api",
+                precondition: "Token có role là Staff hoặc không có Token.",
+                steps: [
+                  "Gửi request GET tới /api/support/dashboard."
+                ],
+                expectedResult: "HTTP 403 Forbidden hoặc HTTP 401 Unauthorized.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-support-dashboard-contract", content: "API contract is documented in this node.", checked: true },
+              { id: "dc-support-dashboard-roles", content: "Required clients/roles (Manager, Admin) are assigned.", checked: true },
+              { id: "dc-support-dashboard-validation", content: "Date range validation logic is strictly enforced (max 90 days query limit).", checked: true },
+              { id: "dc-support-dashboard-isolation", content: "Data isolation between Admin (system-wide) and Manager (building-level) is validated.", checked: true },
+              { id: "dc-support-dashboard-underreview", content: "UnderReview payment alerts are aggregated and displayed accurately.", checked: true },
+              { id: "dc-support-dashboard-json-format", content: "Response payload uses the global standardized success/error JSON response structure.", checked: true },
+              { id: "dc-support-dashboard-ui-states", content: "UI states (idle, loading, success, empty, error) are fully documented.", checked: true },
+              { id: "dc-support-dashboard-tests", content: "At least three automated tests are written and pass.", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing project structures in the Spring Boot Support API workspace. Follow established package naming conventions (e.g., com.parking.support.controller, service, dto).\nMark service class/methods handling this dashboard with @Transactional(readOnly = true) to avoid transaction lock contention on the shared DB.\nWrite database queries using optimized JPQL or Spring Data native @Query annotations. Minimize loading entire entity graphs; construct flat Projection/DTO classes directly from SQL select clauses.\nImplement a lightweight caching abstraction (e.g., Spring @Cacheable using Caching Provider Caffeine) with a TTL of 60 seconds to safeguard system availability.\nCheck and run existing tests before adding dashboard-related test code under /src/test/java.\nRun clean package builds and verify that all dashboard integration tests pass successfully."
           },
           {
             id: "leaf-rep-revenue",
