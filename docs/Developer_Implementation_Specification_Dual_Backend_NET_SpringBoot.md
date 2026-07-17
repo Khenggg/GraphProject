@@ -523,7 +523,7 @@ CustomerType: CASUAL, MONTHLY
 MonthlyPassStatus: ACTIVE, EXPIRED, LOCKED
 LostCardCaseStatus: PENDING, APPROVED, REJECTED
 PlateMismatchCaseStatus: PENDING, CONFIRMED, REJECTED
-FeedbackStatus: OPEN, RESOLVED, REJECTED
+FeedbackStatus: NEW, IN_REVIEW, RESPONDED, CLOSED, REJECTED, ARCHIVED
 SystemStatus: OPEN, CLOSED, MAINTENANCE
 ```
 
@@ -999,7 +999,9 @@ CREATE INDEX ix_audit_logs_created_at ON audit_logs(created_at);
 
 Không backend nào được update/delete audit log.
 
-## 8.19 feedbacks - Could Have
+## 8.19 feedbacks - Deprecated legacy summary
+
+Do not implement this legacy table. The canonical Feedback schema is `support_feedbacks` with `support_feedback_history` in [11-feedback.md](ai-implementation-guides/11-feedback.md); it supersedes the fields below and uses the shared `FeedbackStatus` lifecycle above.
 
 Owner: `Spring Boot`
 
@@ -2477,6 +2479,12 @@ SlotReadRepository.countAvailableByVehicleType(Long vehicleTypeId)
 PricingRuleReadRepository.findActiveRules()
 ```
 
+Snapshot and cache contract:
+
+- Every successful response from `/api/public/parking-info`, `/api/public/available-slots`, `/api/public/pricing`, and `/api/public/rules` includes `data.asOf` as an ISO 8601 UTC timestamp.
+- Public information, pricing, and rules may use a short cache TTL only with explicit revalidation. Available-slot data must refresh at least every 30 seconds.
+- Public DTOs contain only projection fields; never expose user, session, payment, plate, or raw configuration data.
+
 Public QR response:
 
 ```json
@@ -2688,6 +2696,13 @@ Test cases:
 
 ## 13.5 Module Feedback - Could Have
 
+Implementation contract:
+
+- Spring owns `support_feedbacks`, `support_feedback_history`, and `support_audit_logs`.
+- Guest submission requires CAPTCHA, rate limiting, and `Idempotency-Key`; authenticated identity comes only from JWT.
+- Allowed categories are `SUGGESTION`, `COMPLAINT`, and `OTHER`; a new feedback record starts at `NEW`.
+- Lifecycle states are `NEW`, `IN_REVIEW`, `RESPONDED`, `CLOSED`, `REJECTED`, and `ARCHIVED`. Updates use an optimistic version check and atomically write history and audit records; notification dispatch occurs only after commit and is retryable.
+
 FR liên quan: FR-22.
 
 Owner: `Spring Boot Support API`
@@ -2696,16 +2711,17 @@ APIs:
 
 | Method | Endpoint                            | Role          |
 | ------ | ----------------------------------- | ------------- |
-| POST   | `/api/support/feedback`             | DRIVER        |
-| GET    | `/api/support/feedback`             | MANAGER/ADMIN |
-| PATCH  | `/api/support/feedback/{id}/status` | MANAGER/ADMIN |
+| POST   | `/api/support/feedbacks`            | GUEST/DRIVER  |
+| GET    | `/api/support/admin/feedbacks`      | MANAGER/ADMIN |
+| GET    | `/api/support/admin/feedbacks/{id}` | MANAGER/ADMIN |
+| PUT    | `/api/support/admin/feedbacks/{id}` | MANAGER/ADMIN |
 
 Services:
 
 ```java
-FeedbackService.createFeedback(CreateFeedbackRequest request, Long driverId)
+FeedbackService.createFeedback(SubmitFeedbackRequest request, Optional<Long> userId)
 FeedbackService.searchFeedback(FeedbackSearchRequest request)
-FeedbackService.changeStatus(Long id, FeedbackStatus status, Long managerId)
+FeedbackService.updateFeedback(UUID id, UpdateFeedbackRequest request, Long managerId)
 ```
 
 Rule:
@@ -2716,17 +2732,20 @@ Rule:
 
 ## 13.6 Module Mock Device - Optional
 
+Environment contract: all mock routes are disabled in production. A controlled non-production run requires a server-side break-glass `TEST_RUN` guard; client-supplied environment flags are never trusted and every use produces a `SECURITY_SENSITIVE` audit record.
+
 FR liên quan: FR-23.
 
 Owner: `Spring Boot Support API` hoặc frontend mock.
 
 APIs:
 
-| Method | Endpoint                         | Role                |
-| ------ | -------------------------------- | ------------------- |
-| POST   | `/api/support/mock-camera/scan`  | STAFF/MANAGER/ADMIN |
-| POST   | `/api/support/mock-barrier/open` | STAFF/MANAGER/ADMIN |
-| GET    | `/api/support/cards/{id}/qr`     | MANAGER/ADMIN       |
+| Method | Endpoint                            | Role                |
+| ------ | ----------------------------------- | ------------------- |
+| POST   | `/api/support/mock-camera/scan`     | STAFF/MANAGER/ADMIN |
+| POST   | `/api/support/mock-rfid/scan`       | STAFF/MANAGER/ADMIN |
+| POST   | `/api/support/mock-barrier/control` | STAFF/MANAGER/ADMIN |
+| GET    | `/api/support/cards/{id}/qr`        | MANAGER/ADMIN       |
 
 Rule:
 
@@ -2863,7 +2882,7 @@ client.interceptors.request.use((config) => {
 | MismatchApprovalPage      | `/manager/mismatch`        | Must     | mismatch APIs                        | .NET    |
 | ReportsPage               | `/manager/reports`         | Must     | `/api/support/reports/*`             | Spring  |
 | AuditLogPage              | `/manager/audit-logs`      | Must     | `/api/support/audit-logs`            | Spring  |
-| FeedbackPage              | `/manager/feedback`        | Could    | `/api/support/feedback`              | Spring  |
+| FeedbackPage              | `/manager/feedback`        | Could    | `/api/support/admin/feedbacks`       | Spring  |
 
 ## 15.4 Admin Pages
 
@@ -2900,7 +2919,7 @@ client.interceptors.request.use((config) => {
 | FR-19 | Reports         | `/api/support/reports/*`                         | Spring                            | ReportsPage             | TC-RPT        |
 | FR-20 | Audit           | `/api/support/audit-logs`                        | .NET write + Spring search        | AuditLogPage            | TC-AUDIT      |
 | FR-21 | Pricing         | `/api/core/pricing-rules`, `/api/public/pricing` | .NET write + Spring public read   | PricingPage             | TC-PRICE      |
-| FR-22 | Feedback        | `/api/support/feedback`                          | Spring                            | FeedbackPage            | TC-FEED       |
+| FR-22 | Feedback        | `/api/support/feedbacks`, `/api/support/admin/feedbacks` | Spring                     | FeedbackPage            | TC-FEED       |
 | FR-23 | Mock Device     | `/api/support/mock-*`                            | Spring/Frontend                   | Mock buttons            | TC-MOCK       |
 | FR-24 | Config          | `/api/core/system-configs`                       | .NET                              | ConfigPage              | TC-CONFIG     |
 
@@ -3019,12 +3038,14 @@ GET    /api/support/audit-logs/{id}
 GET    /api/support/reports/export-excel
 GET    /api/support/audit-logs/export-excel
 
-POST   /api/support/feedback
-GET    /api/support/feedback
-PATCH  /api/support/feedback/{id}/status
+POST   /api/support/feedbacks
+GET    /api/support/admin/feedbacks
+GET    /api/support/admin/feedbacks/{id}
+PUT    /api/support/admin/feedbacks/{id}
 
 POST   /api/support/mock-camera/scan
-POST   /api/support/mock-barrier/open
+POST   /api/support/mock-rfid/scan
+POST   /api/support/mock-barrier/control
 GET    /api/support/cards/{id}/qr
 ```
 

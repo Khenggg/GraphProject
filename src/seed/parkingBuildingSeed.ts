@@ -5051,7 +5051,8 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
         summary: "Read-only datasets readable without credentials.",
         businessRules: [
           "Public APIs must not expose private user/session/payment details.",
-          "Public parking information, pricing, rules, and available slots should be readable without login."
+          "Public parking information, pricing, rules, and available slots should be readable without login.",
+          "Every successful public payload must include data.asOf as an ISO 8601 UTC snapshot timestamp. Cache only with explicit revalidation: information, pricing, and rules may use a short TTL; availability must be refreshed at least every 30 seconds."
         ],
         children: [
           {
@@ -5059,7 +5060,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Parking Info",
             type: "leaf_feature",
             clients: ["Guest", "Driver"],
-            status: "ready",
+            status: "draft",
             priority: "medium",
             tags: ["public", "info", "pricing", "rules", "capacity"],
             summary: "Public read-only parking building information including capacity, pricing, and rules.",
@@ -5130,7 +5131,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
               {
                 id: "data-contract-pub-info-response",
                 name: "PublicParkingInfoResponse (Java DTO)",
-                content: "public class PublicParkingInfoResponse {\n    private List<CapacitySummaryDto> capacitySummary;\n    private List<PricingSummaryDto> pricingSummary;\n    private List<String> vehicleTypes;\n    private ParkingRulesDto parkingRules;\n    // getters and setters\n}"
+                content: "public class PublicParkingInfoResponse {\n    private Instant asOf; // UTC snapshot timestamp\n    private List<CapacitySummaryDto> capacitySummary;\n    private List<PricingSummaryDto> pricingSummary;\n    private List<String> vehicleTypes;\n    private ParkingRulesDto parkingRules;\n    // getters and setters\n}"
               }
             ],
             apiContracts: [
@@ -5196,7 +5197,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Public Pricing",
             type: "leaf_feature",
             clients: ["Guest", "Driver"],
-            status: "ready",
+            status: "draft",
             priority: "medium",
             tags: ["public", "pricing", "read-only"],
             summary: "Public read-only endpoint exposing active pricing rules grouped by vehicle type, including day rate, night rate, monthly pass cost, and lost card penalty fee.",
@@ -5266,6 +5267,7 @@ Example Success Response (200 OK):
   "success": true,
   "message": "OK",
   "data": {
+    "asOf": "2026-07-07T12:20:00Z",
     "pricingSummary": [
       {
         "vehicleTypeName": "Car",
@@ -5432,7 +5434,7 @@ Example Error Response 500 Internal Server Error (Database Error):
             title: "Public Rules",
             type: "leaf_feature",
             clients: ["Guest", "Driver"],
-            status: "ready",
+            status: "draft",
             priority: "medium",
             tags: ["public", "rules", "config", "read-only"],
             summary: "Public read-only endpoint surfacing building operational rules, height clearances, schedules, liability statements, and hotline details to unauthenticated visitors and drivers.",
@@ -5500,6 +5502,7 @@ Example Success Response (200 OK):
   "success": true,
   "message": "OK",
   "data": {
+    "asOf": "2026-07-07T14:44:00Z",
     "parkingRules": {
       "maximumHeight": "2.2m",
       "openingHours": "06:00 - 23:30",
@@ -5610,7 +5613,7 @@ Example Error Response 500 Internal Server Error (Database Error):
             title: "Public Available Slots",
             type: "leaf_feature",
             clients: ["Guest", "Driver"],
-            status: "ready",
+            status: "draft",
             priority: "medium",
             tags: ["public", "capacity", "slots", "real-time", "read-only"],
             summary: "Public read-only endpoint exposing dynamic real-time parking capacity and vacancy counts across structural layouts grouped by supported vehicle classes.",
@@ -5680,6 +5683,7 @@ Example Success Response (200 OK):
   "success": true,
   "message": "OK",
   "data": {
+    "asOf": "2026-07-07T12:20:00Z",
     "capacitySummary": [
       {
         "vehicleTypeName": "Car",
@@ -5840,14 +5844,15 @@ Example Error Response 500 Internal Server Error (Database Aggregation Failure):
             clients: ["Guest", "Driver"],
             status: "draft",
             priority: "medium",
-            tags: ["public", "feedback", "write"],
+            tags: ["support", "feedback", "write", "anonymous-submit"],
             summary: "Allows public guests or authenticated drivers to submit opinions, feedback, infrastructure incident reports, or service complaints regarding the parking building operation.",
             ownerService: "Spring Boot Support API",
-            endpoints: ["POST /api/public/feedbacks"],
+            endpoints: ["POST /api/support/feedbacks"],
             objective: "Allows public guests or authenticated drivers to submit opinions, feedback, infrastructure incident reports, or service complaints regarding the parking building operation. This information enables the Management Board to optimize operational workflows and service quality.",
             inScope: [
-              "Process and validate the incoming request payload.",
-              "Persist the feedback record to the shared PostgreSQL database.",
+              "Validate and sanitize the incoming subject and message before persistence.",
+              "Verify CAPTCHA for Guest submissions, enforce IP rate limits, and honour an Idempotency-Key.",
+              "Persist the feedback, its initial NEW history record, audit event, and Manager notification through the Support API boundary.",
               "Return a uniform API success or error wrapper to the client application."
             ],
             outOfScope: [
@@ -5855,61 +5860,68 @@ Example Error Response 500 Internal Server Error (Database Aggregation Failure):
               "Direct email delivery notifications (handled asynchronously via a background queue worker later)."
             ],
             permissions: [
-              { role: "Guest", permission: "Authorized - Allowed to call this public API anonymously; no JWT header required." },
+              { role: "Guest", permission: "Authorized - Anonymous write-only submission is allowed at this Support API route when CAPTCHA, rate-limit, and idempotency checks pass; no public read access is granted." },
               { role: "Driver", permission: "Authorized - Allowed to submit feedback; the system dynamically binds their authenticated user_id." }
             ],
             businessRules: [
-              "This API endpoint is independently maintained by the Spring Boot Support API and saves data directly to the shared PostgreSQL instance. All timestamps must strictly follow the TIMESTAMPTZ standard.",
-              "When submitted by an anonymous Guest, the email attribute is encouraged to provide a communication channel.",
-              "The initial processing state of any newly created feedback record is forced by default to OPEN.",
-              "Custom categories and status tags must be processed and persisted as uppercase string literals (VARCHAR)."
+              "This API endpoint is independently maintained by the Spring Boot Support API. All timestamps must strictly follow the TIMESTAMPTZ standard.",
+              "Guest submissions require server-side CAPTCHA verification, IP-based rate limiting, and a UUID Idempotency-Key; authenticated Drivers may be exempt from CAPTCHA only by configured policy.",
+              "The initial processing state of every new feedback record is NEW and must be written together with a history and audit entry.",
+              "Only SUGGESTION, COMPLAINT, and OTHER categories are accepted; the server derives submitter identity from JWT claims and never accepts it from the body."
             ],
-            dbExistingTables: ["feedbacks", "users"],
-            dbRelationships: ["feedbacks.user_id holds an N-to-1 relationship mapping back to users.id with a fallback strategy keeping data on profile deletion."],
+            dbExistingTables: ["support_feedbacks", "support_feedback_history", "support_audit_logs", "users"],
+            dbRelationships: ["support_feedbacks.submitter_id is server-derived from users.id for Drivers and NULL for Guests; support_feedback_history and support_audit_logs are appended atomically with the NEW record."],
             validationRules: [
-              { field: "title", rule: "Not Blank, Maximum 200 characters", errorMessage: "Title is required and must not exceed 200 characters." },
-              { field: "content", rule: "Not Blank", errorMessage: "Content is required." },
-              { field: "category", rule: "Not Blank, Maximum 50 characters. Allowed values: GENERAL, PAYMENT, SERVICE, OTHER", errorMessage: "Category is required and must not exceed 50 characters." },
-              { field: "email", rule: "Optional, must conform to standard email syntax if present", errorMessage: "Invalid email format." }
+              { field: "subject", rule: "Required, HTML-stripped, 5-150 characters", errorMessage: "Subject must be between 5 and 150 characters." },
+              { field: "message", rule: "Required, HTML-stripped, 20-4000 characters", errorMessage: "Message must be between 20 and 4000 characters." },
+              { field: "category", rule: "Required. Allowed values: SUGGESTION, COMPLAINT, OTHER", errorMessage: "Category must be one of: SUGGESTION, COMPLAINT, OTHER." },
+              { field: "contactEmail", rule: "Optional, RFC-compliant email, maximum 254 characters", errorMessage: "Invalid email format." },
+              { field: "allowContact", rule: "Optional boolean; defaults to false", errorMessage: "allowContact must be a boolean." },
+              { field: "captchaToken", rule: "Required for Guest submission and verified server-side", errorMessage: "CAPTCHA_FAILED" },
+              { field: "Idempotency-Key", rule: "Required UUID v4 header", errorMessage: "Idempotency-Key header is required and must be a valid UUID." }
             ],
             securityRules: [
-              "The API route relies on the /api/public/* contextual path hierarchy, permitting bypass routines inside SecurityConfig for anonymous usage.",
-              "Sensitive properties or internal stack traces are completely masked out of the response layer."
+              "Only POST /api/support/feedbacks permits anonymous access; every read or management feedback route requires JWT and role validation.",
+              "Verify CAPTCHA server-side, rate-limit by IP and principal, and reject client-supplied userId, submitterId, or driverId fields.",
+              "Sensitive properties, raw IP addresses, CAPTCHA tokens, and internal stack traces are completely masked out of the response layer."
             ],
             logEvents: [
-              "Basic runtime data collection using standard logger formats (e.g., tracking submission counts and classification groups)."
+              "Write FEEDBACK_SUBMITTED audit data with actor type, category, subject hash, IP hash, correlation ID, and timestamp; never log raw message, CAPTCHA token, or contact email."
             ],
             noLogEvents: [
               "Plaintext passwords or active bearer authorization credentials."
             ],
             integrationPoints: [
-              { system: "Shared PostgreSQL Database", responsibility: "Executes relational writes directly to the shared target PostgreSQL database layer." }
+              { system: "Support feedback persistence", responsibility: "Writes support_feedbacks, history, and audit records atomically through the Spring Boot Support API; notifications are dispatched after commit." }
             ],
             uiPage: "/feedback",
-            uiComponents: "FeedbackForm (src/pages/public), Title Input, Content Textarea, Category Select (GENERAL/PAYMENT/SERVICE/OTHER), Email Input (optional), Submit Button",
+            uiComponents: "FeedbackForm, Subject Input, Message Textarea, Category Select (SUGGESTION/COMPLAINT/OTHER), Contact Email Input, Allow Contact Checkbox, CAPTCHA, Submit Button",
             uiStateLoading: "Disable all inputs and submit button, show loading spinner on submit button to prevent duplicate submission.",
             uiStateEmpty: "N/A - this is a write form.",
             uiStateError: "Display field-level validation error messages below respective inputs. Display general banner for unexpected server errors.",
             uiStateSuccess: "Show success toast: 'Your feedback has been submitted successfully. Thank you!' and reset the form.",
-            notes: "When submitted by Guest (no token), user_id is stored as NULL. When submitted by authenticated Driver, extract user_id from JWT claims automatically. Status is always set to OPEN on creation.",
+            notes: "Guest submits without JWT only after CAPTCHA/rate-limit/idempotency checks; submitter_id is NULL. Driver identity is extracted from JWT claims. Status is always NEW on creation and the response includes a receipt token.",
             dependencies: [],
             risks: [],
             apiContracts: [
               {
                 id: "api-contract-submit-feedback",
-                name: "POST /api/public/feedbacks",
+                name: "POST /api/support/feedbacks",
                 content: `Method: POST
-Path: /api/public/feedbacks
+Path: /api/support/feedbacks
 Headers:
-  Authorization: Bearer <token> (Optional - only required for logged-in Drivers)
+  Authorization: Bearer <token> (Optional - used to bind an authenticated Driver)
+  Idempotency-Key: <UUID v4> (Required)
+  X-Captcha-Token: <token> (Required for Guest/anonymous)
   Content-Type: application/json
 
 Request Body:
 {
-  "title": "Ham B1 quet the qua cham",
-  "content": "He thong nhan dien bien so tai ham B1 mat hon 2 phut luc cao diem 18h ngay 05/07.",
-  "category": "SERVICE",
-  "email": "driver.test@gmail.com"
+  "subject": "Gate B1 card scan is slow",
+  "message": "Card processing at B1 takes more than two minutes during the evening peak.",
+  "category": "COMPLAINT",
+  "contactEmail": "driver.test@gmail.com",
+  "allowContact": true
 }
 
 Response (201 Created):
@@ -5918,11 +5930,10 @@ Response (201 Created):
   "message": "FEEDBACK_SUBMITTED_SUCCESSFULLY",
   "data": {
     "id": 12,
-    "title": "Ham B1 quet the qua cham",
-    "content": "He thong nhan dien bien so tai ham B1 mat hon 2 phut luc cao diem 18h ngay 05/07.",
-    "category": "SERVICE",
-    "email": "driver.test@gmail.com",
-    "status": "OPEN",
+    "receiptToken": "fbk_rcpt_01J...",
+    "subject": "Gate B1 card scan is slow",
+    "category": "COMPLAINT",
+    "status": "NEW",
     "createdAt": "2026-07-07T15:30:00Z"
   },
   "errors": null,
@@ -5936,8 +5947,8 @@ Response (400 Bad Request - Validation Failed):
   "data": null,
   "errors": [
     {
-      "field": "title",
-      "message": "Title is required and must not exceed 200 characters."
+      "field": "subject",
+      "message": "Subject must be between 5 and 150 characters."
     }
   ],
   "timestamp": "2026-07-07T15:30:05Z"
@@ -5948,7 +5959,7 @@ Response (400 Bad Request - Validation Failed):
               {
                 id: "data-contract-submit-feedback-request",
                 name: "SubmitFeedbackRequest (Java DTO)",
-                content: "public class SubmitFeedbackRequest {\n    @NotBlank @Size(max = 200)\n    private String title;\n\n    @NotBlank\n    private String content;\n\n    @NotBlank @Size(max = 50)\n    private String category; // GENERAL, PAYMENT, SERVICE, OTHER\n\n    @Email\n    private String email; // Optional\n    // getters and setters\n}\n\npublic class SubmitFeedbackResponse {\n    private Long id;\n    private String title;\n    private String content;\n    private String category;\n    private String email;\n    private String status; // Always OPEN on creation\n    private Instant createdAt;\n    // getters and setters\n}"
+                content: "public class SubmitFeedbackRequest {\n    @NotBlank @Size(min = 5, max = 150) private String subject;\n    @NotBlank @Size(min = 20, max = 4000) private String message;\n    @NotNull private FeedbackCategory category; // SUGGESTION, COMPLAINT, OTHER\n    @Email @Size(max = 254) private String contactEmail; // Optional\n    private Boolean allowContact = false;\n    private String captchaToken; // Required for Guest\n}\n\npublic class SubmitFeedbackResponse {\n    private UUID id;\n    private String receiptToken;\n    private String subject;\n    private FeedbackCategory category;\n    private FeedbackStatus status; // Always NEW on creation\n    private Instant createdAt;\n}"
               }
             ],
             testCases: [
@@ -5958,10 +5969,10 @@ Response (400 Bad Request - Validation Failed):
                 type: "api",
                 precondition: "No Authorization headers passed.",
                 steps: [
-                  "Dispatch payload with correct text blocks and category to POST /api/public/feedbacks.",
+                  "Dispatch a Guest payload with valid CAPTCHA and Idempotency-Key to POST /api/support/feedbacks.",
                   "Verify the HTTP response code evaluates to 201 Created."
                 ],
-                expectedResult: "System stores the data safely with user_id bound as NULL and status saved as 'OPEN'. Response body matches the standard wrapper with success=true.",
+                expectedResult: "System stores the data with submitter_id bound as NULL and status NEW, then returns a receipt token in the standard success wrapper.",
                 status: "not_started"
               },
               {
@@ -5970,7 +5981,7 @@ Response (400 Bad Request - Validation Failed):
                 type: "api",
                 precondition: "Valid Driver JWT token is provided in the Authorization header.",
                 steps: [
-                  "Send POST /api/public/feedbacks with a valid Bearer token.",
+                  "Send POST /api/support/feedbacks with a valid Bearer token and Idempotency-Key.",
                   "Check the persisted database record."
                 ],
                 expectedResult: "Returns 201 Created. The database record has user_id correctly bound to the Driver's user ID extracted from JWT claims.",
@@ -5982,7 +5993,7 @@ Response (400 Bad Request - Validation Failed):
                 type: "api",
                 precondition: "Request body carries empty parameters.",
                 steps: [
-                  "Trigger execution against POST /api/public/feedbacks passing an empty string inside the title parameter.",
+                  "Trigger POST /api/support/feedbacks with an invalid subject and a valid Idempotency-Key.",
                   "Inspect HTTP status returns."
                 ],
                 expectedResult: "Intercepted by middleware, returning 400 Bad Request alongside the explicit errors array with field-level error messages.",
@@ -5994,7 +6005,7 @@ Response (400 Bad Request - Validation Failed):
                 type: "api",
                 precondition: "Request body contains malformed email string.",
                 steps: [
-                  "Send POST /api/public/feedbacks with email set to 'not-an-email'."
+                  "Send POST /api/support/feedbacks with contactEmail set to 'not-an-email'."
                 ],
                 expectedResult: "Returns 400 Bad Request with error message 'Invalid email format.'",
                 status: "not_started"
@@ -6002,9 +6013,9 @@ Response (400 Bad Request - Validation Failed):
             ],
             doneCriteria: [
               { id: "dc-feed-submit-01", content: "API contract matches the standard global response format ApiResponse<T>.", checked: false },
-              { id: "dc-feed-submit-02", content: "Route authentication filters correctly handle anonymous client requests (no JWT required).", checked: false },
-              { id: "dc-feed-submit-03", content: "Functional validations protect structural parameters effectively (title, content, category required).", checked: false },
-              { id: "dc-feed-submit-04", content: "Status is always set to OPEN on creation regardless of client input.", checked: false },
+              { id: "dc-feed-submit-02", content: "Only anonymous POST /api/support/feedbacks is permitted without JWT, and it requires valid CAPTCHA, rate-limit, and Idempotency-Key checks.", checked: false },
+              { id: "dc-feed-submit-03", content: "Functional validations protect subject, message, category, contactEmail, and server-derived submitter identity.", checked: false },
+              { id: "dc-feed-submit-04", content: "Status is always set to NEW on creation regardless of client input.", checked: false },
               { id: "dc-feed-submit-05", content: "Guest submissions store user_id as NULL; authenticated Driver submissions bind user_id from JWT.", checked: false },
               { id: "dc-feed-submit-06", content: "No sensitive data or internal stack traces are exposed in error responses.", checked: false }
             ]
@@ -6019,7 +6030,7 @@ Response (400 Bad Request - Validation Failed):
             tags: ["admin", "feedback", "list", "paginated"],
             summary: "Administrative dashboard endpoint for Managers and Administrators to fetch, filter, and paginate through historical user feedback collections.",
             ownerService: "Spring Boot Support API",
-            endpoints: ["GET /api/support/feedbacks"],
+            endpoints: ["GET /api/support/admin/feedbacks"],
             objective: "Provides an administrative dashboard querying layout for Managers and Administrators to fetch, view, filter, and paginate through historical user feedback collections seamlessly.",
             inScope: [
               "Implement a paginated list API query routine leveraging built-in repository components.",
@@ -6035,15 +6046,15 @@ Response (400 Bad Request - Validation Failed):
             businessRules: [
               "Analytical, reporting, and read-heavy operations belong directly to the Spring Boot Support API implementation.",
               "If no specific order criteria are submitted by client components, the dataset must sort descending based on creation dates (created_at DESC).",
-              "Data payload results must use a standardized paginated response schema wrapper tracking record counts accurately."
+              "Data payload results must use a standardized paginated response schema with page metadata and an asOf snapshot timestamp."
             ],
-            dbExistingTables: ["feedbacks"],
-            dbRelationships: ["Joins or projection lookups connect back to user profiles if the user_id property contains numeric references."],
+            dbExistingTables: ["support_feedbacks", "users"],
+            dbRelationships: ["Projection lookups may resolve submitter identity, but anonymous contact data is never returned in the list view."],
             validationRules: [
               { field: "page", rule: "Integer type, minimum value of 1", errorMessage: "Page index must be greater than or equal to 1." },
               { field: "pageSize", rule: "Integer type, range bounded between 1 and 100", errorMessage: "Page size must be between 1 and 100." },
-              { field: "status", rule: "Optional. If provided, must be one of: OPEN, RESOLVED, REJECTED", errorMessage: "Invalid status filter value." },
-              { field: "category", rule: "Optional. If provided, must be one of: GENERAL, PAYMENT, SERVICE, OTHER", errorMessage: "Invalid category filter value." }
+              { field: "status", rule: "Optional. If provided, must be one of: NEW, IN_REVIEW, RESPONDED, CLOSED, REJECTED, ARCHIVED", errorMessage: "Invalid status filter value." },
+              { field: "category", rule: "Optional. If provided, must be one of: SUGGESTION, COMPLAINT, OTHER", errorMessage: "Invalid category filter value." }
             ],
             securityRules: [
               "Enforce strict token parsing validation routines via your security filter configuration.",
@@ -6070,10 +6081,10 @@ Response (400 Bad Request - Validation Failed):
             apiContracts: [
               {
                 id: "api-contract-feedback-list",
-                name: "GET /api/support/feedbacks",
+                name: "GET /api/support/admin/feedbacks",
                 content: `Method: GET
-Path: /api/support/feedbacks
-Query Parameters (Optional): status=OPEN&category=SERVICE&page=1&pageSize=10
+Path: /api/support/admin/feedbacks
+Query Parameters (Optional): status=NEW&category=COMPLAINT&page=1&pageSize=10
 Headers:
   Authorization: Bearer <token>
 
@@ -6084,34 +6095,35 @@ Response (200 OK):
   "data": {
     "items": [
       {
-        "id": 12,
-        "title": "Ham B1 quet the qua cham",
-        "category": "SERVICE",
-        "email": "driver.test@gmail.com",
-        "status": "OPEN",
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "subject": "Ham B1 quet the qua cham",
+        "category": "COMPLAINT",
+        "submitterType": "GUEST",
+        "status": "NEW",
         "createdAt": "2026-07-07T15:30:00Z"
       },
       {
-        "id": 11,
-        "title": "Gia gui xe cao hon thong bao",
-        "category": "PAYMENT",
-        "email": "guest.user@gmail.com",
-        "status": "RESOLVED",
+        "id": "550e8400-e29b-41d4-a716-446655440001",
+        "subject": "Gia gui xe cao hon thong bao",
+        "category": "COMPLAINT",
+        "submitterType": "DRIVER",
+        "status": "RESPONDED",
         "createdAt": "2026-07-06T10:00:00Z"
       },
       {
-        "id": 10,
-        "title": "Den tang B2 khong sang",
-        "category": "SERVICE",
-        "email": null,
-        "status": "OPEN",
+        "id": "550e8400-e29b-41d4-a716-446655440002",
+        "subject": "Den tang B2 khong sang",
+        "category": "SUGGESTION",
+        "submitterType": "GUEST",
+        "status": "IN_REVIEW",
         "createdAt": "2026-07-05T08:45:00Z"
       }
     ],
     "page": 1,
     "pageSize": 10,
     "totalItems": 3,
-    "totalPages": 1
+    "totalPages": 1,
+    "asOf": "2026-07-07T16:00:00Z"
   },
   "errors": null,
   "timestamp": "2026-07-07T16:00:00Z"
@@ -6131,7 +6143,7 @@ Response (403 Forbidden - Insufficient Role):
               {
                 id: "data-contract-feedback-list-item",
                 name: "FeedbackListItemDto (Java DTO)",
-                content: "public class FeedbackListItemDto {\n    private Long id;\n    private String title;\n    private String category;\n    private String email;\n    private String status;\n    private Instant createdAt;\n    // getters and setters\n}\n\n// Uses standard paginated wrapper:\n// ApiResponse<PagedResponse<FeedbackListItemDto>>\n// Where PagedResponse contains: items, page, pageSize, totalItems, totalPages"
+                content: "public class FeedbackListItemDto {\n    private UUID id;\n    private String subject;\n    private FeedbackCategory category;\n    private SubmitterType submitterType;\n    private FeedbackStatus status;\n    private Instant createdAt;\n    // getters and setters\n}\n\n// Uses standard paginated wrapper:\n// ApiResponse<PagedResponse<FeedbackListItemDto>>\n// Where PagedResponse contains: items, page, pageSize, totalItems, totalPages, asOf"
               }
             ],
             testCases: [
@@ -6141,7 +6153,7 @@ Response (403 Forbidden - Insufficient Role):
                 type: "api",
                 precondition: "Passing valid authorization credentials mapping back to a Manager role.",
                 steps: [
-                  "Trigger runtime invocation against GET /api/support/feedbacks?page=1&pageSize=10.",
+                  "Trigger runtime invocation against GET /api/support/admin/feedbacks?page=1&pageSize=10.",
                   "Inspect HTTP result status."
                 ],
                 expectedResult: "API serves an HTTP 200 code alongside a paginated payload envelope containing an items collection, page, pageSize, totalItems, totalPages.",
@@ -6153,7 +6165,7 @@ Response (403 Forbidden - Insufficient Role):
                 type: "api",
                 precondition: "Bearer token carries a Driver role configuration.",
                 steps: [
-                  "Call the administrative list endpoint GET /api/support/feedbacks.",
+                  "Call the administrative list endpoint GET /api/support/admin/feedbacks.",
                   "Capture error payload structures."
                 ],
                 expectedResult: "Security layers abort execution early, throwing a 403 Forbidden response wrapper.",
@@ -6163,12 +6175,12 @@ Response (403 Forbidden - Insufficient Role):
                 id: "tc-feed-list-03",
                 title: "Verify status filter returns only matching records",
                 type: "api",
-                precondition: "Database has feedbacks with both OPEN and RESOLVED statuses.",
+                precondition: "Database has feedbacks with both NEW and RESPONDED statuses.",
                 steps: [
-                  "Call GET /api/support/feedbacks?status=OPEN with valid Manager token.",
+                  "Call GET /api/support/admin/feedbacks?status=NEW with valid Manager token.",
                   "Inspect the items array."
                 ],
-                expectedResult: "Returns only feedback records with status=OPEN. No RESOLVED or REJECTED records appear in the response.",
+                expectedResult: "Returns only feedback records with status=NEW and includes an asOf timestamp for the response snapshot.",
                 status: "not_started"
               },
               {
@@ -6177,7 +6189,7 @@ Response (403 Forbidden - Insufficient Role):
                 type: "api",
                 precondition: "Multiple feedback records exist with different creation dates.",
                 steps: [
-                  "Call GET /api/support/feedbacks without any sort parameter."
+                  "Call GET /api/support/admin/feedbacks without any sort parameter."
                 ],
                 expectedResult: "Items are ordered from newest to oldest (created_at DESC).",
                 status: "not_started"
@@ -6201,11 +6213,11 @@ Response (403 Forbidden - Insufficient Role):
             tags: ["admin", "feedback", "detail", "read-only"],
             summary: "Fetches the complete granular detail blocks of a single feedback submission record using its unique database identifier key to allow targeted issue investigation.",
             ownerService: "Spring Boot Support API",
-            endpoints: ["GET /api/support/feedbacks/{id}"],
+            endpoints: ["GET /api/support/admin/feedbacks/{id}"],
             objective: "Fetches the complete granular detail blocks of a single feedback submission record using its unique database identifier key to allow targeted issue investigation.",
             inScope: [
-              "Look up and return a distinct entry from the feedbacks table via a numerical ID.",
-              "Gracefully map all tracking attributes, including resolution texts and associated managers."
+              "Look up and return a distinct entry from support_feedbacks via its UUID.",
+              "Return immutable submission fields together with the current lifecycle state, response, assignment, and version."
             ],
             outOfScope: [
               "Execution of write operations, status updates, or changes to text blocks."
@@ -6216,13 +6228,13 @@ Response (403 Forbidden - Insufficient Role):
             ],
             businessRules: [
               "Missing resource errors are handled gracefully by returning an HTTP 404 response matching the project standard.",
-              "Numerical attributes matching identifiers must use a BIGINT (Java Long) configuration.",
+              "Feedback identifiers use UUID values consistently across routes, DTOs, history, and audit records.",
               "If the target resource does not exist, throw a specific exception that maps to a FEEDBACK_NOT_FOUND business error code."
             ],
-            dbExistingTables: ["feedbacks"],
-            dbRelationships: ["Safely supports null values (using a Left Join approach or separate query strategies) to fetch details for anonymous submissions without breaking data integrity."],
+            dbExistingTables: ["support_feedbacks", "support_feedback_history", "users"],
+            dbRelationships: ["Safely supports a null submitterId for guest submissions; resolve optional assigned/acting users without exposing private account fields."],
             validationRules: [
-              { field: "id", rule: "Path parameter must be a positive integer greater than zero", errorMessage: "Invalid feedback ID." }
+              { field: "id", rule: "Path parameter must be a valid UUID", errorMessage: "Invalid feedback ID." }
             ],
             securityRules: [
               "Enforce token verification layers before granting access to this endpoint.",
@@ -6238,20 +6250,20 @@ Response (403 Forbidden - Insufficient Role):
               { system: "Shared PostgreSQL Database", responsibility: "Executes straightforward data retrieval routines against the shared PostgreSQL storage." }
             ],
             uiPage: "/admin/feedbacks/{id}",
-            uiComponents: "FeedbackDetailModal (inside admin views), Full Title/Content display, Category Badge, Status Badge, Email display, Response Note section, Resolved By info, Timestamps",
+            uiComponents: "FeedbackDetailModal (inside admin views), Subject/Message display, Category Badge, Status Badge, Response and assignment section, Lifecycle History, Timestamps",
             uiStateLoading: "Show skeleton layout inside the modal while fetching detail data.",
             uiStateEmpty: "N/A - this is a detail view accessed via ID.",
             uiStateError: "Display error message: 'Feedback record not found or failed to load.'",
             uiStateSuccess: "Render all feedback detail fields in a structured read-only layout inside the modal.",
-            notes: "The resolvedBy and responseNote fields are null for OPEN records. Supports anonymous Guest submissions where userId is null.",
+            notes: "response is null until RESPONDED. Guest submissions have submitterId=null; contact data remains masked unless explicitly authorized.",
             dependencies: [],
             risks: [],
             apiContracts: [
               {
                 id: "api-contract-feedback-detail",
-                name: "GET /api/support/feedbacks/{id}",
+                name: "GET /api/support/admin/feedbacks/{id}",
                 content: `Method: GET
-Path: /api/support/feedbacks/12
+Path: /api/support/admin/feedbacks/550e8400-e29b-41d4-a716-446655440000
 Headers:
   Authorization: Bearer <token>
 
@@ -6260,15 +6272,15 @@ Response (200 OK):
   "success": true,
   "message": "OK",
   "data": {
-    "id": 12,
-    "userId": null,
-    "title": "Ham B1 quet the qua cham",
-    "content": "He thong nhan dien bien so tai ham B1 mat hon 2 phut luc cao diem 18h ngay 05/07.",
-    "category": "SERVICE",
-    "email": "driver.test@gmail.com",
-    "status": "OPEN",
-    "responseNote": null,
-    "resolvedBy": null,
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "submitterId": null,
+    "subject": "Ham B1 quet the qua cham",
+    "message": "He thong nhan dien bien so tai ham B1 mat hon 2 phut luc cao diem 18h ngay 05/07.",
+    "category": "COMPLAINT",
+    "status": "NEW",
+    "response": null,
+    "assignmentId": null,
+    "version": 1,
     "createdAt": "2026-07-07T15:30:00Z",
     "updatedAt": "2026-07-07T15:30:00Z"
   },
@@ -6304,7 +6316,7 @@ Response (403 Forbidden - Insufficient Role):
               {
                 id: "data-contract-feedback-detail-dto",
                 name: "FeedbackDetailDto (Java DTO)",
-                content: "public class FeedbackDetailDto {\n    private Long id;\n    private Long userId;       // Null for Guest submissions\n    private String title;\n    private String content;\n    private String category;\n    private String email;\n    private String status;     // OPEN, RESOLVED, REJECTED\n    private String responseNote; // Null if still OPEN\n    private Long resolvedBy;   // Null if still OPEN\n    private Instant createdAt;\n    private Instant updatedAt;\n    // getters and setters\n}"
+                content: "public class FeedbackDetailDto {\n    private UUID id;\n    private UUID submitterId;       // Null for Guest submissions\n    private String subject;\n    private String message;\n    private FeedbackCategory category;\n    private FeedbackStatus status;   // NEW, IN_REVIEW, RESPONDED, CLOSED, REJECTED, ARCHIVED\n    private String response;         // Null until RESPONDED\n    private Long version;\n    private Instant createdAt;\n    private Instant updatedAt;\n}"
               }
             ],
             testCases: [
@@ -6312,12 +6324,12 @@ Response (403 Forbidden - Insufficient Role):
                 id: "tc-feed-detail-01",
                 title: "Verify target feedback entry maps to correct properties upon fetch",
                 type: "api",
-                precondition: "Target entry with id=12 exists within the current database snapshot.",
+                precondition: "Target entry with UUID 550e8400-e29b-41d4-a716-446655440000 exists within the current database snapshot.",
                 steps: [
-                  "Trigger lookup request to GET /api/support/feedbacks/12 using valid Manager credentials.",
+                  "Trigger lookup request to GET /api/support/admin/feedbacks/550e8400-e29b-41d4-a716-446655440000 using valid Manager credentials.",
                   "Assert HTTP response status code evaluates to 200."
                 ],
-                expectedResult: "Returns the detailed data model correctly wrapped inside the standard response structure with all fields: id, userId, title, content, category, email, status, responseNote, resolvedBy, createdAt, updatedAt.",
+                expectedResult: "Returns the detailed data model correctly wrapped inside the standard response structure with id, submitterId, subject, message, category, status, response, assignment, version, and timestamps.",
                 status: "not_started"
               },
               {
@@ -6338,17 +6350,17 @@ Response (403 Forbidden - Insufficient Role):
                 type: "api",
                 precondition: "Bearer token carries a Driver role.",
                 steps: [
-                  "Call GET /api/support/feedbacks/12 with a Driver JWT token."
+                  "Call GET /api/support/admin/feedbacks/550e8400-e29b-41d4-a716-446655440000 with a Driver JWT token."
                 ],
                 expectedResult: "Returns 403 Forbidden. Access is blocked by the security filter.",
                 status: "not_started"
               }
             ],
             doneCriteria: [
-              { id: "dc-feed-detail-01", content: "Path variable bindings throw standard exceptions immediately if parameters fail structural definitions (non-positive integer).", checked: false },
+              { id: "dc-feed-detail-01", content: "Path variable bindings reject malformed feedback UUIDs with the standard validation error wrapper.", checked: false },
               { id: "dc-feed-detail-02", content: "Missing records return a 404 status code with FEEDBACK_NOT_FOUND error code, matching the project's standard global architecture error wrapper.", checked: false },
               { id: "dc-feed-detail-03", content: "Access restricted to MANAGER and ADMIN roles only.", checked: false },
-              { id: "dc-feed-detail-04", content: "Nullable fields (userId, responseNote, resolvedBy) are correctly returned as null for OPEN records.", checked: false }
+              { id: "dc-feed-detail-04", content: "Guest submissions return submitterId=null and response remains null until the record reaches RESPONDED.", checked: false }
             ]
           },
           {
@@ -6359,14 +6371,14 @@ Response (403 Forbidden - Insufficient Role):
             status: "draft",
             priority: "medium",
             tags: ["admin", "feedback", "status", "write", "audit"],
-            summary: "Enables managers to update the processing state of a feedback record (transitioning it to RESOLVED or REJECTED) and provide an official response statement.",
+            summary: "Enables managers to move a feedback record through the canonical lifecycle (NEW, IN_REVIEW, RESPONDED, CLOSED, REJECTED) with an auditable official response.",
             ownerService: "Spring Boot Support API",
-            endpoints: ["PATCH /api/support/feedbacks/{id}/status"],
-            objective: "Enables managers to update the processing state of a feedback record (transitioning it to RESOLVED or REJECTED) and provide an official response statement.",
+            endpoints: ["PUT /api/support/admin/feedbacks/{id}"],
+            objective: "Enables managers to perform valid lifecycle transitions and retain the response, assignment, version, history, and audit trail for each feedback record.",
             inScope: [
-              "Mutate target database records by modifying the status, response_note, and resolved_by fields.",
-              "Enforce state mutation rules to maintain clean data tracking.",
-              "Log administrative modifications to the central audit mechanism in a single transaction block."
+              "Mutate support_feedbacks using an optimistic version check; store status, staff response, assignment, and terminal reason where applicable.",
+              "Validate the permitted transition before writing the new lifecycle state.",
+              "Write feedback history and audit entries in the same transaction; dispatch notification events only after the database commit succeeds."
             ],
             outOfScope: [
               "Modifying the original description or title text provided by the user."
@@ -6376,26 +6388,31 @@ Response (403 Forbidden - Insufficient Role):
               { role: "Admin", permission: "Authorized - Complete permission to modify state properties and manage records." }
             ],
             businessRules: [
-              "All data modifications performed by administrators must be logged to the central audit logging mechanism.",
-              "Valid target state transitions are restricted to the uppercase string enum options: RESOLVED and REJECTED.",
-              "Providing a response_note explanation is mandatory when moving a record out of the OPEN state.",
-              "All steps in this workflow must execute within a unified database transaction block."
+              "All administrative modifications must create a feedback-history and audit entry.",
+              "Allowed states are NEW, IN_REVIEW, RESPONDED, CLOSED, REJECTED, and ARCHIVED; the service must reject invalid or unauthorized transitions.",
+              "A non-blank response is required when moving to RESPONDED; a rejection reason is required when moving to REJECTED.",
+              "The request must supply the current version; a stale version returns a conflict without overwriting newer work.",
+              "All updates, history, and audit writes execute in one database transaction; notification delivery is post-commit and retryable."
             ],
-            dbExistingTables: ["feedbacks", "audit_logs"],
+            dbExistingTables: ["support_feedbacks", "support_feedback_history", "support_audit_logs", "notifications"],
             dbRelationships: [
-              "feedbacks.resolved_by stores numerical keys linking back to records inside the users table.",
-              "audit_logs entry: action='FEEDBACK_STATUS_CHANGED', source_service='SUPPORT_API', user_id=<manager_id>"
+              "support_feedbacks.assigned_to references users.id; the acting user is derived from JWT and stored in the history/audit records.",
+              "support_feedback_history records the from/to state, response, actor, and timestamp for each accepted transition.",
+              "support_audit_logs entry: action='FEEDBACK_STATUS_CHANGED', source_service='SUPPORT_API', actor_user_id=<manager_id>"
             ],
             validationRules: [
-              { field: "status", rule: "Must match one of the allowed uppercase state choices: RESOLVED or REJECTED", errorMessage: "Invalid status values allowed." },
-              { field: "responseNote", rule: "Not Blank when updating to RESOLVED or REJECTED states", errorMessage: "Response notes are required." }
+              { field: "status", rule: "Must be an allowed next state from NEW, IN_REVIEW, RESPONDED, CLOSED, REJECTED, ARCHIVED", errorMessage: "Invalid feedback status transition." },
+              { field: "version", rule: "Required positive integer matching the current row version", errorMessage: "Feedback was changed by another user. Refresh and retry." },
+              { field: "response", rule: "Required and non-blank when status is RESPONDED", errorMessage: "A response is required before marking feedback RESPONDED." },
+              { field: "reason", rule: "Required and non-blank when status is REJECTED or a terminal record is reopened", errorMessage: "A reason is required for this transition." },
+              { field: "assignmentId", rule: "Optional UUID of an active STAFF or MANAGER user; null unassigns", errorMessage: "Assignee must be an active Staff or Manager." }
             ],
             securityRules: [
               "Extract the managing actor's identifier directly from verified JWT claims (sub property mapped to a numeric key) instead of using variables submitted via request bodies.",
               "Restrict access to roles matching MANAGER or ADMIN only."
             ],
             logEvents: [
-              "On successful transaction execution, write a record tracking the state transition directly to the core audit_logs table with action=FEEDBACK_STATUS_CHANGED."
+              "On success, write feedback history and a support_audit_logs record with action=FEEDBACK_STATUS_CHANGED; publish any notification only after commit and retry failures."
             ],
             noLogEvents: [
               "Plaintext system tokens or authorization secrets."
@@ -6405,28 +6422,33 @@ Response (403 Forbidden - Insufficient Role):
               { system: "audit_logs table", responsibility: "Receives append-only audit entries recording each status transition with manager user_id and timestamp." }
             ],
             uiPage: "/admin/feedbacks",
-            uiComponents: "FeedbackListPage status action controls (Resolve/Reject buttons), Status Update Modal with responseNote Textarea, Confirm/Cancel buttons",
-            uiStateLoading: "Disable action buttons and show spinner while the PATCH request is in progress.",
+            uiComponents: "FeedbackListPage lifecycle controls, Status Update Modal with response/rejection reason fields, version token, Confirm/Cancel buttons",
+            uiStateLoading: "Disable action buttons and show spinner while the PUT request is in progress.",
             uiStateEmpty: "N/A - this is a write operation triggered from the list/detail view.",
             uiStateError: "Display error toast: 'Failed to update feedback status. Please try again.'",
             uiStateSuccess: "Show success toast: 'Feedback status updated successfully.' and refresh the feedback list/detail to reflect the new status.",
-            notes: "The resolved_by field is populated automatically from the JWT claims of the Manager/Admin making the request. The @Transactional annotation must wrap both the feedbacks table update and the audit_logs insert.",
+            notes: "The acting user is derived from JWT claims, never from the request body. The transactional boundary covers support_feedbacks, history, and audit; notification dispatch is post-commit.",
             dependencies: [],
             risks: [],
             apiContracts: [
               {
                 id: "api-contract-feedback-status-update",
-                name: "PATCH /api/support/feedbacks/{id}/status",
-                content: `Method: PATCH
-Path: /api/support/feedbacks/12/status
+                name: "PUT /api/support/admin/feedbacks/{id}",
+                content: `Method: PUT
+Path: /api/support/admin/feedbacks/12
 Headers:
   Authorization: Bearer <token>
+  Idempotency-Key: <uuid>
   Content-Type: application/json
 
 Request Body:
 {
-  "status": "RESOLVED",
-  "responseNote": "Da dieu phoi doi ky thuat bai xe xuong kiem tra lai bang dien tu tang B2 va cau hinh lai thiet bi hien thi chinh xac."
+  "status": "RESPONDED",
+  "response": "Da dieu phoi doi ky thuat bai xe xuong kiem tra lai bang dien tu tang B2 va cau hinh lai thiet bi hien thi chinh xac.",
+  "reason": null,
+  "closureNote": null,
+  "assignmentId": "550e8400-e29b-41d4-a716-446655440008",
+  "version": 3
 }
 
 Response (200 OK):
@@ -6435,24 +6457,26 @@ Response (200 OK):
   "message": "FEEDBACK_STATUS_UPDATED_SUCCESSFULLY",
   "data": {
     "id": 12,
-    "status": "RESOLVED",
-    "responseNote": "Da dieu phoi doi ky thuat bai xe xuong kiem tra lai bang dien tu tang B2 va cau hinh lai thiet bi hien thi chinh xac.",
-    "resolvedBy": 1,
-    "updatedAt": "2026-07-07T23:30:00Z"
+    "status": "RESPONDED",
+    "respondedAt": "2026-07-07T23:30:00Z",
+    "respondedBy": "550e8400-e29b-41d4-a716-446655440001",
+    "version": 4,
+    "updatedAt": "2026-07-07T23:30:00Z",
+    "historyEntry": { "previousStatus": "IN_REVIEW", "newStatus": "RESPONDED" }
   },
   "errors": null,
   "timestamp": "2026-07-07T23:30:00Z"
 }
 
-Response (400 Bad Request - Missing responseNote):
+Response (400 Bad Request - Missing response):
 {
   "success": false,
   "message": "Validation failed.",
   "data": null,
   "errors": [
     {
-      "field": "responseNote",
-      "message": "Response notes are required."
+      "field": "response",
+      "message": "A response is required before marking feedback RESPONDED."
     }
   ],
   "timestamp": "2026-07-07T23:30:05Z"
@@ -6466,7 +6490,7 @@ Response (400 Bad Request - Invalid Status):
   "errors": [
     {
       "field": "status",
-      "message": "Invalid status values allowed."
+      "message": "Invalid feedback status transition."
     }
   ],
   "timestamp": "2026-07-07T23:30:05Z"
@@ -6490,21 +6514,21 @@ Response (404 Not Found):
             dataContracts: [
               {
                 id: "data-contract-feedback-status-update-request",
-                name: "UpdateFeedbackStatusRequest & Response (Java DTO)",
-                content: "public class UpdateFeedbackStatusRequest {\n    @NotNull\n    private String status; // Must be RESOLVED or REJECTED\n\n    @NotBlank\n    private String responseNote;\n    // getters and setters\n}\n\npublic class UpdateFeedbackStatusResponse {\n    private Long id;\n    private String status;\n    private String responseNote;\n    private Long resolvedBy; // Extracted from JWT claims\n    private Instant updatedAt;\n    // getters and setters\n}\n\n// audit_logs entry written on success:\n// action = 'FEEDBACK_STATUS_CHANGED'\n// source_service = 'SUPPORT_API'\n// user_id = <manager_id from JWT>\n// entity_type = 'feedbacks'\n// entity_id = <feedback_id>"
+                name: "UpdateFeedbackRequest & Response (Java DTO)",
+                content: "public class UpdateFeedbackRequest {\n    @NotNull private FeedbackStatus status; // valid next lifecycle state\n    private String response; // required for RESPONDED\n    private String reason; // required for REJECTED and reopen\n    private String closureNote; // optional for CLOSED\n    private UUID assignmentId; // active Staff or Manager; null unassigns\n    @NotNull @Positive private Long version;\n}\n\npublic class UpdateFeedbackResponse {\n    private UUID id;\n    private FeedbackStatus status;\n    private Long version;\n    private Instant updatedAt;\n    private FeedbackHistoryDto historyEntry;\n}\n\n// history and support_audit_logs entries are written in the transaction;\n// notification dispatch occurs only after a successful commit.\n// action = 'FEEDBACK_STATUS_CHANGED'\n// source_service = 'SUPPORT_API'\n// actor_user_id = <manager_id from JWT>\n// entity_type = 'support_feedbacks'\n// entity_id = <feedback_id>"
               }
             ],
             testCases: [
               {
                 id: "tc-feed-update-01",
-                title: "Verify Manager can update feedback status to RESOLVED successfully",
+                title: "Verify Manager can update feedback status to RESPONDED successfully",
                 type: "api",
-                precondition: "Target row with id=12 currently carries an active OPEN status value.",
+                precondition: "Target row with id=12 currently carries an IN_REVIEW status value and version=3.",
                 steps: [
-                  "Call PATCH /api/support/feedbacks/12/status passing valid manager credentials, a 'RESOLVED' status string, and an accompanying responseNote.",
+                  "Call PUT /api/support/admin/feedbacks/12 passing valid manager credentials, a 'RESPONDED' status string, a response, and version=3.",
                   "Verify the HTTP response status returns 200 OK."
                 ],
-                expectedResult: "Database fields update correctly (status=RESOLVED, responseNote filled, resolvedBy=manager_id) and an explicit tracking log entry is written to the core audit_logs table.",
+                expectedResult: "Database fields update correctly (status=RESPONDED, response filled, updatedByUserId from JWT, version=4) and history/audit entries are written.",
                 status: "not_started"
               },
               {
@@ -6513,10 +6537,10 @@ Response (404 Not Found):
                 type: "api",
                 precondition: "The request contains an empty explanation note.",
                 steps: [
-                  "Call the status update endpoint passing a 'REJECTED' status string but leaving the responseNote field blank.",
+                  "Call the update endpoint passing a 'RESPONDED' status string but leaving the response field blank.",
                   "Inspect the returned HTTP status code."
                 ],
-                expectedResult: "Validation layers block execution, returning an HTTP 400 Bad Request error with field error on responseNote.",
+                expectedResult: "Validation layers block execution, returning an HTTP 400 Bad Request error with field error on response.",
                 status: "not_started"
               },
               {
@@ -6525,31 +6549,32 @@ Response (404 Not Found):
                 type: "api",
                 precondition: "Request body contains an invalid status string.",
                 steps: [
-                  "Call PATCH /api/support/feedbacks/12/status with status='PENDING'."
+                  "Call PUT /api/support/admin/feedbacks/12 with status='PENDING' and the current version."
                 ],
-                expectedResult: "Returns 400 Bad Request with error message 'Invalid status values allowed.'",
+                expectedResult: "Returns 400 Bad Request with error message 'Invalid feedback status transition.'",
                 status: "not_started"
               },
               {
                 id: "tc-feed-update-04",
                 title: "Verify audit log entry is created on successful status update",
                 type: "integration",
-                precondition: "Target feedback exists with OPEN status.",
+                precondition: "Target feedback exists with IN_REVIEW status and a current version.",
                 steps: [
-                  "Call PATCH /api/support/feedbacks/12/status with RESOLVED and a responseNote.",
-                  "Query the audit_logs table after the update."
+                  "Call PUT /api/support/admin/feedbacks/12 with RESPONDED, a response, and the current version.",
+                  "Query support_feedback_history and support_audit_logs after the update."
                 ],
-                expectedResult: "A new row exists in audit_logs with action=FEEDBACK_STATUS_CHANGED, source_service=SUPPORT_API, and user_id matching the Manager's ID.",
+                expectedResult: "New rows exist in support_feedback_history and support_audit_logs with action=FEEDBACK_STATUS_CHANGED and actor_user_id matching the Manager's ID.",
                 status: "not_started"
               }
             ],
             doneCriteria: [
-              { id: "dc-feed-update-01", content: "State modifications alter properties on target database tables correctly (status, response_note, resolved_by, updated_at).", checked: false },
-              { id: "dc-feed-update-02", content: "Every state transition successfully logs an entry to the shared central audit_logs data model.", checked: false },
-              { id: "dc-feed-update-03", content: "Only RESOLVED and REJECTED are valid target status values; OPEN cannot be set via this endpoint.", checked: false },
-              { id: "dc-feed-update-04", content: "responseNote is required and validated as non-blank when status is RESOLVED or REJECTED.", checked: false },
-              { id: "dc-feed-update-05", content: "resolved_by is populated from JWT claims, not from request body.", checked: false },
-              { id: "dc-feed-update-06", content: "Both feedbacks table update and audit_logs insert are wrapped in a single @Transactional block.", checked: false }
+              { id: "dc-feed-update-01", content: "State modifications update support_feedbacks atomically with status, response/reason, assignment, version, and updated_at.", checked: false },
+              { id: "dc-feed-update-02", content: "Every accepted transition writes feedback history and a central support audit entry.", checked: false },
+              { id: "dc-feed-update-03", content: "Only valid lifecycle transitions among NEW, IN_REVIEW, RESPONDED, CLOSED, REJECTED, and ARCHIVED are accepted.", checked: false },
+              { id: "dc-feed-update-04", content: "response is required for RESPONDED; reason is required for REJECTED and reopening a terminal record.", checked: false },
+              { id: "dc-feed-update-05", content: "Actor identity is populated from JWT claims, not from request body.", checked: false },
+              { id: "dc-feed-update-06", content: "A stale version returns a conflict and cannot overwrite another manager's update.", checked: false },
+              { id: "dc-feed-update-07", content: "support_feedbacks, history, and audit writes are wrapped in one @Transactional block; notification dispatch occurs after commit.", checked: false }
             ]
           }
         ]
@@ -7241,6 +7266,7 @@ Response (400 Bad Request - Invalid ID):
               "Module Ownership Isolation: The Spring Boot Support API operates purely as a helper utility for hardware simulation tracking. It is prohibited from mutating primary datasets such as active parking tickets, sessions, or slot states.",
               "Enum Serialization: All system event tags must be written to the database layer as uppercase string literals (CAMERA_SCAN).",
               "Shared JWT Protocol: Inbound calls must contain a valid JWT token signed by the common Identity service.",
+              "Environment Guard: This mock route is disabled in production. A controlled non-production run requires a server-side break-glass TEST_RUN guard and creates a SECURITY_SENSITIVE audit record.",
               "Response Standardization: Every success payload or systemic error must be wrapped into the common enterprise structure (success, message, data, errors, timestamp)."
             ],
             dbExistingTables: ["mock_device_events", "gates"],
@@ -7255,7 +7281,8 @@ Response (400 Bad Request - Invalid ID):
             securityRules: [
               "Assert that inbound requests contain a valid bearer token in the headers.",
               "Extract the operational user identity from the security context using the 'sub' claim.",
-              "Return a 403 Forbidden response if the role fails to match STAFF, MANAGER, or ADMIN."
+              "Return a 403 Forbidden response if the role fails to match STAFF, MANAGER, or ADMIN.",
+              "Reject unless the server runtime is non-production and an approved break-glass TEST_RUN guard is present; never trust a client-supplied environment flag."
             ],
             logEvents: [
               "Log infrastructure traces tracking the target URI route, invoking method, extracted user identity, and HTTP response statuses."
@@ -7350,7 +7377,8 @@ Response Validation Error (400 Bad Request):
             doneCriteria: [
               { id: "dc-mock-cam-01", content: "API routing matches project spec constraints: POST /api/support/mock-camera/scan.", checked: false },
               { id: "dc-mock-cam-02", content: "Access is restricted to authorized roles (STAFF, MANAGER, ADMIN).", checked: false },
-              { id: "dc-mock-cam-03", content: "Event entries write directly to mock_device_events with event_type = 'CAMERA_SCAN' and HTTP status 201 Created.", checked: false }
+              { id: "dc-mock-cam-03", content: "Event entries write directly to mock_device_events with event_type = 'CAMERA_SCAN' and HTTP status 201 Created.", checked: false },
+              { id: "dc-mock-cam-04", content: "Production calls are blocked; non-production calls require a server-side break-glass TEST_RUN guard and produce a SECURITY_SENSITIVE audit record.", checked: false }
             ]
           },
           {
@@ -7379,7 +7407,8 @@ Response Validation Error (400 Bad Request):
             ],
             businessRules: [
               "Data Ownership Boundaries: The Support API logs device operations; it cannot execute write transactions against core business models like parking_cards or active parking sessions.",
-              "Unified Return Wrappers: Success or failure states must follow the project standard layout (success, message, data, errors, timestamp)."
+              "Unified Return Wrappers: Success or failure states must follow the project standard layout (success, message, data, errors, timestamp).",
+              "Environment Guard: This mock route is disabled in production. A controlled non-production run requires a server-side break-glass TEST_RUN guard and creates a SECURITY_SENSITIVE audit record."
             ],
             dbExistingTables: ["mock_device_events", "parking_cards"],
             dbRelationships: [
@@ -7392,7 +7421,8 @@ Response Validation Error (400 Bad Request):
             ],
             securityRules: [
               "Enforce JWT token verification filters prior to routing processing steps to the service component.",
-              "Block access requests, returning a 403 Forbidden status, if token claims lack authorized operator roles."
+              "Block access requests, returning a 403 Forbidden status, if token claims lack authorized operator roles.",
+              "Reject unless the server runtime is non-production and an approved break-glass TEST_RUN guard is present; never trust a client-supplied environment flag."
             ],
             logEvents: [
               "Record fundamental invocation metrics including target lane parameters, processing timestamps, and the unique user ID resolved from the token context."
@@ -7473,7 +7503,8 @@ Response Success (201 Created):
             doneCriteria: [
               { id: "dc-mock-rfid-01", content: "API routing configuration matches: POST /api/support/mock-rfid/scan.", checked: false },
               { id: "dc-mock-rfid-02", content: "Incorporates security filters checking for authorized user context roles (STAFF, MANAGER, ADMIN).", checked: false },
-              { id: "dc-mock-rfid-03", content: "Records persist into PostgreSQL with event_type = 'RFID_SCAN'.", checked: false }
+              { id: "dc-mock-rfid-03", content: "Records persist into PostgreSQL with event_type = 'RFID_SCAN'.", checked: false },
+              { id: "dc-mock-rfid-04", content: "Production calls are blocked; non-production calls require a server-side break-glass TEST_RUN guard and produce a SECURITY_SENSITIVE audit record.", checked: false }
             ]
           },
           {
@@ -7502,7 +7533,8 @@ Response Success (201 Created):
             ],
             businessRules: [
               "Backend Responsibilities: The Spring Boot service handles all tracking and logging logs for these simulated actions. It is completely isolated from the primary transaction engines.",
-              "Enum Mapping Consistency: Activation commands written to database records must be mapped as uppercase string literals (BARRIER_OPEN / BARRIER_CLOSE)."
+              "Enum Mapping Consistency: Activation commands written to database records must be mapped as uppercase string literals (BARRIER_OPEN / BARRIER_CLOSE).",
+              "Environment Guard: This mock route is disabled in production. A controlled non-production run requires a server-side break-glass TEST_RUN guard and creates a SECURITY_SENSITIVE audit record."
             ],
             dbExistingTables: ["mock_device_events", "gates"],
             dbRelationships: [
@@ -7515,7 +7547,8 @@ Response Success (201 Created):
             ],
             securityRules: [
               "Parse and validate inbound JWT signatures before executing business logic layers.",
-              "Restrict access to corporate account profiles with appropriate roles (STAFF, MANAGER, ADMIN)."
+              "Restrict access to corporate account profiles with appropriate roles (STAFF, MANAGER, ADMIN).",
+              "Reject unless the server runtime is non-production and an approved break-glass TEST_RUN guard is present; never trust a client-supplied environment flag."
             ],
             logEvents: [
               "Audit execution metrics for each override command, tracking the timestamp, invoking user ID, target gate code, and operational status."
@@ -7596,7 +7629,8 @@ Response Success (201 Created):
             doneCriteria: [
               { id: "dc-mock-barrier-01", content: "API routing configuration matches exact system constraints: POST /api/support/mock-barrier/control.", checked: false },
               { id: "dc-mock-barrier-02", content: "Access controls strictly limit invocation to authorized roles (STAFF, MANAGER, ADMIN).", checked: false },
-              { id: "dc-mock-barrier-03", content: "Operational states log cleanly into the mock_device_events structure with appropriate upper-case string mappings.", checked: false }
+              { id: "dc-mock-barrier-03", content: "Operational states log cleanly into the mock_device_events structure with appropriate upper-case string mappings.", checked: false },
+              { id: "dc-mock-barrier-04", content: "Production calls are blocked; non-production calls require a server-side break-glass TEST_RUN guard and produce a SECURITY_SENSITIVE audit record.", checked: false }
             ]
           }
         ]
