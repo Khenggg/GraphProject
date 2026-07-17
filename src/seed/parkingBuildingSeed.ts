@@ -2311,33 +2311,262 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-sess-claim",
             title: "Claim Session by QR",
             type: "leaf_feature",
+            status: "draft",
+            priority: "medium",
             clients: ["Driver"],
+            tags: ["parking", "session", "qr", "claim"],
+            summary: "Cho phép người dùng (Driver) có tài khoản trên hệ thống quét mã QR để nhận quyền sở hữu (claim) một phiên đỗ xe vãng lai.",
+            objective: "Cho phép người dùng (Driver) có tài khoản trên hệ thống quét mã QR (được in trên vé cứng tại cổng vào hoặc hiển thị trên màn hình ki-ốt) để nhận quyền sở hữu (claim) một phiên đỗ xe vãng lai (casual session). Việc này giúp người dùng có thể theo dõi thời gian đỗ xe, trạng thái xe và lịch sử đỗ xe trực tiếp trên ứng dụng của họ mà không cần giữ vé giấy.",
+            inScope: [
+              "Tiếp nhận và giải mã/xác thực qrToken từ phía client.",
+              "Tìm kiếm phiên đỗ xe (Parking Session) đang hoạt động tương ứng với token.",
+              "Cập nhật thông tin chủ sở hữu (DriverId) cho phiên đỗ xe.",
+              "Lưu vết (audit log) hành động nhận phiên đỗ xe."
+            ],
+            outOfScope: [
+              "Tích hợp thanh toán trực tuyến (Online Payment Gateways) và mã giảm giá (Discount Codes) hoàn toàn nằm ngoài phạm vi của hệ thống này. Việc thanh toán (nếu có) sẽ được xử lý tiền mặt hoặc qua hệ thống máy quẹt thẻ nội bộ tại trạm, không thực hiện qua web/app.",
+              "Xử lý logic cho xe đã có vé tháng (Monthly Pass) quét QR này (vé tháng tự động nhận diện qua biển số/thẻ RFID)."
+            ],
+            permissions: [
+              { role: "Driver", permission: "Authorized to access this feature. Cần có Access Token hợp lệ." }
+            ],
+            dbExistingTables: ["ParkingSessions", "Users"],
+            dbRelationships: [
+              "ParkingSessions.DriverId là Foreign Key trỏ tới Users.Id.",
+              "Một User có thể có nhiều ParkingSessions. Một ParkingSession chỉ thuộc về tối đa một User."
+            ],
+            validationRules: [
+              { field: "qrToken", rule: "qrToken không được rỗng và phải đúng định dạng mã hóa của hệ thống.", errorMessage: "INVALID_QR_TOKEN" },
+              { field: "Session Existence", rule: "Phải tồn tại record trong ParkingSessions khớp với dữ liệu giải mã từ qrToken.", errorMessage: "INVALID_QR_TOKEN" },
+              { field: "State Validation", rule: "ParkingSessions.Status phải là ACTIVE.", errorMessage: "INVALID_QR_TOKEN" },
+              { field: "Ownership Validation", rule: "ParkingSessions.DriverId phải là NULL trước khi thực hiện claim.", errorMessage: "SESSION_ALREADY_CLAIMED" }
+            ],
+            securityRules: [
+              "Validate role permissions (Chỉ Driver role được phép gọi API này).",
+              "Extract DriverId trực tiếp từ JWT Token của request (không nhận DriverId từ payload để tránh lỗi IDOR - Insecure Direct Object Reference).",
+              "Ngăn chặn brute-force attack vào endpoint này bằng Rate Limiting."
+            ],
+            logEvents: [
+              "Log access request: UserId, qrToken (đã mask một phần), thời gian gọi API.",
+              "Log state change: Lưu lịch sử cập nhật bảng ParkingSessions (Trường DriverId thay đổi từ NULL sang ID thực tế)."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens."
+            ],
+            integrationPoints: [
+              { system: ".NET Core API và PostgreSQL DB", responsibility: "Giao tiếp hoàn toàn trong nội bộ." }
+            ],
+            uiComponents: "Scan Ticket QR screen, Active Session screen, Toast/Alert",
+            uiStateSuccess: "Hiển thị màn hình 'Active Session' với thông tin biển số và thời gian vào.",
+            uiStateError: "Hiển thị Toast/Alert báo lỗi tương ứng ('Vé này đã được nhận' hoặc 'Mã QR không hợp lệ').",
             endpoints: ["POST /api/core/parking-sessions/{qrToken}/claim"],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/parking-sessions/{qrToken}/claim"),
-            testCases: defaultApiTests("Claim Session by QR", ["Driver"], ["POST /api/core/parking-sessions/{qrToken}/claim"]),
-            doneCriteria: defaultDoneCriteria("Claim Session by QR")
+            apiContracts: [
+              {
+                id: "contract-claim-session-qr",
+                name: "POST /api/core/parking-sessions/{qrToken}/claim",
+                content: `Method: POST\nPath: /api/core/parking-sessions/{qrToken}/claim\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: application/json\n\n// Request Body: Trống (Thông tin định danh lấy từ JWT Token, thông tin phiên lấy từ qrToken trên URL)\n\n// Success Response (200 OK)\n{\n  "success": true,\n  "statusCode": 200,\n  "message": "Parking session claimed successfully.",\n  "data": {\n    "sessionId": "uuid-string",\n    "plateNumber": "51A-123.45",\n    "entryTime": "2026-07-14T01:00:00Z",\n    "assignedDriverId": "uuid-driver-string"\n  }\n}\n\n// Error Response - Already Claimed (409 Conflict)\n{\n  "success": false,\n  "statusCode": 409,\n  "errorCode": "SESSION_ALREADY_CLAIMED",\n  "message": "This parking session has already been claimed by another user."\n}\n\n// Error Response - Invalid/Expired Token (400 Bad Request)\n{\n  "success": false,\n  "statusCode": 400,\n  "errorCode": "INVALID_QR_TOKEN",\n  "message": "The provided QR token is invalid, expired, or corresponds to an inactive session."\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-claim-sess-auth",
+                title: "Verify authorized client (Driver) can claim an active, unowned session",
+                type: "api",
+                precondition: "Client is authenticated with role: Driver (DriverId: A). An active Parking Session exists with DriverId = NULL and a valid qrToken.",
+                steps: [
+                  "Invoke endpoint: POST /api/core/parking-sessions/{qrToken}/claim",
+                  "Check response code is 200 OK.",
+                  "Verify in Database that ParkingSessions.DriverId is now set to DriverId A."
+                ],
+                expectedResult: "Request succeeds and returns session details.",
+                status: "not_started"
+              },
+              {
+                id: "tc-claim-sess-conflict",
+                title: "Verify claiming an already claimed session returns Conflict",
+                type: "api",
+                precondition: "Client is authenticated with role: Driver (DriverId: B). An active Parking Session exists but DriverId is already set to DriverId A.",
+                steps: [
+                  "Invoke endpoint: POST /api/core/parking-sessions/{qrToken}/claim",
+                  "Check response status code is 409 Conflict."
+                ],
+                expectedResult: "System rejects the request with SESSION_ALREADY_CLAIMED error.",
+                status: "not_started"
+              },
+              {
+                id: "tc-claim-sess-unauth",
+                title: "Verify unauthorized role is rejected",
+                type: "api",
+                precondition: "User is anonymous or has role: Staff/Guest",
+                steps: [
+                  "Attempt to invoke endpoint: POST /api/core/parking-sessions/{qrToken}/claim",
+                  "Check response status code is 401 Unauthorized or 403 Forbidden"
+                ],
+                expectedResult: "Request is blocked at the gateway/middleware level.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-claim-sess-contract", content: "API contract is documented in this node.", checked: true },
+              { id: "dc-claim-sess-clients", content: "Required clients/roles are assigned.", checked: true },
+              { id: "dc-claim-sess-rules", content: "Business rules and inherited rules are visible in AI export.", checked: true },
+              { id: "dc-claim-sess-resp", content: "Success response uses common API response format where applicable.", checked: true },
+              { id: "dc-claim-sess-err", content: "Error response is clear and does not leak sensitive data.", checked: true },
+              { id: "dc-claim-sess-tests", content: "At least two test cases are defined.", checked: true },
+              { id: "dc-claim-sess-export", content: "Feature can be exported as AI-readable Markdown.", checked: true },
+              { id: "dc-claim-sess-edge", content: "Edge cases are documented (Already claimed, expired token).", checked: true },
+              { id: "dc-claim-sess-transitions", content: "Payment/session/reservation state transition is documented (DriverId update logic).", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing project structure within the .NET Core solution.\nReuse existing BaseResponse<T> wrappers for consistent API outputs.\nEnsure the QR decoding logic uses the shared utility class to prevent duplication.\nExtract the user ID from HttpContext.User.Claims. Do NOT trust any driver ID sent in the request body.\nImplement a database transaction when updating the session to prevent race conditions (e.g., two users scanning the same QR at the exact same millisecond).\nRun all unit tests for the ParkingSessionService before submitting the PR."
           },
           {
             id: "leaf-sess-exit",
             title: "Vehicle Exit",
             type: "leaf_feature",
+            status: "in_progress",
+            priority: "high",
             clients: ["Staff"],
+            tags: ["parking", "session", "exit"],
+            summary: "Quản lý quy trình xe ra khỏi bãi đỗ dựa trên quét thẻ RFID, đối chiếu biển số và tính phí đỗ xe hoặc xác thực vé tháng.",
+            objective: "Quản lý quy trình xe ra khỏi bãi đỗ. Hệ thống sẽ quét thẻ RFID để truy xuất phiên đỗ xe hiện tại, đối chiếu hình ảnh/biển số xe lúc vào - lúc ra, tính toán phí đỗ xe (dựa trên bảng giá dành cho khách vãng lai) để nhân viên thu tiền mặt, hoặc kiểm tra tính hợp lệ của vé tháng trước khi cập nhật trạng thái phiên và mở barie.",
+            inScope: [
+              "Quét và xác thực thẻ RFID tại cổng ra.",
+              "Truy xuất thông tin phiên đỗ xe đang hoạt động (Active Parking Session).",
+              "Hiển thị hình ảnh camera (vào/ra) để nhân viên đối chiếu biển số.",
+              "Thuật toán tính phí đỗ xe cho khách vãng lai (Casual) dựa trên thời gian đỗ và loại xe.",
+              "Xử lý giao dịch thu tiền mặt tại quầy.",
+              "Xác thực thời hạn vé tháng đối với khách hàng đăng ký trước.",
+              "Cập nhật trạng thái thẻ RFID (thu hồi thẻ khách vãng lai)."
+            ],
+            outOfScope: [
+              "Tích hợp các cổng thanh toán trực tuyến (VNPay, MoMo, thẻ tín dụng, v.v.).",
+              "Hệ thống mã giảm giá (Discount codes/Vouchers) và các chương trình khuyến mãi.",
+              "Xử lý nhận diện biển số (ALPR/ANPR) ở mức độ phần cứng (chỉ nhận chuỗi text từ thiết bị camera truyền lên)."
+            ],
+            permissions: [
+              { role: "Staff", permission: "Full Access. Nhân viên vận hành cổng/thu ngân có quyền xác nhận xe ra, thu tiền mặt và mở cổng." },
+              { role: "Manager", permission: "Read-only. Có quyền xem lịch sử các phiên đỗ xe đã hoàn tất nhưng không thao tác tại cổng." },
+              { role: "Admin", permission: "Read-only. Có quyền xem lịch sử các phiên đỗ xe đã hoàn tất nhưng không thao tác tại cổng." }
+            ],
+            businessRules: [
+              "Fee Calculation: Phí phải được tính toán tự động bằng hàm nội bộ trước khi thực hiện Casual Exit. Không hỗ trợ giảm giá hay thanh toán online, nhân viên thu tiền mặt bằng đúng số tiền hệ thống hiển thị.",
+              "Monthly Pass Rules: Vé tháng phải còn hạn (Expiry Date >= Current Date) và biển số xe ra phải khớp 100% với biển số đã đăng ký vé tháng.",
+              "Card Status: Thẻ khách vãng lai sau khi exit thành công phải chuyển trạng thái từ InUse sang Available để tái sử dụng.",
+              "Time Validation: ExitTime bắt buộc phải lớn hơn EntryTime."
+            ],
+            dbExistingTables: ["ParkingSessions", "Cards", "Vehicles", "MonthlyPasses", "PricingPolicies"],
+            dbRelationships: [
+              "Một ParkingSession phải liên kết với một Card hợp lệ và một Gate ra có tồn tại trong hệ thống."
+            ],
+            validationRules: [
+              { field: "cardCode", rule: "Bắt buộc. Phải tồn tại trong hệ thống và đang gắn với một ParkingSession có trạng thái Active.", errorMessage: "VALIDATION_FAILED" },
+              { field: "exitPlateNumber", rule: "Không được để trống. Nếu có sai lệch (mismatch) với entryPlate, hệ thống trả về cảnh báo (Warning code) để nhân viên tự đối chiếu bằng mắt và xác nhận override.", errorMessage: "PLATE_MISMATCH_WARNING" },
+              { field: "collectedAmount", rule: "Phải bằng hoặc lớn hơn calculatedFee (không áp dụng online/discount).", errorMessage: "INSUFFICIENT_PAYMENT" }
+            ],
+            securityRules: [
+              "Chỉ Token chứa Role Staff hoặc có Permission Exit_Gate_Operation mới được gọi các endpoint POST.",
+              "Validate chặt chẽ chống Request Replay: Không thể gọi /exit hai lần cho cùng một Session ID.",
+              "Ngăn chặn SQL Injection và XSS trên các trường string nhận từ camera/phần cứng."
+            ],
+            logEvents: [
+              "Gọi API tính phí (Calculate Fee) và kết quả trả về.",
+              "Giao dịch xác nhận xe ra thành công (ghi rõ ID nhân viên thực hiện, số tiền thu).",
+              "Hành động \"Force Exit\" (nếu nhân viên dùng quyền ghi đè cảnh báo sai lệch biển số)."
+            ],
+            noLogEvents: [
+              "Bearer tokens, mật khẩu người dùng."
+            ],
+            integrationPoints: [
+              { system: "Hardware/IoT Trigger", responsibility: "API có thể sẽ trả về tín hiệu điều khiển (Webhook/SignalR) xuống hệ thống Local Gateway để kích hoạt relay mở thanh Barie sau khi Response trả về success: true." }
+            ],
+            uiPage: "/exit-gate",
+            uiComponents: "Split View panel (Entry Info vs Exit Camera), Manual Plate Override dialog, Cash Collection modal with [Confirm & Open Gate] button",
+            uiStateLoading: "Disable input and action buttons, show spinner on cashier dashboard.",
+            uiStateEmpty: "No active session found for the scanned card.",
+            uiStateError: "Show red border alert on plate mismatch, requiring staff confirmation PIN/override.",
+            uiStateSuccess: "Open barrier gate, display success toast, reset screen to standby.",
             endpoints: [
-              "POST /api/core/parking-sessions/{id}/exit",
               "GET /api/core/parking-sessions/by-card-code/{cardCode}",
               "POST /api/core/parking-sessions/{id}/calculate-fee",
+              "POST /api/core/parking-sessions/{id}/exit",
               "POST /api/core/parking-sessions/{id}/monthly-pass-exit"
             ],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/parking-sessions/{id}/exit"),
-            testCases: defaultApiTests("Casual Exit", ["Staff"], ["POST /api/core/parking-sessions/{id}/exit"]),
+            apiContracts: [
+              {
+                id: "contract-exit-by-card",
+                name: "GET /api/core/parking-sessions/by-card-code/{cardCode}",
+                content: `Method: GET\nPath: /api/core/parking-sessions/by-card-code/{cardCode}\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "data": {\n    "sessionId": "guid-uuid",\n    "cardCode": "RFID-123456",\n    "sessionType": "Casual", // or "Monthly"\n    "entryTime": "2026-07-17T08:00:00Z",\n    "entryPlate": "59A-12345",\n    "entryImageUrl": "/images/entry/123.jpg",\n    "vehicleType": "Car"\n  }\n}`
+              },
+              {
+                id: "contract-exit-calc-fee",
+                name: "POST /api/core/parking-sessions/{id}/calculate-fee",
+                content: `Method: POST\nPath: /api/core/parking-sessions/{id}/calculate-fee\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "data": {\n    "durationMinutes": 180,\n    "calculatedFee": 30000,\n    "currency": "VND",\n    "pricingSchemeId": 2\n  }\n}`
+              },
+              {
+                id: "contract-exit-casual",
+                name: "POST /api/core/parking-sessions/{id}/exit",
+                content: `Method: POST\nPath: /api/core/parking-sessions/{id}/exit\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: application/json\nRequest Body:\n{\n  "exitGateId": "GATE-OUT-01",\n  "exitPlateNumber": "59A-12345",\n  "exitImageUrl": "/images/exit/456.jpg",\n  "collectedAmount": 30000,\n  "paymentMethod": "Cash",\n  "staffId": "STAFF-001"\n}\nResponse 200 OK:\n{\n  "success": true,\n  "message": "Vehicle exited successfully. Gate opened.",\n  "data": { "sessionId": "guid-uuid", "status": "Completed" }\n}`
+              },
+              {
+                id: "contract-exit-monthly",
+                name: "POST /api/core/parking-sessions/{id}/monthly-pass-exit",
+                content: `Method: POST\nPath: /api/core/parking-sessions/{id}/monthly-pass-exit\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: application/json\nRequest Body:\n{\n  "exitGateId": "GATE-OUT-02",\n  "exitPlateNumber": "51G-98765",\n  "exitImageUrl": "/images/exit/789.jpg"\n}\nResponse 200 OK:\n{\n  "success": true,\n  "message": "Monthly pass valid. Gate opened."\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-exit-casual-success",
+                title: "Verify Staff can process Casual Exit with correct exact cash",
+                type: "api",
+                precondition: "Có một session vãng lai đang Active.",
+                steps: [
+                  "Login as Staff.",
+                  "GET session by cardCode.",
+                  "POST calculate fee -> get X amount.",
+                  "POST exit with collectedAmount = X and paymentMethod = Cash."
+                ],
+                expectedResult: "HTTP 200. Session status = Completed. Card status = Available.",
+                status: "not_started"
+              },
+              {
+                id: "tc-exit-monthly-expired",
+                title: "Verify Monthly Pass exit fails if pass is expired",
+                type: "api",
+                precondition: "Có một session vé tháng đang Active nhưng vé tháng đã hết hạn vào ngày hôm qua.",
+                steps: [
+                  "Call POST /api/core/parking-sessions/{id}/monthly-pass-exit."
+                ],
+                expectedResult: "HTTP 400 Bad Request / 403 Forbidden. Trả về mã lỗi MONTHLY_PASS_EXPIRED. Session vẫn ở trạng thái Active.",
+                status: "not_started"
+              },
+              {
+                id: "tc-exit-invalid-payment",
+                title: "Verify API completely rejects invalid payment methods",
+                type: "api",
+                precondition: "Payload gửi lên có chứa paymentMethod: 'VNPay' hoặc discountCode: 'SALE10'.",
+                steps: [
+                  "POST /exit with the payload."
+                ],
+                expectedResult: "HTTP 400. Model validation fails (strict validation on DTO only accepting 'Cash' or ignoring extra fields).",
+                status: "not_started"
+              }
+            ],
             doneCriteria: [
-              ...defaultDoneCriteria("Vehicle Exit"),
-              { id: "dc-sess-find", content: "Card RFID scanning loads correct active session.", checked: false },
-              { id: "dc-sess-calc", content: "Accurate fee calculation based on active pricing scheme.", checked: false },
-              { id: "dc-sess-monthly-exit", content: "Seamless gate exit for registered monthly pass vehicles.", checked: false }
-            ]
+              { id: "dc-exit-contract", content: "API contract is fully documented and includes payload definitions.", checked: true },
+              { id: "dc-exit-clients", content: "Required clients/roles are assigned properly.", checked: true },
+              { id: "dc-exit-rules", content: "Business rules explicitly forbid online payments/discounts and are visible in AI export.", checked: true },
+              { id: "dc-exit-resp", content: "Success response uses common API response format where applicable.", checked: true },
+              { id: "dc-exit-err", content: "Error response is clear and does not leak sensitive data.", checked: true },
+              { id: "dc-exit-tests", content: "At least three robust test cases are defined (Casual, Monthly, Validation).", checked: true },
+              { id: "dc-exit-export", content: "Feature can be exported as AI-readable Markdown.", checked: true },
+              { id: "dc-exit-rfid", content: "Card RFID scanning loads correct active session.", checked: true },
+              { id: "dc-exit-fee", content: "Accurate fee calculation based on active pricing scheme.", checked: true },
+              { id: "dc-exit-cash", content: "Proper handling of cash collection confirmation before completing exit.", checked: true },
+              { id: "dc-exit-monthly-flow", content: "Seamless gate exit for registered monthly pass vehicles (valid expiry).", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing .NET Core API project structure.\nLocate existing Domain Models (ParkingSession, Card).\nImplement ExitController utilizing existing IUnitOfWork and IRepository patterns.\nAdd DTOs for Exit Requests ensuring strict validation (e.g., Enum validation for PaymentMethod allowing only Cash).\nImplement the smallest correct change. Do not scaffold payment gateway integrations.\nRun all relevant tests.\nReport changed files, reason, verification, and remaining risks."
           },
           {
             id: "leaf-mp-validation",
