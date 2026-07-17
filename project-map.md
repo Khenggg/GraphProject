@@ -1,6 +1,6 @@
 # Project Map
 
-> Generated: 2026-07-17 18:00:54
+> Generated: 2026-07-17 18:04:29
 > Generator: `scripts/export-project-map.ps1`
 
 This file contains the project architecture and a direct source-code snapshot. The snapshot is generated from the source tree and filtered by `projectmapignore`.
@@ -48,7 +48,7 @@ src/main.tsx -> src/App.tsx
 | `src/domain/taxonomy.ts` | 8301 |
 | `src/index.css` | 1592 |
 | `src/main.tsx` | 240 |
-| `src/seed/parkingBuildingSeed.ts` | 259572 |
+| `src/seed/parkingBuildingSeed.ts` | 269129 |
 | `src/seed/parkingTaxonomyMigration.ts` | 26983 |
 | `src/store/featureTreeStore.ts` | 24426 |
 | `src/tests/aiExport.test.ts` | 1952 |
@@ -8618,13 +8618,111 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-rep-audit",
             title: "Audit Log Export",
             type: "leaf_feature",
+            status: "in_progress",
+            priority: "medium",
             clients: ["Admin"],
+            tags: ["reporting", "audit-logs", "excel", "security"],
+            summary: "Cung cấp API cho phép quản trị viên cấp cao (Admin) xuất nhật ký hệ thống (Audit Logs) ra file Excel (.xlsx).",
+            objective: "Cung cấp API cho phép quản trị viên cấp cao (Admin) xuất nhật ký hệ thống (Audit Logs) ra file Excel (.xlsx). Nhật ký này lưu vết toàn bộ các thao tác thay đổi dữ liệu (mutating operations) do Staff, Manager hoặc Admin thực hiện (ví dụ: thay đổi bảng giá, đóng sự vụ mất thẻ, phê duyệt ngoại lệ). Báo cáo giúp truy vết trách nhiệm (accountability), đảm bảo tính minh bạch và phục vụ cho công tác kiểm toán hệ thống (System Auditing).",
+            inScope: [
+              "Truy xuất dữ liệu từ schema Audit chuyên dụng.",
+              "Hỗ trợ bộ lọc theo khoảng thời gian (startDate, endDate), theo người thực hiện (userId/username), hoặc theo hành động (actionType - CREATE, UPDATE, DELETE).",
+              "Stream trực tiếp dữ liệu truy vấn được từ database thành định dạng file Excel (.xlsx) trả về cho Client.",
+              "Đảm bảo tính toàn vẹn và không cho phép thay đổi dữ liệu Audit Log dưới bất kỳ hình thức nào."
+            ],
+            outOfScope: [
+              "Hiển thị danh sách Audit Log trực tiếp trên UI (Nếu cần, tính năng đó sẽ nằm ở một API dạng Paginated List khác. API này chỉ focus vào Export).",
+              "Các thao tác Read (GET) thông thường không làm thay đổi trạng thái hệ thống sẽ không nằm trong Audit Log."
+            ],
+            permissions: [
+              { role: "Admin", permission: "Read-Only - Chỉ Admin (System Administrator) mới có quyền xuất và xem toàn bộ nhật ký kiểm toán của toàn hệ thống. Manager tuyệt đối không có quyền này để tránh việc tự bao che lỗi." }
+            ],
+            businessRules: [
+              "Immutability: Bảng dữ liệu Audit Log là bất biến (Append-only). Spring Boot API chỉ được phép thực hiện thao tác Read-Only.",
+              "Date Range Limit: Quá trình xuất file Excel có thể gây tốn rất nhiều tài nguyên. Bắt buộc giới hạn khoảng cách giữa endDate và startDate không được vượt quá 30 ngày.",
+              "Stream Processing: Tuyệt đối không dùng List<AuditLog> để nạp toàn bộ kết quả vào Java Heap Memory. Phải dùng ScrollableResults của Hibernate hoặc phân trang liên tục (Chunk processing) kết hợp ghi đè ra output stream của HttpServletResponse."
+            ],
+            dbExistingTables: ["AuditLogs (in schema audit, e.g. audit.AuditLogs)"],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Không cần thiết phải JOIN với bảng Users nếu bảng AuditLog đã lưu sẵn Username (khuyên dùng cách này trong Audit Design để tránh mất vết khi User bị xóa)."
+            ],
+            validationRules: [
+              { field: "startDate", rule: "Định dạng yyyy-MM-dd. Bắt buộc.", errorMessage: "INVALID_START_DATE" },
+              { field: "endDate", rule: "Định dạng yyyy-MM-dd. Bắt buộc >= startDate.", errorMessage: "INVALID_END_DATE" },
+              { field: "Range", rule: "endDate - startDate <= 30 ngày.", errorMessage: "DATE_RANGE_EXCEEDS_30_DAYS" }
+            ],
+            securityRules: [
+              "Strict Role Validation: Chỉ duy nhất Role Admin được phép qua chốt chặn Security. Trả về 403 Forbidden đối với Manager hoặc Staff.",
+              "Sensitive Data Masking: Dù Audit Log ghi lại mọi thay đổi, lúc xuất Excel cần cấu hình loại trừ (mask) các trường nhạy cảm bên trong chuỗi JSON OldValues/NewValues (nếu có, ví dụ: mật khẩu)."
+            ],
+            logEvents: [
+              "Self-Auditing: Hành động xuất file Audit Log của Admin cũng phải được lưu log lại thành một sự kiện bảo mật (Ví dụ: 'Admin A vừa xuất file Audit Log từ ngày X đến ngày Y')."
+            ],
+            noLogEvents: [
+              "Không lưu lại dữ liệu Token."
+            ],
+            integrationPoints: [
+              { system: "Apache POI (SXSSFWorkbook)", responsibility: "Vì dữ liệu xuất ra có thể lên đến hàng trăm nghìn dòng, KHÔNG sử dụng XSSFWorkbook thông thường, bắt buộc phải dùng SXSSFWorkbook (Streaming Version) của thư viện Apache POI để giới hạn bộ nhớ RAM." }
+            ],
+            uiComponents: "Page: /admin/system/audit-logs. Components: Bảng điều khiển bộ lọc (Từ ngày - Đến ngày, Select Box chọn loại hành động CREATE/UPDATE/DELETE/ALL); Nút 'Export to Excel'.",
+            uiStateSuccess: "Clicking export disables the button, shows a loading spinner, streams the file, and triggers the browser to save it once complete.",
             endpoints: ["GET /api/audit-logs/export"],
             ownerService: "Spring Boot Support API",
-            apiContracts: createApiContract("GET /api/audit-logs/export"),
-            testCases: defaultApiTests("Audit Log Export", ["Admin"], ["GET /api/audit-logs/export"]),
-            doneCriteria: defaultDoneCriteria("Audit Log Export")
-          }
+            apiContracts: [
+              {
+                id: "contract-audit-log-export",
+                name: "GET /api/audit-logs/export",
+                content: `Method: GET\nPath: /api/audit-logs/export?startDate=2026-07-01&endDate=2026-07-15&actionType=UPDATE\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\nHeaders:\n  Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\n  Content-Disposition: attachment; filename="AuditLogs_20260701_20260715.xlsx"\nBody: [Binary Stream of Excel File]`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-audit-log-export-admin-success",
+                title: "Verify authorized client (Admin) can access Audit Log Export successfully",
+                type: "integration",
+                precondition: "Client is authenticated with role: Admin",
+                steps: [
+                  "Authenticate user as Admin.",
+                  "Invoke endpoint: GET /api/audit-logs/export?startDate=2026-07-01&endDate=2026-07-05"
+                ],
+                expectedResult: "Request succeeds and streams a valid file.",
+                status: "not_started"
+              },
+              {
+                id: "tc-audit-log-export-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing Audit Log Export",
+                type: "api",
+                precondition: "User is authenticated with role: Manager (or anonymous)",
+                steps: [
+                  "Attempt to invoke endpoint: GET /api/audit-logs/export with Manager token."
+                ],
+                expectedResult: "Request is blocked and returns 403 Forbidden.",
+                status: "not_started"
+              },
+              {
+                id: "tc-audit-log-export-binary-check",
+                title: "Verify export endpoint returns correct spreadsheet binary type",
+                type: "integration",
+                precondition: "User is Admin. Valid date range.",
+                steps: [
+                  "Invoke endpoint: GET /api/audit-logs/export?startDate=2026-07-01&endDate=2026-07-05"
+                ],
+                expectedResult: "Response content-type is strictly application/vnd.openxmlformats-officedocument.spreadsheetml.sheet and the payload is not empty.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-audit-log-export-contract", content: "API contract is documented in this node.", checked: true },
+              { id: "dc-audit-log-export-roles", content: "Required clients/roles (Admin strictly) are assigned.", checked: true },
+              { id: "dc-audit-log-export-business-rules", content: "Business rules (30 days limit) and inherited rules are visible in AI export.", checked: true },
+              { id: "dc-audit-log-export-streaming", content: "Streaming implementation constraints (SXSSFWorkbook) are documented to avoid OOM.", checked: true },
+              { id: "dc-audit-log-export-error", content: "Error response is clear and does not leak sensitive data.", checked: true },
+              { id: "dc-audit-log-export-tests", content: "All 3 test cases, including the binary spreadsheet verification, are defined.", checked: true },
+              { id: "dc-audit-log-export-markdown", content: "Feature can be exported as AI-readable Markdown.", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing project structure in the Spring Boot Support API.\nLocate the entity mapped to the Audit Logs schema (e.g., AuditLog). Ensure the repository interface supports fetching data by date ranges.\nImport org.apache.poi:poi-ooxml in pom.xml / build.gradle if not present. Use SXSSFWorkbook instead of XSSFWorkbook for streaming large datasets safely.\nImplement the service layer with @Transactional(readOnly = true).\nFetch data in chunks (Pages) or use Java 8 Stream (@Query returning Stream<AuditLog>) wrapped in a try-with-resources block to write directly to the Excel row context.\nStream the final output directly to HttpServletResponse.getOutputStream() rather than wrapping it in a custom JSON response. Set the necessary Headers (Content-Disposition, Content-Type).\nEnforce strict Admin role checks using @PreAuthorize(\"hasRole('ADMIN')\").\nCheck existing tests before adding new ones. Implement the 3 test cases fully."
+          },
         ]
       },
 
