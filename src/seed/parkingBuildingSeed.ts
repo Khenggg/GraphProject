@@ -3545,12 +3545,115 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-rep-export",
             title: "Generic Report Export",
             type: "leaf_feature",
+            status: "in_progress",
+            priority: "high",
             clients: ["Manager", "Admin"],
+            tags: ["reporting", "export", "strategy-pattern", "excel"],
+            summary: "Cung cấp một API dùng chung (Unified Endpoint) để xử lý mọi yêu cầu xuất file báo cáo (chủ yếu là Excel .xlsx) của toàn hệ thống.",
+            objective: "Cung cấp một API dùng chung (Unified Endpoint) để xử lý mọi yêu cầu xuất file báo cáo (chủ yếu là Excel .xlsx) của toàn hệ thống. API này hoạt động như một Factory/Strategy Route, tiếp nhận tham số reportType, nạp cấu hình tương ứng, truy vấn dữ liệu theo phân quyền, dựng file thông qua Apache POI (SXSSFWorkbook) và stream trực tiếp về client. Giúp chuẩn hóa định dạng báo cáo và giảm thiểu code trùng lặp (DRY).",
+            inScope: [
+              "Áp dụng Strategy Pattern để điều hướng xử lý logic lấy dữ liệu dựa vào tham số reportType (ví dụ: REVENUE, OCCUPANCY, CARD_SESSION, AUDIT_LOG).",
+              "Xây dựng lõi xuất Excel dùng chung (Generic Excel Builder) hỗ trợ: tự động tạo Header, đổ dữ liệu theo dạng lưới (Grid), tự động điều chỉnh độ rộng cột (Auto-size) và định dạng dữ liệu (tiền tệ, ngày tháng, phần trăm).",
+              "Ghi luồng trực tiếp (Streaming) ra HttpServletResponse để tránh tràn bộ nhớ (OutOfMemoryError) khi xuất hàng trăm nghìn dòng."
+            ],
+            outOfScope: [
+              "Xuất file định dạng PDF hoặc CSV (Chỉ tập trung vào .xlsx trong scope này).",
+              "Lưu trữ các file đã xuất lên Cloud Storage (S3/GCS). File được tạo on-the-fly và đẩy thẳng về client."
+            ],
+            permissions: [
+              { role: "Admin", permission: "Execute - Có thể xuất mọi loại báo cáo của toàn bộ hệ thống." },
+              { role: "Manager", permission: "Execute - Có thể xuất các báo cáo vận hành, nhưng dữ liệu bên trong tự động bị giới hạn (cô lập) theo BuildingId mà Manager đó quản lý." }
+            ],
+            businessRules: [
+              "Strategy Routing: Lỗi HTTP 400 (Bad Request) phải được ném ra ngay lập tức nếu reportType không được hỗ trợ.",
+              "Memory Protection: Bắt buộc sử dụng SXSSFWorkbook thay vì XSSFWorkbook thông thường để flush dữ liệu xuống ổ đĩa tạm liên tục, giữ RAM ổn định.",
+              "Timeout & Pagination: Dữ liệu kéo từ Database lên để nhét vào Excel phải được chia thành các chunk/page (ví dụ: mỗi lần query 5000 records) để tránh khóa DB quá lâu hoặc làm nổ Heap Memory."
+            ],
+            dbExistingTables: [],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Tuân theo quy tắc quan hệ của từng loại báo cáo cụ thể.",
+              "Re-use lại toàn bộ các Repository/View đã được viết ở các tính năng báo cáo thành phần (Operational Analytics / Financial Reports). Report Export Service sẽ đóng vai trò gọi các service con để lấy List<DTO> chung chung."
+            ],
+            validationRules: [
+              { field: "reportType", rule: "Bắt buộc. Phải nằm trong danh sách Enum cấu hình sẵn (ví dụ: REVENUE, OCCUPANCY, CARD_SESSION, AUDIT_LOG).", errorMessage: "INVALID_REPORT_TYPE" },
+              { field: "startDate", rule: "Định dạng yyyy-MM-dd. Tùy thuộc yêu cầu của từng Strategy.", errorMessage: "INVALID_START_DATE" },
+              { field: "endDate", rule: "Định dạng yyyy-MM-dd. Phải >= startDate.", errorMessage: "INVALID_END_DATE" }
+            ],
+            securityRules: [
+              "Xác thực token chặt chẽ.",
+              "Phân quyền động: Nếu reportType là AUDIT_LOG, hệ thống phải chặn lại và kiểm tra xem Role có phải là Admin hay không, trả về 403 Forbidden nếu là Manager."
+            ],
+            logEvents: [
+              "Tham số truy vấn: reportType, khoảng thời gian, người xuất báo cáo, và dung lượng/thời gian thực thi (miliseconds)."
+            ],
+            noLogEvents: [
+              "Không log token hoặc dữ liệu chi tiết có bên trong file Excel."
+            ],
+            integrationPoints: [
+              { system: "Apache POI (SXSSFWorkbook)", responsibility: "Cấu hình cơ chế streaming với window size hợp lý (ví dụ: new SXSSFWorkbook(100) – giữ lại 100 row trong RAM)." }
+            ],
+            uiComponents: "Tích hợp dưới dạng Helper/Util trên toàn bộ các trang báo cáo của Admin Dashboard. Click 'Export Excel' gọi chung về API này kèm reportType tương ứng.",
+            uiStateSuccess: "Shows loading spinner and disables button to avoid spam. Triggers browser download once file streaming is complete.",
             endpoints: ["GET /api/support/reports/export"],
             ownerService: "Spring Boot Support API",
-            apiContracts: createApiContract("GET /api/support/reports/export"),
-            testCases: defaultApiTests("Generic Report Export", ["Manager"], ["GET /api/support/reports/export"]),
-            doneCriteria: defaultDoneCriteria("Generic Report Export")
+            apiContracts: [
+              {
+                id: "contract-generic-report-export-success",
+                name: "GET /api/support/reports/export (Success)",
+                content: `Method: GET\nPath: /api/support/reports/export?reportType=CARD_SESSION&startDate=2026-07-01&endDate=2026-07-15\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\nHeaders:\n  Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\n  Content-Disposition: attachment; filename="CARD_SESSION_Report_20260701_20260715.xlsx"\nBody: [Binary Stream]`
+              },
+              {
+                id: "contract-generic-report-export-invalid-type",
+                name: "GET /api/support/reports/export (Invalid Report Type Error)",
+                content: `Method: GET\nPath: /api/support/reports/export?reportType=UNKNOWN_TYPE\nHeaders:\n  Authorization: Bearer <token>\nResponse 400 Bad Request:\n{\n  "success": false,\n  "error": "INVALID_REPORT_TYPE",\n  "message": "The requested report type is not supported."\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-generic-report-export-success",
+                title: "Verify authorized client can access Generic Report Export with valid report type",
+                type: "integration",
+                precondition: "Client is authenticated as Manager.",
+                steps: [
+                  "Authenticate user as Manager.",
+                  "Invoke endpoint: GET /api/support/reports/export?reportType=OCCUPANCY&startDate=2026-07-01&endDate=2026-07-10"
+                ],
+                expectedResult: "Response code is 200 OK. Response content-type is application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.",
+                status: "not_started"
+              },
+              {
+                id: "tc-generic-report-export-invalid-type",
+                title: "Verify rejection for unsupported or invalid reportType",
+                type: "api",
+                precondition: "Client is authenticated.",
+                steps: [
+                  "Invoke endpoint: GET /api/support/reports/export?reportType=INVALID_BLAH"
+                ],
+                expectedResult: "Returns clear JSON error message INVALID_REPORT_TYPE (400 Bad Request).",
+                status: "not_started"
+              },
+              {
+                id: "tc-generic-report-export-role-restriction",
+                title: "Verify role-based restriction on specific report types",
+                type: "api",
+                precondition: "User is authenticated as Manager.",
+                steps: [
+                  "Invoke endpoint: GET /api/support/reports/export?reportType=AUDIT_LOG"
+                ],
+                expectedResult: "Manager is blocked from exporting Admin-level reports (HTTP 403 Forbidden).",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-generic-report-contract", content: "API contract is documented in this node, specifically handling the generic reportType query parameter.", checked: true },
+              { id: "dc-generic-report-roles", content: "Required clients/roles are assigned with dynamic restriction rules.", checked: true },
+              { id: "dc-generic-report-strategy", content: "Architecture concept (Strategy Pattern) and performance rules (SXSSFWorkbook) are clearly defined.", checked: true },
+              { id: "dc-generic-report-output-handling", content: "Error handling distinguishes between Binary output (Success) and JSON output (Error).", checked: true },
+              { id: "dc-generic-report-tests", content: "Three automated test cases covering valid, invalid types, and permission restrictions are defined.", checked: true },
+              { id: "dc-generic-report-markdown", content: "Feature can be exported as AI-readable Markdown.", checked: true }
+            ],
+            notes: "Before coding:\nImplement an interface ReportExportStrategy with a method boolean supports(String reportType) and void export(HttpServletResponse response, ExportCriteria criteria).\nCreate concrete implementations of this strategy for each report type (e.g., OccupancyExportStrategy, CardSessionExportStrategy).\nUse Spring's dependency injection (List<ReportExportStrategy>) in the main ReportExportService to iterate and find the matching strategy.\nImplement a utility class ExcelHelper wrapping SXSSFWorkbook to standardize header creation, cell styling, and data population.\nIn the Controller, ensure the HttpServletResponse is properly configured with headers Content-Disposition and Content-Type before the strategy writes to the output stream.\nCheck existing tests before adding new ones. Run all tests. Do not mark this task as complete unless all acceptance criteria and automated tests pass."
           },
           {
             id: "leaf-rep-audit",
