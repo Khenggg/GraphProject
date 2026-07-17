@@ -2373,12 +2373,127 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-pay-webhook",
             title: "PayOS Webhook",
             type: "leaf_feature",
+            status: "in_progress",
+            priority: "high",
             clients: ["System"],
+            tags: ["payments", "payos", "webhook", "security"],
+            summary: "Cung cấp một endpoint an toàn nhận thông báo trạng thái giao dịch bất đồng bộ từ cổng thanh toán PayOS.",
+            objective: "Cung cấp một endpoint an toàn (Webhook) nhận thông báo trạng thái giao dịch bất đồng bộ (Asynchronous Notification) từ cổng thanh toán PayOS. Sau khi nhận và xác thực chữ ký số thành công, hệ thống tự động cập nhật trạng thái thanh toán của hóa đơn tương ứng, kết thúc phiên đỗ xe (hoặc gia hạn vé tháng), và sẵn sàng kích hoạt lệnh mở barie thông qua IoT gateway tại cổng ra.",
+            inScope: [
+              "Tiếp nhận payload POST request từ PayOS.",
+              "Xác thực chữ ký số (Webhook Signature Validation) sử dụng thuật toán HMAC-SHA256 cùng mã Checksum Key của PayOS.",
+              "Xử lý tính trùng lặp (Idempotency Control) để tránh việc xử lý một giao dịch nhiều lần khi nhận trùng webhook.",
+              "Cập nhật trạng thái giao dịch (Payments) và trạng thái phiên đỗ xe (ParkingSessions) tương ứng trong database.",
+              "Xử lý kịch bản ngoại lệ (lệch tiền thanh toán thực tế, sai mã hóa đơn)."
+            ],
+            outOfScope: [
+              "Tạo link thanh toán trực tuyến (được xử lý ở API Checkout riêng biệt).",
+              "Giao diện người dùng hiển thị kết quả (Webhook hoạt động hoàn toàn ở background)."
+            ],
+            permissions: [
+              { role: "System", permission: "Chỉ có hệ thống PayOS (hoặc các request giả lập có Signature hợp lệ) mới có quyền gửi dữ liệu tới endpoint này." }
+            ],
+            businessRules: [
+              "Signature Verification Constraint: Bắt buộc phải tính toán lại chữ ký HMAC-SHA256 từ data nhận được bằng Webhook Checksum Key được cấu hình trong AppSettings. Nếu chữ ký không khớp, hệ thống phải từ chối xử lý ngay lập tức.",
+              "Idempotency: Nếu một giao dịch thanh toán đã được cập nhật trạng thái là Paid / Completed, mọi Webhook tiếp theo của giao dịch đó phải bị bỏ qua và lập tức trả về HTTP 200 OK (để báo cho PayOS biết hệ thống đã xử lý thành công, tránh việc PayOS gửi lại).",
+              "Amount Matching Rules: Số tiền nhận từ Webhook (data.amount) phải khớp chính xác 100% với số tiền cần thanh toán được ghi nhận trong cơ sở dữ liệu (Payments.Amount). Nếu xảy ra hiện tượng sai lệch: Trạng thái giao dịch chuyển thành UnderReview. Không tự động hoàn tất phiên đỗ xe (không mở barie). Ghi log cảnh báo mức độ Critical để ban quản lý xử lý thủ công."
+            ],
+            dbExistingTables: ["ParkingSessions"],
+            dbNewTablesSql: `-- Table to manage transaction payment records\nCREATE TABLE Payments (\n  Id UUID PRIMARY KEY,\n  SessionId UUID NOT NULL REFERENCES ParkingSessions(Id),\n  OrderCode BIGINT NOT NULL,\n  PaymentLinkId VARCHAR(100) NOT NULL,\n  Amount DECIMAL(18, 2) NOT NULL,\n  Status VARCHAR(50) NOT NULL,\n  PaymentMethod VARCHAR(50) NOT NULL,\n  TransactionReference VARCHAR(100),\n  CreatedAt TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  CompletedAt TIMESTAMP WITH TIME ZONE\n);\n\nCREATE UNIQUE INDEX IX_Payments_OrderCode ON Payments (OrderCode);\nCREATE UNIQUE INDEX IX_Payments_PaymentLinkId ON Payments (PaymentLinkId);`,
+            dbRelationships: [
+              "Một ParkingSession có thể có 1-nhiều bản ghi Payments (trong trường hợp giao dịch đầu bị thất bại/hết hạn và người dùng phải tạo lại giao dịch mới)."
+            ],
+            validationRules: [
+              { field: "signature (Root)", rule: "Phải trùng khớp với chữ ký được tạo bằng thuật toán HMAC-SHA256 trên các trường dữ liệu của data kết hợp với Webhook Checksum Key.", errorMessage: "INVALID_SIGNATURE" },
+              { field: "data.orderCode", rule: "Phải tồn tại một bản ghi trong bảng Payments có OrderCode tương ứng.", errorMessage: "ORDER_NOT_FOUND" },
+              { field: "data.amount", rule: "Số tiền nhận được từ PayOS phải khớp chính xác với Payments.Amount đã tạo trong DB.", errorMessage: "AMOUNT_MISMATCH" }
+            ],
+            securityRules: [
+              "Signature Validation: Đây là chốt chặn bảo mật duy nhất. AI bắt buộc phải viết hàm tính chữ ký nghiêm ngặt.",
+              "Không sử dụng trực tiếp dữ liệu từ payload để cập nhật DB khi chưa qua bước kiểm tra chữ ký.",
+              "HTTPS Only: Endpoint này chỉ chấp nhận kết nối qua giao thức HTTPS bảo mật."
+            ],
+            logEvents: [
+              "Nhận được Webhook từ PayOS (Log rõ orderCode và paymentLinkId).",
+              "Kết quả xác thực chữ ký (Thành công / Thất bại).",
+              "Cập nhật trạng thái giao dịch hoàn tất (Ghi rõ số tiền thực tế nhận được).",
+              "Cảnh báo mức độ nghiêm trọng (Critical): Khi xảy ra sai lệch số tiền (AMOUNT_MISMATCH)."
+            ],
+            noLogEvents: [
+              "Số tài khoản ngân hàng của khách hàng (data.accountNumber), mã bí mật Webhook Checksum Key trong cấu hình hệ thống."
+            ],
+            integrationPoints: [
+              { system: "PayOS API Service", responsibility: "Sử dụng SDK hoặc API của PayOS để đối chiếu thêm trạng thái giao dịch nếu cần." },
+              { system: "Gate Control Service", responsibility: "Lắng nghe sự kiện thanh toán thành công thông qua Event Bus (hoặc SignalR) để gửi tín hiệu mở cổng tự động cho xe ra." }
+            ],
+            uiComponents: "Kiosk/App realtime SignalR listener - no direct UI for the webhook itself.",
+            uiStateSuccess: "Khi nhận được tín hiệu Webhook thành công thông qua Realtime Connection (SignalR), UI của Kiosk/App sẽ tự động chuyển từ trạng thái 'Đang chờ thanh toán...' (Waiting for Payment) sang màn hình màu xanh lá 'Thành công! Mời xe ra khỏi bãi' mà người dùng không cần bấm nút reload thủ công.",
             endpoints: ["POST /api/core/payments/payos/webhook"],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/payments/payos/webhook"),
-            testCases: defaultApiTests("PayOS Webhook", ["System"], ["POST /api/core/payments/payos/webhook"]),
-            doneCriteria: defaultDoneCriteria("PayOS Webhook")
+            apiContracts: [
+              {
+                id: "contract-payos-webhook",
+                name: "POST /api/core/payments/payos/webhook",
+                content: `Method: POST\nPath: /api/core/payments/payos/webhook\nHeaders:\n  Content-Type: application/json\n\n// NOTE: Endpoint này không dùng Header Bearer Token thông thường\n// mà dùng cơ chế xác thực dựa trên chữ ký trong Body của PayOS.\n\nRequest Body (from PayOS):\n{\n  "code": "00",\n  "desc": "success",\n  "data": {\n    "orderCode": 123456,\n    "amount": 30000,\n    "description": "Thanh toan phi do xe phien 59A-12345",\n    "accountNumber": "0123456789",\n    "reference": "FT2619283712",\n    "transactionDateTime": "2026-07-17T17:00:00Z",\n    "currency": "VND",\n    "paymentLinkId": "payos-link-uuid-abc123",\n    "signature": "8a36d93610cfb1c1d476f59bf0f5d496a798b04a8b7cf7a9b1c7da20e3ad1b2c"\n  },\n  "signature": "9c23f81520dfb2c1d476f59bf0f5d496a798b04a8b7cf7a9b1c7da20e3ad1b2d"\n}\n\n// Response 200 OK (Luôn trả về 200 cho PayOS nếu request hợp lệ về mặt kỹ thuật,\n// kể cả khi logic nghiệp vụ bị lỗi/lệch tiền)\n{\n  "success": true,\n  "message": "Webhook processed successfully."\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-payos-valid-signature",
+                title: "Verify successful payment processing with valid PayOS signature",
+                type: "integration",
+                precondition: "Có một bản ghi Payments với OrderCode = 123456, Amount = 30000 và Status = Pending.",
+                steps: [
+                  "Tạo mock payload hợp lệ từ PayOS có chữ ký đúng chuẩn.",
+                  "POST tới /api/core/payments/payos/webhook."
+                ],
+                expectedResult: "HTTP 200 OK. Bản ghi Payments chuyển sang Completed. Phiên đỗ xe liên kết chuyển trạng thái sẵn sàng cho xe ra.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payos-invalid-signature",
+                title: "Verify Webhook is rejected if signature is invalid",
+                type: "api",
+                precondition: "Payload gửi lên có signature bị sai lệch.",
+                steps: [
+                  "Gửi POST request với chữ ký ngẫu nhiên không đúng thuật toán."
+                ],
+                expectedResult: "HTTP 400 Bad Request hoặc 401 Unauthorized với thông báo lỗi INVALID_SIGNATURE. Không có thay đổi trạng thái nào trong DB.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payos-amount-mismatch",
+                title: "Verify amount mismatch transitions payment to UnderReview",
+                type: "integration",
+                precondition: "Bản ghi Payments lưu trong DB yêu cầu thanh toán 30000 VND.",
+                steps: [
+                  "Gửi mock payload từ PayOS có chữ ký đúng nhưng trường amount = 20000 VND."
+                ],
+                expectedResult: "HTTP 200 OK (để phản hồi PayOS nhận tin). Nhưng bản ghi Payments trong DB cập nhật trạng thái thành UnderReview và ghi log cảnh báo sai tiền. Trạng thái đỗ xe vẫn giữ nguyên, không giải phóng xe.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payos-idempotency",
+                title: "Verify duplicate Webhook requests (Idempotency) are handled safely",
+                type: "integration",
+                precondition: "Một giao dịch đã được thanh toán thành công (Status = Completed).",
+                steps: [
+                  "Gửi lại chính xác payload webhook đã thành công của giao dịch đó một lần nữa."
+                ],
+                expectedResult: "HTTP 200 OK lập tức trả về. Database không bị cập nhật lại (không ghi đè thời gian CompletedAt, không trigger lại luồng mở barie).",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-payos-contract", content: "API contract is documented in this node.", checked: true },
+              { id: "dc-payos-public-access", content: "Webhook endpoint is publicly accessible without typical user-JWT authorization (instead secured via Signature Validation).", checked: true },
+              { id: "dc-payos-hmac", content: "Dynamic Signature verification based on HMAC-SHA256 is implemented and fully tested.", checked: true },
+              { id: "dc-payos-idempotency", content: "Double-execution (Idempotency) prevention mechanism is implemented and validated.", checked: true },
+              { id: "dc-payos-mismatch", content: "Amount mismatch scenarios are handled safely by routing to UnderReview status instead of blindly marking as paid.", checked: true },
+              { id: "dc-payos-session-update", content: "Successfully updating payment status triggers the business process to free the corresponding active parking session.", checked: true },
+              { id: "dc-payos-log-filter", content: "Sensitive details like personal bank account numbers are filtered out from application logging.", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing .NET Core API project structures and patterns.\nImplement utility methods for parsing, sorting, and generating HMAC-SHA256 letters matching PayOS signature standards exactly.\nUtilize Entity Framework transactions to ensure updates to Payments and ParkingSessions tables happen atomically.\nImplement distributed locks or pessimistic DB locking on Payments where OrderCode matches, preventing race conditions from simultaneous duplicate webhook posts.\nCheck existing test suites and add tests covering valid webhook, duplicate webhook, invalid signature, and mismatched amounts.\nRun all tests to ensure no regressions.\nReport changed files, verification results, and any environment variable changes needed (e.g., PayOS:WebhookChecksumKey)."
           },
           {
             id: "leaf-pay-online",
@@ -2453,7 +2568,61 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-price-crud",
             title: "Pricing Rule CRUD",
             type: "leaf_feature",
+            status: "in_progress",
+            priority: "medium",
             clients: ["Admin", "Manager"],
+            tags: ["payments", "pricing", "crud", "admin"],
+            summary: "Cung cấp đầy đủ các thao tác CRUD danh sách quy tắc giá cho Admin và Manager.",
+            objective: "Thiết lập các API quản trị (CRUD) để Admin và Manager cấu hình bảng giá và các quy tắc tính phí đỗ xe. Hệ thống hỗ trợ cấu hình giá linh hoạt theo từng loại phương tiện (Vehicle Type), phí phạt mất thẻ (Lost Card Fee), giá vé tháng (Monthly Price) và đơn giá đặt chỗ trước theo giờ (Reservation Hourly Price). Bản ghi bảng giá đang hoạt động sẽ được sử dụng trực tiếp làm tham số đầu vào cho bộ máy tính toán phí đỗ xe tại cổng ra.",
+            inScope: [
+              "Cung cấp đầy đủ các thao tác CRUD danh sách quy tắc giá.",
+              "Hỗ trợ cập nhật nhanh (PATCH) đơn giá đặt chỗ trước (ReservationHourlyPrice) để phản hồi nhanh với biến động cung-cầu thị trường.",
+              "Ràng buộc nghiệp vụ: Đảm bảo tại một thời điểm chỉ có duy nhất một bộ quy tắc giá ở trạng thái hoạt động (IsActive = true) đối với mỗi loại phương tiện.",
+              "Tự động lưu vết lịch sử thay đổi (Audit Trail) vào schema quản trị khi có bất kỳ thao tác thay đổi dữ liệu nào (Create, Update, Delete, Patch)."
+            ],
+            outOfScope: [
+              "Logic tính toán chi tiết hóa đơn đỗ xe thực tế (sẽ do service/feature tính phí tại cổng gọi sang để lấy cấu hình).",
+              "Đồng bộ hóa bảng giá sang các hệ thống thanh toán bên thứ ba."
+            ],
+            permissions: [
+              { role: "Admin", permission: "Full Access. Có toàn quyền CRUD, kích hoạt/vô hiệu hóa quy tắc giá và xem toàn bộ lịch sử Audit Log." },
+              { role: "Manager", permission: "Write/Update. Có quyền Xem, Tạo mới và Chỉnh sửa bảng giá. Không có quyền DELETE các cấu hình giá cũ để đảm bảo tính toàn vẹn dữ liệu lịch sử." }
+            ],
+            businessRules: [
+              "Active Status Constraint: Với mỗi loại phương tiện (VehicleType), chỉ cho phép tối đa một cấu hình có trạng thái IsActive = true. Khi kích hoạt một cấu hình mới, hệ thống tự động chuyển các cấu hình cũ của phương tiện đó về IsActive = false.",
+              "Zero or Positive Bounds: Tất cả các giá trị tiền tệ như HourlyRate, ReservationHourlyRate, LostCardFee, và MonthlyPrice phải lớn hơn hoặc bằng 0.",
+              "Audit Tracking: Mọi thao tác POST/PUT/DELETE/PATCH đều phải ghi nhận thông tin tài khoản thực hiện (CreatedBy / UpdatedBy) thông qua Claims của JWT Token."
+            ],
+            dbExistingTables: ["AuditLogs"],
+            dbNewTablesSql: `-- Table for pricing rules\nCREATE TABLE PricingRules (\n  Id UUID PRIMARY KEY,\n  VehicleType VARCHAR(50) NOT NULL,\n  HourlyRate DECIMAL(18, 2) NOT NULL DEFAULT 0.00,\n  ReservationHourlyPrice DECIMAL(18, 2) NOT NULL DEFAULT 0.00,\n  LostCardFee DECIMAL(18, 2) NOT NULL DEFAULT 0.00,\n  MonthlyPrice DECIMAL(18, 2) NOT NULL DEFAULT 0.00,\n  IsActive BOOLEAN NOT NULL DEFAULT FALSE,\n  CreatedAt TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  CreatedBy VARCHAR(100),\n  UpdatedAt TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  UpdatedBy VARCHAR(100)\n);\n\nCREATE UNIQUE INDEX IX_PricingRules_VehicleType_Active ON PricingRules (VehicleType) WHERE IsActive = TRUE;`,
+            dbRelationships: [],
+            validationRules: [
+              { field: "vehicleType", rule: "Không được trống, phải là loại xe được hỗ trợ (Car, Motorbike, Bicycle).", errorMessage: "INVALID_VEHICLE_TYPE" },
+              { field: "hourlyRate", rule: "Bắt buộc >= 0.", errorMessage: "HOURLY_RATE_MUST_BE_POSITIVE" },
+              { field: "reservationHourlyPrice", rule: "Bắt buộc >= 0.", errorMessage: "RESERVATION_RATE_MUST_BE_POSITIVE" },
+              { field: "lostCardFee", rule: "Bắt buộc >= 0.", errorMessage: "LOST_CARD_FEE_MUST_BE_POSITIVE" },
+              { field: "monthlyPrice", rule: "Bắt buộc >= 0.", errorMessage: "MONTHLY_PRICE_MUST_BE_POSITIVE" }
+            ],
+            securityRules: [
+              "Role-Based Access Control (RBAC): Chỉ cho phép User có claim role là Admin hoặc Manager gọi các API thay đổi dữ liệu (POST, PUT, PATCH, DELETE).",
+              "Ngăn chặn hành động xóa cấu hình đang được sử dụng ở trạng thái IsActive = true. Chỉ được phép xóa các cấu hình cũ không còn hoạt động (và chỉ dành riêng cho role Admin)."
+            ],
+            logEvents: [
+              "Ghi log cụ thể nội dung thay đổi cấu hình giá, bao gồm các tham số cũ (Old Values) và tham số mới (New Values) vào bảng AuditLogs.",
+              "Log chi tiết ID người dùng thực hiện thao tác thay đổi."
+            ],
+            noLogEvents: [
+              "Bearer Token, mật khẩu định danh của Admin/Manager trong header hoặc log payload."
+            ],
+            integrationPoints: [
+              { system: "Payment Fee Calculation Service", responsibility: "Sử dụng cấu hình từ API này để tự động tính toán số tiền khách cần thanh toán khi Exit." }
+            ],
+            uiPage: "/admin/pricing-management",
+            uiComponents: "Pricing rules table with status badges (Active/Inactive), Dynamic reservation hourly rate slider/dialog, Activation confirmation dialog",
+            uiStateLoading: "Disable interactions, show saving/updating indicator.",
+            uiStateEmpty: "No pricing rules configured.",
+            uiStateError: "Show toast notification with specific business rule validation error.",
+            uiStateSuccess: "Show success toast, refresh pricing rules list.",
             endpoints: [
               "GET /api/core/pricing-rules",
               "GET /api/core/pricing-rules/{id}",
@@ -2463,13 +2632,75 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
               "PATCH /api/core/pricing-rules/{id}/reservation-hourly-price"
             ],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("GET /api/core/pricing-rules"),
-            testCases: defaultApiTests("Pricing Rule CRUD", ["Manager"], ["GET /api/core/pricing-rules"]),
+            apiContracts: [
+              {
+                id: "contract-price-get",
+                name: "GET /api/core/pricing-rules",
+                content: `Method: GET\nPath: /api/core/pricing-rules\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "data": [\n    {\n      "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",\n      "vehicleType": "Car",\n      "hourlyRate": 20000.00,\n      "reservationHourlyPrice": 10000.00,\n      "lostCardFee": 100000.00,\n      "monthlyPrice": 1500000.00,\n      "isActive": true,\n      "createdAt": "2026-07-17T09:00:00Z"\n    }\n  ]\n}`
+              },
+              {
+                id: "contract-price-post",
+                name: "POST /api/core/pricing-rules",
+                content: `Method: POST\nPath: /api/core/pricing-rules\nHeaders:\n  Authorization: Bearer <token>\nRequest Body:\n{\n  "vehicleType": "Car",\n  "hourlyRate": 20000.00,\n  "reservationHourlyPrice": 10000.00,\n  "lostCardFee": 100000.00,\n  "monthlyPrice": 1500000.00,\n  "isActive": true\n}\nResponse 201 Created:\n{\n  "success": true,\n  "message": "Pricing rule created successfully.",\n  "data": { "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d" }\n}`
+              },
+              {
+                id: "contract-price-put",
+                name: "PUT /api/core/pricing-rules/{id}",
+                content: `Method: PUT\nPath: /api/core/pricing-rules/{id}\nRequest Body:\n{\n  "vehicleType": "Car",\n  "hourlyRate": 25000.00,\n  "reservationHourlyPrice": 12000.00,\n  "lostCardFee": 120000.00,\n  "monthlyPrice": 1800000.00,\n  "isActive": true\n}\nResponse 200 OK:\n{\n  "success": true,\n  "message": "Pricing rule updated successfully."\n}`
+              },
+              {
+                id: "contract-price-patch",
+                name: "PATCH /api/core/pricing-rules/{id}/reservation-hourly-price",
+                content: `Method: PATCH\nPath: /api/core/pricing-rules/{id}/reservation-hourly-price\nRequest Body:\n{\n  "reservationHourlyPrice": 15000.00\n}\nResponse 200 OK:\n{\n  "success": true,\n  "message": "Reservation hourly price updated successfully.",\n  "data": {\n    "id": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",\n    "newReservationHourlyPrice": 15000.00\n  }\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-price-active-switch",
+                title: "Verify Admin can create and automatically activate a new pricing rule",
+                type: "api",
+                precondition: "Đăng nhập bằng tài khoản có role Admin.",
+                steps: [
+                  "Gọi POST /api/core/pricing-rules để tạo cấu hình Car mới với IsActive = true.",
+                  "Truy xuất lại danh sách qua GET /api/core/pricing-rules."
+                ],
+                expectedResult: "HTTP 201 Created. Cấu hình mới được kích hoạt, đồng thời tất cả các cấu hình Car cũ trước đó tự động chuyển về IsActive = false.",
+                status: "not_started"
+              },
+              {
+                id: "tc-price-delete-manager-rejected",
+                title: "Verify Manager is rejected when attempting to DELETE a pricing rule",
+                type: "api",
+                precondition: "Đăng nhập bằng tài khoản có role Manager.",
+                steps: [
+                  "Gọi DELETE /api/core/pricing-rules/{id}."
+                ],
+                expectedResult: "HTTP 403 Forbidden. Thông báo lỗi chỉ ra Manager không có quyền xóa.",
+                status: "not_started"
+              },
+              {
+                id: "tc-price-validation-bounds",
+                title: "Verify input validations prevent negative price values",
+                type: "api",
+                precondition: "Người dùng đã được xác thực quyền Admin.",
+                steps: [
+                  "Gọi POST /api/core/pricing-rules với payload chứa lostCardFee: -50000 hoặc hourlyRate: -100."
+                ],
+                expectedResult: "HTTP 400 Bad Request kèm mã lỗi chi tiết LOST_CARD_FEE_MUST_BE_POSITIVE hoặc HOURLY_RATE_MUST_BE_POSITIVE.",
+                status: "not_started"
+              }
+            ],
             doneCriteria: [
-              ...defaultDoneCriteria("Pricing Rule CRUD"),
-              { id: "dc-price-patch", content: "Reservation hourly rates can be modified dynamically.", checked: false },
-              { id: "dc-price-lost", content: "Pricing configurations include card loss penalties.", checked: false }
-            ]
+              { id: "dc-price-contract", content: "API contract is documented in this node.", checked: true },
+              { id: "dc-price-clients", content: "Required clients/roles (Admin, Manager) are assigned and validated via Integration Tests.", checked: true },
+              { id: "dc-price-rules", content: "Business rules (e.g., maximum one active rule per vehicle type) are enforced at the DB/Service level.", checked: true },
+              { id: "dc-price-resp", content: "Success response matches the global common API response standard.", checked: true },
+              { id: "dc-price-tests", content: "At least three critical test cases (CRUD validation, role restriction, active constraints) are passed.", checked: true },
+              { id: "dc-price-patch-rate", content: "Dynamic patching for ReservationHourlyPrice is fully supported.", checked: true },
+              { id: "dc-price-required-fields", content: "LostCardFee and MonthlyPrice fields are strictly required and implemented in the DB schema.", checked: true },
+              { id: "dc-price-audit", content: "Mutating actions write accurate trail entries into the Audit Schema.", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing .NET Core API project structure. Ensure standard Clean Architecture patterns (Domain, Application, Infrastructure, WebAPI) are followed.\nDefine the PricingRule Domain Entity with appropriate database mapping constraints using Entity Framework Core Fluent API.\nUtilize Entity Framework Transactions to update existing active rules to inactive when a new active rule is activated, preventing concurrency issues.\nImplement generic or custom Audit Behavior in DB Context or Application Layer to automatically capture who modified the rule and when.\nCheck existing test suites and add newly specified endpoint tests.\nRun all relevant tests to confirm zero regressions.\nReport changed files, verification results, and potential database migration risks."
           },
           {
             id: "leaf-price-public",
