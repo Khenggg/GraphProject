@@ -2389,7 +2389,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Vehicle Type Management",
             type: "leaf_feature",
             clients: ["Admin", "Manager"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["vehicle", "configuration"],
             summary: "Provide a comprehensive management tool for all types of vehicles (cars, motorbikes, electric vehicles, etc.) permitted to enter and exit the parking building. Ensure accurate vehicle categorization to support fare configuration, gate traffic control, and optimal parking slot allocation.\n\nThis feature allows administrative roles to perform CRUD (Create, Read, Update, Delete) operations on vehicle types. Each vehicle type includes attributes such as vehicle type name, description, and operational status. The system utilizes this master directory for validation when drivers register their vehicles or when vehicles pass through the gate recognition system.",
@@ -2598,7 +2598,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Floor Management",
             type: "leaf_feature",
             clients: ["Manager", "Admin"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["floor", "structure"],
             summary: "Manage the physical levels/floors within the parking structure, establishing the foundational layout for spatial organization and capacity tracking.\n\nThis feature allows Managers and Admins to configure floor details (e.g., Floor Name/Number, Max Capacity, Vehicle Type Restrictions). It serves as the top-level container in the parking inventory hierarchy.",
@@ -2785,7 +2785,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Area Management",
             type: "leaf_feature",
             clients: ["Manager", "Admin"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["area", "structure"],
             summary: "Divide each floor into distinct zones or sections (e.g., Zone A, VIP Area, Electric Vehicle Charging Zone) to optimize traffic flow and permit specialized parking rules.\n\nThis feature enables Managers and Admins to partition parking floors into manageable operational areas. Each area belongs to a parent floor and may inherit or define its own operational properties such as total parking slots and allowed vehicle categories.",
@@ -2966,7 +2966,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Slot Management",
             type: "leaf_feature",
             clients: ["Manager", "Admin"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["slot", "structure"],
             summary: "Define and manage individual physical parking slots within an area, enabling precise inventory tracking and state management.\n\nThis feature manages the lowest level of the parking structure hierarchy: individual parking slots. Each slot contains a unique slot identifier, slot type (Standard, Compact, EV, Disabled), operational status, and is associated with a parent parking area. Slots can also be linked to physical sensors or status flags for future integration with the parking monitoring system.",
@@ -3163,7 +3163,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Gate Read Model",
             type: "leaf_feature",
             clients: ["Staff", "Manager", "Admin"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["gate", "structure", "read-model"],
             summary: "Provide a highly optimized, read-only data model representing gate statuses and recent barrier events to ensure smooth monitoring at entry/exit points.\n\nThis feature materializes and serves real-time entry and exit gate data for Staff, Managers, and Admins. It enables monitoring dashboards to retrieve gate hardware availability, operational status, and recent gate event history without impacting the transactional database.",
@@ -3335,7 +3335,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Public Available Slots",
             type: "leaf_feature",
             clients: ["Guest", "Driver"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["available-slots", "structure", "public"],
             summary: "Expose real-time, aggregated parking availability data to public users to help them decide whether to navigate to the building.\n\nThis feature provides a high-concurrency, public-facing read model that displays the number of available parking slots by floor and area. Drivers and guests can quickly view overall parking availability before arriving at the parking building without accessing transactional data.",
@@ -3505,7 +3505,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Location / Slot Suggestion",
             type: "leaf_feature",
             clients: ["Staff", "Manager", "Driver"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["suggestion", "slots", "structure"],
             summary: "Provide intelligent allocation recommendations to drivers or staff to minimize cruising time inside the structure.\n\nThis feature analyzes the current parking occupancy and recommends the optimal parking location—including floor, area, or individual slot—based on parking structure layout, vehicle type, slot availability, and driver preferences. The recommendation service helps reduce searching time and improves traffic flow inside the parking building.",
@@ -3732,28 +3732,325 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Available Reservation Locations",
             type: "leaf_feature",
             clients: ["Driver"],
+            status: "ready",
+            priority: "high",
+            tags: ["reservation", "booking", "available-locations"],
+            summary: "Query and display a list of available parking locations/slots that allow advanced booking. The system must filter results based on the estimated arrival time, driver's vehicle type, and real-time actual capacity.",
+            objective: "Implement high-performance read APIs in the .NET Core API to retrieve available reservation locations based on estimated arrival time, vehicle type compatibility, and actual real-time capacity calculations.",
+            inScope: [
+              "Query and display available parking locations that support advanced booking.",
+              "Filter available locations based on the driver's estimated arrival time.",
+              "Filter available locations based on the driver's registered vehicle type.",
+              "Calculate projected availability using current reservations and currently parked vehicles.",
+              "Return only parking locations that are available for reservation."
+            ],
+            outOfScope: [
+              "Reservation creation.",
+              "Reservation payment.",
+              "External system integrations not specified in this document."
+            ],
+            permissions: [
+              { role: "Driver", permission: "Authorized to access this feature." }
+            ],
+            businessRules: [
+              "Only display parking locations suitable for the driver's registered vehicle type.",
+              "Do not display areas undergoing maintenance.",
+              "Do not display parking locations that are fully booked during the requested time frame.",
+              "Projected availability must be calculated based on both existing reservations and currently parked vehicles."
+            ],
+            dbExistingTables: [
+              "parking_locations",
+              "parking_slots",
+              "reservations",
+              "parking_sessions",
+              "vehicles",
+              "vehicle_types"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Availability must be calculated from existing reservations and active parking sessions.",
+              "Parking location must support the driver's registered vehicle type."
+            ],
+            validationRules: [
+              { field: "estimatedArrivalTime", rule: "Required, must be greater than current UTC time (in the future)", errorMessage: "Estimated arrival time must be in the future." },
+              { field: "vehicleTypeId", rule: "Must exist if provided", errorMessage: "Invalid vehicle type." }
+            ],
+            securityRules: [
+              "Validate role permissions.",
+              "Prevent unauthorized access.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Log request access, inputs, duration, and response code.",
+              "Log reservation location search requests."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, and credit card details."
+            ],
+            integrationPoints: [],
+            uiPage: "/driver/reservations",
+            uiComponents: "Available Locations List, Date Time Picker, Vehicle Type Dropdown",
+            uiStateLoading: "Show loading skeleton while fetching available locations.",
+            uiStateEmpty: "Show 'No available reservation locations found for the selected time.'",
+            uiStateError: "Display error notification with reason.",
+            uiStateSuccess: "Display list of available reservation locations.",
             endpoints: ["GET /api/core/reservations/available-locations"],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("GET /api/core/reservations/available-locations"),
-            testCases: defaultApiTests("Available Reservation Locations", ["Driver"], ["GET /api/core/reservations/available-locations"]),
-            doneCriteria: defaultDoneCriteria("Available Reservation Locations")
+            apiContracts: [
+              {
+                id: "contract-get-reservations-available-locations",
+                name: "GET /api/core/reservations/available-locations",
+                content: "Method: GET\nPath: /api/core/reservations/available-locations\nHeaders:\n  Authorization: Bearer <token>\nQuery Parameters:\n  estimatedArrivalTime: datetime (required)\n  vehicleTypeId: integer (optional)\nResponse:\n  status: 200 OK\n  data:\n  {\n    \"success\": true,\n    \"data\": [\n      {\n        \"locationId\": \"loc-001\",\n        \"locationName\": \"Basement B1\",\n        \"vehicleTypeId\": 1,\n        \"availableSlots\": 25,\n        \"supportsReservation\": true\n      }\n    ]\n  }"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-res-avail-driver-success",
+                title: "Verify authorized client (Driver) can access \"Available Reservation Locations\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Driver",
+                steps: [
+                  "Authenticate user as Driver",
+                  "Invoke endpoint: GET /api/core/reservations/available-locations",
+                  "Check response code is 200/201 OK"
+                ],
+                expectedResult: "Request succeeds and returns correct payload",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-avail-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing \"Available Reservation Locations\"",
+                type: "api",
+                precondition: "User is anonymous or lacks required role",
+                steps: [
+                  "Attempt to invoke endpoint: GET /api/core/reservations/available-locations without token/role",
+                  "Check response status code is 401 Unauthorized or 403 Forbidden"
+                ],
+                expectedResult: "Request is blocked and returns clear error response",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-avail-exclude-maintenance",
+                title: "Verify maintenance areas are not returned",
+                type: "integration",
+                expectedResult: "Areas under maintenance are excluded from the response.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-avail-exclude-fully-booked",
+                title: "Verify fully booked locations are not returned",
+                type: "integration",
+                expectedResult: "Fully booked locations during the requested time frame are excluded.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-avail-compatible-vehicle",
+                title: "Verify only compatible vehicle type locations are returned",
+                type: "integration",
+                expectedResult: "Returned locations are compatible with the driver's registered vehicle type.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-res-avail-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-res-avail-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-res-avail-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-res-avail-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-res-avail-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-res-avail-vehicle-filter", content: "Available locations are filtered by driver's vehicle type.", checked: false },
+              { id: "dc-res-avail-maintenance", content: "Maintenance areas are excluded.", checked: false },
+              { id: "dc-res-avail-fully-booked", content: "Fully booked locations are excluded.", checked: false },
+              { id: "dc-res-avail-projected", content: "Projected availability is calculated using current reservations and currently parked vehicles.", checked: false },
+              { id: "dc-res-avail-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-res-avail-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false },
+              { id: "dc-res-avail-edge-cases", content: "Edge cases are documented.", checked: false },
+              { id: "dc-res-avail-state-transitions", content: "Payment/session/reservation state transition is documented.", checked: false }
+            ]
           },
           {
             id: "leaf-res-create",
             title: "Create Reservation",
             type: "leaf_feature",
             clients: ["Driver"],
+            status: "ready",
+            priority: "must_have",
+            tags: ["reservation", "booking", "create-reservation"],
+            summary: "Allow drivers to create a new reservation request. This process includes selecting a parking location, specifying reservation start/end times, confirming vehicle details, and processing the reservation payment.",
+            objective: "Implement transaction-safe reservation creation APIs in .NET Core API that validate slot availability, lock slots temporarily, initialize payment via PayOS, and handle status updates.",
+            inScope: [
+              "Allow drivers to create a new parking reservation.",
+              "Select an available parking location.",
+              "Specify reservation start time and end time.",
+              "Confirm the vehicle/license plate associated with the reservation.",
+              "Calculate the reservation amount.",
+              "Temporarily lock the selected slot while waiting for payment.",
+              "Process reservation payment.",
+              "Confirm reservation after successful payment.",
+              "Retrieve reservation payment status."
+            ],
+            outOfScope: [
+              "Reservation modification after creation.",
+              "Reservation cancellation.",
+              "External system integrations not specified in this document."
+            ],
+            permissions: [
+              { role: "Driver", permission: "Authorized to access this feature." }
+            ],
+            businessRules: [
+              "A reservation must be associated with a driver, vehicle/plate, vehicle type, selected parking location, reservation time, payment status, and booking amount.",
+              "Reservation payment status must be trackable.",
+              "Unpaid or expired reservations must not permanently lock slots.",
+              "Reservation entry check must validate reservation code, gate, payment status, time validity, and whether the reservation has already been used.",
+              "Booking amount must be consistent with configured reservation hourly price and selected duration.",
+              "A reservation must be tied to a specific vehicle/license plate.",
+              "The selected parking slot must be temporarily locked for approximately 5–10 minutes while waiting for payment completion.",
+              "The reservation is only confirmed when the payment status is updated to Paid.",
+              "Expired unpaid reservations must automatically release the temporarily locked slot."
+            ],
+            dbExistingTables: [
+              "reservations",
+              "reservation_payments",
+              "parking_locations",
+              "parking_slots",
+              "vehicles",
+              "vehicle_types"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Every reservation must reference one driver.",
+              "Every reservation must reference one vehicle/license plate.",
+              "Every reservation must reference one parking location.",
+              "Payment status determines whether the reservation becomes confirmed.",
+              "Temporary slot lock expires automatically if payment is not completed."
+            ],
+            validationRules: [
+              { field: "locationId", rule: "Required", errorMessage: "Parking location is required." },
+              { field: "vehicleId", rule: "Required", errorMessage: "Vehicle is required." },
+              { field: "licensePlate", rule: "Required", errorMessage: "License plate is required." },
+              { field: "startTime", rule: "Required", errorMessage: "Start time is required." },
+              { field: "endTime", rule: "Required, must be later than startTime", errorMessage: "End time must be greater than start time." }
+            ],
+            securityRules: [
+              "Validate role permissions.",
+              "Prevent unauthorized access.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Log request access, inputs, duration, and response code.",
+              "Log reservation creation.",
+              "Log temporary slot lock creation.",
+              "Log payment confirmation callback.",
+              "Log automatic reservation expiration."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, and credit card details."
+            ],
+            integrationPoints: [
+              { system: "Payment module (PayOS Webhook)", responsibility: "Verify and confirm payment status." }
+            ],
+            uiPage: "/driver/reservations/create",
+            uiComponents: "Reservation Form, Location Selector, Time Picker, Vehicle selector, Payment redirection link, QR code popup",
+            uiStateIdle: "Display reservation form with available locations.",
+            uiStateLoading: "Disable inputs while creating reservation or waiting for payment initialization.",
+            uiStateSuccess: "Redirect the driver to the payment page or display payment QR/link.",
+            uiStateError: "Display validation or payment initialization errors.",
+            uiStateEmpty: "Display message when no reservable slots are available.",
             endpoints: [
               "POST /api/core/reservations",
               "GET /api/core/reservations/{id}/payment-status"
             ],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/reservations"),
-            testCases: defaultApiTests("Create Reservation", ["Driver"], ["POST /api/core/reservations"]),
+            apiContracts: [
+              {
+                id: "contract-post-reservations",
+                name: "POST /api/core/reservations",
+                content: "Method: POST\nPath: /api/core/reservations\nHeaders:\n  Authorization: Bearer <token>\nRequest Body:\n{\n  \"locationId\": \"loc-001\",\n  \"slotId\": \"slot-101\",\n  \"vehicleId\": \"veh-001\",\n  \"licensePlate\": \"51A-12345\",\n  \"startTime\": \"2026-07-20T08:00:00Z\",\n  \"endTime\": \"2026-07-20T12:00:00Z\"\n}\nResponse:\n  status: 200 OK\n  data:\n  {\n    \"success\": true,\n    \"data\": {\n      \"reservationId\": \"res-001\",\n      \"paymentStatus\": \"Pending\",\n      \"paymentUrl\": \"<payment_url>\",\n      \"expiresAt\": \"2026-07-20T07:10:00Z\"\n    }\n  }"
+              },
+              {
+                id: "contract-get-reservations-payment-status",
+                name: "GET /api/core/reservations/{id}/payment-status",
+                content: "Method: GET\nPath: /api/core/reservations/{id}/payment-status\nHeaders:\n  Authorization: Bearer <token>\nResponse:\n  status: 200 OK\n  data:\n  {\n    \"success\": true,\n    \"data\": {\n      \"reservationId\": \"res-001\",\n      \"paymentStatus\": \"Paid\"\n    }\n  }"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-res-create-driver-success",
+                title: "Verify authorized client (Driver) can access \"Create Reservation\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Driver",
+                steps: [
+                  "Authenticate user as Driver",
+                  "Invoke endpoint: POST /api/core/reservations",
+                  "Check response code is 200/201 OK"
+                ],
+                expectedResult: "Request succeeds and returns correct payload",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-create-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing \"Create Reservation\"",
+                type: "api",
+                precondition: "User is anonymous or lacks required role",
+                steps: [
+                  "Attempt to invoke endpoint: POST /api/core/reservations without token/role",
+                  "Check response status code is 401 Unauthorized or 403 Forbidden"
+                ],
+                expectedResult: "Request is blocked and returns clear error response",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-create-vehicle-associated",
+                title: "Verify reservation is associated with a specific vehicle",
+                type: "integration",
+                expectedResult: "Reservation cannot be created without a valid vehicle/license plate.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-create-temporary-lock",
+                title: "Verify temporary slot lock is created",
+                type: "integration",
+                expectedResult: "Selected slot is locked for 5–10 minutes while waiting for payment.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-create-confirm-after-payment",
+                title: "Verify reservation is confirmed after successful payment",
+                type: "integration",
+                expectedResult: "Reservation status becomes Confirmed and payment status becomes Paid.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-create-unpaid-expiry",
+                title: "Verify unpaid reservation expires automatically",
+                type: "integration",
+                expectedResult: "Temporary slot lock is released after timeout when payment is not completed.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-create-expired-token-rejected",
+                title: "Verify request with expired reservation or session token is rejected",
+                type: "integration",
+                expectedResult: "System returns validation error stating resource has expired.",
+                status: "not_started"
+              }
+            ],
             doneCriteria: [
-              ...defaultDoneCriteria("Create Reservation"),
-              { id: "dc-res-pay-status", content: "Payment verification integration is functional.", checked: false },
-              { id: "dc-res-expire", content: "Automatic expiration release of unpaid bookings is functional.", checked: false }
+              { id: "dc-res-create-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-res-create-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-res-create-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-res-create-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-res-create-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-res-create-vehicle-associated", content: "Reservation is associated with a specific vehicle/license plate.", checked: false },
+              { id: "dc-res-create-temp-lock", content: "Temporary slot lock mechanism is implemented.", checked: false },
+              { id: "dc-res-create-confirm-paid", content: "Reservation is confirmed only after payment status becomes Paid.", checked: false },
+              { id: "dc-res-create-payment-verification", content: "Payment verification integration is functional.", checked: false },
+              { id: "dc-res-create-expiration-release", content: "Automatic expiration releases unpaid slot locks.", checked: false },
+              { id: "dc-res-create-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-res-create-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false },
+              { id: "dc-res-create-ui-states", content: "UI states are documented: idle, loading, success, empty, error.", checked: false },
+              { id: "dc-res-create-ui-validation", content: "Validation and error display behavior are documented.", checked: false },
+              { id: "dc-res-create-edge-cases", content: "Edge cases are documented.", checked: false },
+              { id: "dc-res-create-state-transitions", content: "Payment/session/reservation state transition is documented.", checked: false }
             ]
           },
           {
@@ -3761,37 +4058,483 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Extend Reservation",
             type: "leaf_feature",
             clients: ["Driver"],
+            status: "ready",
+            priority: "medium",
+            tags: ["reservation", "booking", "extend-reservation"],
+            summary: "Support drivers in extending the duration of an ongoing reservation. The system automatically recalculates the additional fee based on the extended reservation time before confirming the extension.",
+            objective: "Implement transaction-safe reservation extension APIs in .NET Core API that validate extension eligibility, conflict-free scheduling, recalculate fee based on current pricing, and update reservation timings.",
+            inScope: [
+              "Allow drivers to extend an active reservation.",
+              "Validate that the reservation is still eligible for extension.",
+              "Check slot availability for the requested extended period.",
+              "Detect scheduling conflicts with existing reservations.",
+              "Recalculate the additional fee based on the extended duration.",
+              "Update the reservation end time after successful extension."
+            ],
+            outOfScope: [
+              "Creating a new reservation.",
+              "Reservation cancellation.",
+              "External system integrations not specified in this document."
+            ],
+            permissions: [
+              { role: "Driver", permission: "Authorized to access this feature." }
+            ],
+            businessRules: [
+              "Extension is only allowed when the reservation is still in a valid state (not yet expired).",
+              "The system must check whether the current parking slot has another reservation immediately after the original reservation period before allowing an extension.",
+              "The extension fee must be calculated according to the current hourly reservation pricing.",
+              "Reservation extension must not create overlapping reservations for the same parking slot."
+            ],
+            dbExistingTables: [
+              "reservations",
+              "reservation_payments",
+              "parking_slots",
+              "parking_locations",
+              "pricing_policies"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Reservation extension updates the existing reservation.",
+              "Additional fee is calculated using the active hourly pricing policy.",
+              "Slot availability must be checked before updating the reservation end time."
+            ],
+            validationRules: [
+              { field: "id", rule: "Must exist", errorMessage: "Reservation does not exist." },
+              { field: "newEndTime", rule: "Required, must be greater than current reservation end time", errorMessage: "New end time must be later than the current reservation end time." },
+              { field: "Reservation Status", rule: "Must be active", errorMessage: "Reservation is no longer eligible for extension." }
+            ],
+            securityRules: [
+              "Validate role permissions.",
+              "Prevent unauthorized access.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Log request access, inputs, duration, and response code.",
+              "Log reservation extension requests.",
+              "Log additional fee calculations.",
+              "Log reservation extension success or failure."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, and credit card details."
+            ],
+            integrationPoints: [],
+            uiPage: "/driver/reservations/extend",
+            uiComponents: "Reservation Detail Viewer, Extension Configurator, Time Selector, Cost Estimator, Submit Button",
+            uiStateIdle: "Display the current reservation information and extension option.",
+            uiStateLoading: "Disable the confirmation button while processing the extension request.",
+            uiStateSuccess: "Display the updated reservation end time and additional fee.",
+            uiStateError: "Display validation errors or scheduling conflict messages.",
             endpoints: ["POST /api/core/reservations/{id}/extend"],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/reservations/{id}/extend"),
-            testCases: defaultApiTests("Extend Reservation", ["Driver"], ["POST /api/core/reservations/{id}/extend"]),
-            doneCriteria: defaultDoneCriteria("Extend Reservation")
+            apiContracts: [
+              {
+                id: "contract-post-reservations-extend",
+                name: "POST /api/core/reservations/{id}/extend",
+                content: "Method: POST\nPath: /api/core/reservations/{id}/extend\nHeaders:\n  Authorization: Bearer <token>\nRequest Body:\n{\n  \"newEndTime\": \"2026-07-20T15:00:00Z\"\n}\nResponse:\n  status: 200 OK\n  data:\n  {\n    \"success\": true,\n    \"data\": {\n      \"reservationId\": \"res-001\",\n      \"previousEndTime\": \"2026-07-20T13:00:00Z\",\n      \"newEndTime\": \"2026-07-20T15:00:00Z\",\n      \"additionalFee\": 50000\n    }\n  }"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-res-extend-driver-success",
+                title: "Verify authorized client (Driver) can access \"Extend Reservation\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Driver",
+                steps: [
+                  "Authenticate user as Driver",
+                  "Invoke endpoint: POST /api/core/reservations/{id}/extend",
+                  "Check response code is 200/201 OK"
+                ],
+                expectedResult: "Request succeeds and returns correct payload",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-extend-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing \"Extend Reservation\"",
+                type: "api",
+                precondition: "User is anonymous or lacks required role",
+                steps: [
+                  "Attempt to invoke endpoint: POST /api/core/reservations/{id}/extend without token/role",
+                  "Check response status code is 401 Unauthorized or 403 Forbidden"
+                ],
+                expectedResult: "Request is blocked and returns clear error response",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-extend-expired-rejected",
+                title: "Verify expired reservation cannot be extended",
+                type: "integration",
+                expectedResult: "System rejects the extension request for expired reservations.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-extend-conflict-rejected",
+                title: "Verify extension is rejected when slot has a conflicting reservation",
+                type: "integration",
+                expectedResult: "System detects the scheduling conflict and rejects the extension.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-extend-fee-correct",
+                title: "Verify additional fee is calculated correctly",
+                type: "integration",
+                expectedResult: "Additional fee matches the current hourly pricing policy.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-extend-success-updates-end-time",
+                title: "Verify successful reservation extension updates reservation end time",
+                type: "integration",
+                expectedResult: "Reservation end time is updated and extension details are returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-extend-expired-token-rejected",
+                title: "Verify request with expired reservation or session token is rejected",
+                type: "integration",
+                expectedResult: "System returns validation error stating resource has expired.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-res-extend-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-res-extend-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-res-extend-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-res-extend-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-res-extend-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-res-extend-valid-only", content: "Reservation can only be extended while it is still valid.", checked: false },
+              { id: "dc-res-extend-conflict", content: "Slot conflict validation is implemented.", checked: false },
+              { id: "dc-res-extend-fee-calc", content: "Additional fee is calculated using the current hourly pricing.", checked: false },
+              { id: "dc-res-extend-updates-end", content: "Reservation end time is updated successfully after validation.", checked: false },
+              { id: "dc-res-extend-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-res-extend-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false },
+              { id: "dc-res-extend-edge-cases", content: "Edge cases are documented.", checked: false },
+              { id: "dc-res-extend-state-transitions", content: "Payment/session/reservation state transition is documented.", checked: false }
+            ]
           },
           {
             id: "leaf-res-cancel",
             title: "Cancel Reservation",
             type: "leaf_feature",
             clients: ["Driver"],
+            status: "ready",
+            priority: "high",
+            tags: ["reservation", "booking", "cancel-reservation"],
+            summary: "Allow drivers to cancel an existing reservation. The system immediately releases the reserved parking slot and initiates the refund process if the reservation satisfies the configured refund policy.",
+            objective: "Implement transaction-safe reservation cancellation APIs in .NET Core API that validate cancellation eligibility, release slot immediately, trigger refund calculation based on refund policy, and log details.",
+            inScope: [
+              "Allow drivers to cancel an existing reservation.",
+              "Validate whether the reservation is eligible for cancellation.",
+              "Release the reserved parking slot immediately after successful cancellation.",
+              "Calculate refund amount according to the cancellation policy.",
+              "Trigger the refund process when applicable.",
+              "Record the cancellation reason when provided.",
+              "Update parking capacity immediately after cancellation."
+            ],
+            outOfScope: [
+              "Reservation modification.",
+              "Manual refund processing.",
+              "External system integrations not specified in this document."
+            ],
+            permissions: [
+              { role: "Driver", permission: "Authorized to access this feature." }
+            ],
+            businessRules: [
+              "Reservations cancelled at least X minutes (e.g., 30 minutes) before the reservation start time receive a full refund.",
+              "Last-minute cancellations are subject to the configured cancellation fee.",
+              "Parking slots from cancelled reservations must immediately transition back to the available state.",
+              "Parking capacity must be updated immediately after a successful cancellation.",
+              "The cancellation reason should be recorded when provided."
+            ],
+            dbExistingTables: [
+              "reservations",
+              "reservation_payments",
+              "parking_slots",
+              "parking_locations",
+              "payments",
+              "refunds"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Reservation status changes to Cancelled after successful cancellation.",
+              "Reserved parking slot immediately changes to Available.",
+              "Refund amount is determined according to the configured cancellation policy.",
+              "Parking capacity must be updated immediately after cancellation."
+            ],
+            validationRules: [
+              { field: "id", rule: "Must exist", errorMessage: "Reservation does not exist." },
+              { field: "Reservation Status", rule: "Must be active", errorMessage: "Reservation cannot be cancelled." },
+              { field: "reason", rule: "Optional, maximum 500 characters", errorMessage: "Cancellation reason is too long." }
+            ],
+            securityRules: [
+              "Validate role permissions.",
+              "Prevent unauthorized access.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Log request access, inputs, duration, and response code.",
+              "Log reservation cancellation.",
+              "Log cancellation reason when provided.",
+              "Log refund processing.",
+              "Log parking capacity update."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, and credit card details."
+            ],
+            integrationPoints: [
+              { system: "Internal parking management API", responsibility: "Update parking capacity immediately after successful cancellation." },
+              { system: "Refund workflow", responsibility: "Trigger refund processing according to configured refund policy." }
+            ],
+            uiPage: "/driver/reservations",
+            uiComponents: "Reservation Detail Viewer, Cancel Confirmation Dialog, Reason Input Area, Cancellation Success Screen",
+            uiStateIdle: "Display reservation details with a Cancel Reservation button.",
+            uiStateLoading: "Disable actions while cancellation is being processed.",
+            uiStateSuccess: "Display cancellation confirmation and refund information.",
+            uiStateError: "Display validation errors or cancellation failure messages.",
             endpoints: ["POST /api/core/reservations/{id}/cancel"],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/reservations/{id}/cancel"),
-            testCases: defaultApiTests("Cancel Reservation", ["Driver"], ["POST /api/core/reservations/{id}/cancel"]),
-            doneCriteria: defaultDoneCriteria("Cancel Reservation")
+            apiContracts: [
+              {
+                id: "contract-post-reservations-cancel",
+                name: "POST /api/core/reservations/{id}/cancel",
+                content: "Method: POST\nPath: /api/core/reservations/{id}/cancel\nHeaders:\n  Authorization: Bearer <token>\nRequest Body:\n{\n  \"reason\": \"Changed travel plan\"\n}\nResponse:\n  status: 200 OK\n  data:\n  {\n    \"success\": true,\n    \"data\": {\n      \"reservationId\": \"res-001\",\n      \"status\": \"Cancelled\",\n      \"refundStatus\": \"Processing\",\n      \"refundAmount\": 100000\n    }\n  }"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-res-cancel-driver-success",
+                title: "Verify authorized client (Driver) can access \"Cancel Reservation\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Driver",
+                steps: [
+                  "Authenticate user as Driver",
+                  "Invoke endpoint: POST /api/core/reservations/{id}/cancel",
+                  "Check response code is 200/201 OK"
+                ],
+                expectedResult: "Request succeeds and returns correct payload",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-cancel-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing \"Cancel Reservation\"",
+                type: "api",
+                precondition: "User is anonymous or lacks required role",
+                steps: [
+                  "Attempt to invoke endpoint: POST /api/core/reservations/{id}/cancel without token/role",
+                  "Check response status code is 401 Unauthorized or 403 Forbidden"
+                ],
+                expectedResult: "Request is blocked and returns clear error response",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-cancel-full-refund",
+                title: "Verify full refund is applied for early cancellation",
+                type: "integration",
+                expectedResult: "Reservation cancelled before the configured time threshold receives a 100% refund.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-cancel-late-fee",
+                title: "Verify cancellation fee is applied for late cancellation",
+                type: "integration",
+                expectedResult: "System deducts the configured cancellation fee before processing the refund.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-cancel-releases-slot",
+                title: "Verify cancelled reservation immediately releases parking slot",
+                type: "integration",
+                expectedResult: "Parking slot status changes to Available and parking capacity is updated.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-cancel-reason-recorded",
+                title: "Verify cancellation reason is recorded",
+                type: "integration",
+                expectedResult: "Cancellation reason is successfully stored in the system log or database.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-cancel-expired-token-rejected",
+                title: "Verify request with expired reservation or session token is rejected",
+                type: "integration",
+                expectedResult: "System returns validation error stating resource has expired.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-res-cancel-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-res-cancel-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-res-cancel-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-res-cancel-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-res-cancel-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-res-cancel-driver-action", content: "Reservation can be cancelled by the driver.", checked: false },
+              { id: "dc-res-cancel-policy-refund", content: "Refund amount follows the configured cancellation policy.", checked: false },
+              { id: "dc-res-cancel-late-fee", content: "Late cancellation fee is applied correctly.", checked: false },
+              { id: "dc-res-cancel-slot-release", content: "Cancelled parking slots immediately become available.", checked: false },
+              { id: "dc-res-cancel-capacity-update", content: "Parking capacity is updated after cancellation.", checked: false },
+              { id: "dc-res-cancel-refund-workflow", content: "Refund process is triggered when applicable.", checked: false },
+              { id: "dc-res-cancel-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-res-cancel-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false },
+              { id: "dc-res-cancel-edge-cases", content: "Edge cases are documented.", checked: false },
+              { id: "dc-res-cancel-state-transitions", content: "Payment/session/reservation state transition is documented.", checked: false }
+            ]
           },
           {
             id: "leaf-res-driver-history",
             title: "Driver Reservation History",
             type: "leaf_feature",
             clients: ["Driver"],
+            status: "ready",
+            priority: "low",
+            tags: ["reservation", "booking", "driver-reservation-history"],
+            summary: "Provide an interface for drivers to review their complete reservation history, including reservation details, statuses (Completed, Cancelled, Expired, etc.), and corresponding payment information.",
+            objective: "Implement high-performance read-only query APIs in Spring Boot Support API to fetch active reservations and paginated reservation history with date filters for the authenticated driver.",
+            inScope: [
+              "Retrieve the driver's active reservations.",
+              "Retrieve the driver's reservation history.",
+              "Display reservation status and payment information.",
+              "Support pagination for reservation history.",
+              "Support filtering reservation history by time range.",
+              "Return reservation records belonging only to the authenticated driver."
+            ],
+            outOfScope: [
+              "Reservation creation or modification.",
+              "Reservation cancellation.",
+              "External system integrations not specified in this document."
+            ],
+            permissions: [
+              { role: "Driver", permission: "Authorized to access this feature." }
+            ],
+            businessRules: [
+              "Drivers are only permitted to query and view the reservation history belonging to their own account.",
+              "Reservation history must support pagination.",
+              "Reservation history must support filtering by time range.",
+              "Historical reservation records include completed, cancelled, expired, and other supported reservation statuses."
+            ],
+            dbExistingTables: [
+              "reservations",
+              "reservation_payments",
+              "payments",
+              "parking_locations",
+              "vehicles"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Reservation history is queried based on the authenticated driver's account.",
+              "Payment information is retrieved from the associated reservation payment records.",
+              "Historical data includes reservation status and payment status."
+            ],
+            validationRules: [
+              { field: "page", rule: "Must be greater than 0", errorMessage: "Invalid page number." },
+              { field: "size", rule: "Must be greater than 0", errorMessage: "Invalid page size." },
+              { field: "fromDate", rule: "Must be earlier than or equal to toDate", errorMessage: "Invalid date range." },
+              { field: "toDate", rule: "Must be later than or equal to fromDate", errorMessage: "Invalid date range." }
+            ],
+            securityRules: [
+              "Validate role permissions.",
+              "Prevent unauthorized access.",
+              "Drivers may only access their own reservation history.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Log request access, inputs, duration, and response code.",
+              "Log reservation history queries.",
+              "Log pagination and filter parameters."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, and credit card details."
+            ],
+            integrationPoints: [],
+            uiPage: "/driver/reservations/history",
+            uiComponents: "Reservation History Table, Active Reservations Cards, Date Range Filters, Pagination Controls, Payment Detail Modal",
+            uiStateIdle: "Display reservation history list.",
+            uiStateLoading: "Display loading indicator while retrieving history.",
+            uiStateSuccess: "Display reservation history with payment information.",
+            uiStateEmpty: "Display message when no reservation history exists.",
+            uiStateError: "Display validation or system error messages.",
             endpoints: [
               "GET /api/support/reservations/me/active",
               "GET /api/support/reservations/me/history"
             ],
             ownerService: "Spring Boot Support API",
-            apiContracts: createApiContract("GET /api/support/reservations/me/history"),
-            testCases: defaultApiTests("Driver Reservation History", ["Driver"], ["GET /api/support/reservations/me/history"]),
-            doneCriteria: defaultDoneCriteria("Driver Reservation History")
-          }
+            apiContracts: [
+              {
+                id: "contract-get-reservations-me-history",
+                name: "GET /api/support/reservations/me/history",
+                content: "Method: GET\nPath: /api/support/reservations/me/history\nHeaders:\n  Authorization: Bearer <token>\nQuery Parameters:\n  page: integer (optional)\n  size: integer (optional)\n  fromDate: datetime (optional)\n  toDate: datetime (optional)\nResponse:\n  status: 200 OK\n  data:\n  {\n    \"success\": true,\n    \"data\": {\n      \"items\": [\n        {\n          \"reservationId\": \"res-001\",\n          \"status\": \"Completed\",\n          \"paymentStatus\": \"Paid\",\n          \"bookingAmount\": 120000,\n          \"reservationTime\": \"2026-07-20T08:00:00Z\"\n        }\n      ],\n      \"page\": 1,\n      \"size\": 10,\n      \"totalItems\": 50\n    }\n  }"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-res-history-driver-success",
+                title: "Verify authorized client (Driver) can access \"Driver Reservation History\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Driver",
+                steps: [
+                  "Authenticate user as Driver",
+                  "Invoke endpoint: GET /api/support/reservations/me/history",
+                  "Check response code is 200/201 OK"
+                ],
+                expectedResult: "Request succeeds and returns correct payload",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-history-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing \"Driver Reservation History\"",
+                type: "api",
+                precondition: "User is anonymous or lacks required role",
+                steps: [
+                  "Attempt to invoke endpoint: GET /api/support/reservations/me/history without token/role",
+                  "Check response status code is 401 Unauthorized or 403 Forbidden"
+                ],
+                expectedResult: "Request is blocked and returns clear error response",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-history-own-only",
+                title: "Verify drivers can only view their own reservation history",
+                type: "integration",
+                expectedResult: "System returns only reservation records belonging to the authenticated driver.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-history-pagination",
+                title: "Verify pagination works correctly",
+                type: "integration",
+                expectedResult: "Reservation history is returned according to the requested page and page size.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-history-time-filter",
+                title: "Verify time filter returns correct reservation history",
+                type: "integration",
+                expectedResult: "Only reservation records within the specified date range are returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-history-expired-token-rejected",
+                title: "Verify request with expired reservation or session token is rejected",
+                type: "integration",
+                expectedResult: "System returns validation error stating resource has expired.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-res-history-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-res-history-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-res-history-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-res-history-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-res-history-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-res-history-own-only", content: "Drivers can only access their own reservation history.", checked: false },
+              { id: "dc-res-history-details", content: "Reservation history includes reservation status and payment information.", checked: false },
+              { id: "dc-res-history-pagination", content: "Pagination is implemented.", checked: false },
+              { id: "dc-res-history-time-filter", content: "Time range filtering is implemented.", checked: false },
+              { id: "dc-res-history-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-res-history-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false },
+              { id: "dc-res-history-edge-cases", content: "Edge cases are documented.", checked: false },
+              { id: "dc-res-history-state-transitions", content: "Payment/session/reservation state transition is documented.", checked: false }
+            ]
+          },
         ]
       },
 
