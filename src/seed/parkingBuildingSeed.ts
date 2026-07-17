@@ -3059,12 +3059,119 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-rep-revenue",
             title: "Revenue Report",
             type: "leaf_feature",
+            status: "in_progress",
+            priority: "high",
             clients: ["Manager", "Admin"],
+            tags: ["reporting", "revenue", "excel", "analytics"],
+            summary: "Cung cấp API truy xuất và tổng hợp dữ liệu doanh thu của bãi đỗ xe trong một khoảng thời gian nhất định.",
+            objective: "Cung cấp API truy xuất và tổng hợp dữ liệu doanh thu của bãi đỗ xe trong một khoảng thời gian nhất định. API hỗ trợ trả về dữ liệu dưới dạng JSON (để vẽ biểu đồ, hiển thị lưới dữ liệu trên web) hoặc xuất trực tiếp ra file Excel (Spreadsheet) phục vụ công tác kế toán, đối soát. Báo cáo sẽ bóc tách doanh thu chi tiết theo từng loại phương tiện (Car, Motorbike, Bicycle) và phương thức thanh toán (Cash, Online_PayOS).",
+            inScope: [
+              "Gom nhóm và tính tổng doanh thu dựa trên các giao dịch (Payments) có trạng thái là Completed.",
+              "Cung cấp bộ lọc theo khoảng thời gian (startDate, endDate).",
+              "Phân loại doanh thu theo phương thức thanh toán và loại phương tiện.",
+              "Trả về chuỗi dữ liệu (Time-series data) theo từng ngày để vẽ biểu đồ xu hướng doanh thu.",
+              "Hỗ trợ tham số format=excel để Stream trực tiếp dữ liệu dạng file .xlsx về client."
+            ],
+            outOfScope: [
+              "Tính toán các khoản chi phí vận hành (điện, nước, lương nhân viên) hoặc lợi nhuận ròng.",
+              "Thay đổi, chỉnh sửa trạng thái hóa đơn (Read-only API)."
+            ],
+            permissions: [
+              { role: "Admin", permission: "Read-Only - Được phép xem báo cáo doanh thu tổng của toàn bộ hệ thống hoặc lọc theo từng bãi đỗ." },
+              { role: "Manager", permission: "Read-Only - Chỉ được phép xem báo cáo doanh thu thuộc bãi đỗ/tòa nhà mà mình được phân quyền quản lý." }
+            ],
+            businessRules: [
+              "Completed Transactions Only: Báo cáo doanh thu CHỈ được tính dựa trên các bản ghi Payments có Status = 'Completed'. Các trạng thái Pending, Failed, hoặc UnderReview bị loại trừ hoàn toàn.",
+              "Date Range Limitation: Khoảng thời gian truy vấn tối đa cho một lần gọi API (hiển thị JSON) là 1 năm (365 ngày) để tối ưu hiệu năng DB.",
+              "Read-Only Transaction Isolation: Các truy vấn bắt buộc sử dụng @Transactional(readOnly = true) để tránh gây lock bảng Payments làm ảnh hưởng đến luồng thanh toán thời gian thực của hệ thống."
+            ],
+            dbExistingTables: ["Payments", "ParkingSessions"],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Sử dụng INNER JOIN giữa Payments và ParkingSessions thông qua SessionId."
+            ],
+            validationRules: [
+              { field: "startDate", rule: "Định dạng yyyy-MM-dd. Bắt buộc truyền.", errorMessage: "INVALID_START_DATE" },
+              { field: "endDate", rule: "Định dạng yyyy-MM-dd. Bắt buộc >= startDate.", errorMessage: "INVALID_END_DATE" },
+              { field: "Range", rule: "endDate - startDate <= 365 ngày.", errorMessage: "DATE_RANGE_EXCEEDS_1_YEAR" },
+              { field: "format", rule: "Chỉ nhận json hoặc excel. Mặc định là json.", errorMessage: "INVALID_FORMAT_TYPE" }
+            ],
+            securityRules: [
+              "Role Validation: Kiểm tra quyền Manager và Admin.",
+              "Data Isolation: Manager chỉ được phép Query các bản ghi Payments thuộc các ParkingSessions nằm trong khu vực/tòa nhà của họ."
+            ],
+            logEvents: [
+              "Log khi có request xuất file Excel thành công (ghi rõ thời gian thực thi để giám sát hiệu năng)."
+            ],
+            noLogEvents: [
+              "Nội dung chi tiết của báo cáo hoặc Token xác thực."
+            ],
+            integrationPoints: [
+              { system: "Internal Library", responsibility: "Sử dụng thư viện Apache POI (chuẩn công nghiệp của hệ sinh thái Java/Spring Boot) để tạo và stream file Excel in-memory." }
+            ],
+            uiComponents: "Page: /admin/revenue-report. Components: Date Range Picker, Thẻ tổng quan (Tổng doanh thu), Biểu đồ hình tròn (phân bổ theo xe/phương thức thanh toán), Biểu đồ đường (Line chart xu hướng hàng ngày). Interactions: Nút 'Export to Excel' để tải file .xlsx kèm Loading Spinner.",
+            uiStateSuccess: "When the query is successful, the dashboard renders overview metrics, pie charts for vehicles/methods, and a Daily trends line chart. Excel file download starts when format=excel is used.",
             endpoints: ["GET /api/support/reports/revenue"],
             ownerService: "Spring Boot Support API",
-            apiContracts: createApiContract("GET /api/support/reports/revenue"),
-            testCases: defaultApiTests("Revenue Report", ["Manager"], ["GET /api/support/reports/revenue"]),
-            doneCriteria: defaultDoneCriteria("Revenue Report")
+            apiContracts: [
+              {
+                id: "contract-revenue-report-json",
+                name: "GET /api/support/reports/revenue (JSON)",
+                content: `Method: GET\nPath: /api/support/reports/revenue?startDate=2026-07-01&endDate=2026-07-17&format=json\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "data": {\n    "summary": {\n      "totalRevenue": 15500000.00,\n      "totalTransactions": 450\n    },\n    "revenueByMethod": [\n      { "method": "Online_PayOS", "amount": 10500000.00 },\n      { "method": "Cash", "amount": 5000000.00 }\n    ],\n    "revenueByVehicleType": [\n      { "vehicleType": "Car", "amount": 12000000.00 },\n      { "vehicleType": "Motorbike", "amount": 3500000.00 }\n    ],\n    "dailyTrends": [\n      { "date": "2026-07-01", "amount": 1200000.00 },\n      { "date": "2026-07-02", "amount": 950000.00 }\n    ]\n  }\n}`
+              },
+              {
+                id: "contract-revenue-report-excel",
+                name: "GET /api/support/reports/revenue (Excel)",
+                content: `Method: GET\nPath: /api/support/reports/revenue?startDate=2026-07-01&endDate=2026-07-17&format=excel\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\nHeaders:\n  Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\n  Content-Disposition: attachment; filename="Revenue_Report_20260701_20260717.xlsx"\nBody: [Binary Stream]`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-revenue-report-manager-success",
+                title: "Verify authorized client (Manager) can access Revenue Report successfully",
+                type: "integration",
+                precondition: "Client is authenticated with role: Manager",
+                steps: [
+                  "Authenticate user as Manager",
+                  "Invoke endpoint: GET /api/support/reports/revenue?startDate=2026-07-01&endDate=2026-07-17&format=json"
+                ],
+                expectedResult: "Request succeeds and returns the correct JSON payload with summary, revenueByMethod, and dailyTrends.",
+                status: "not_started"
+              },
+              {
+                id: "tc-revenue-report-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing Revenue Report",
+                type: "api",
+                precondition: "User is anonymous or lacks required role (e.g., Staff)",
+                steps: [
+                  "Attempt to invoke endpoint: GET /api/support/reports/revenue without token/role"
+                ],
+                expectedResult: "Request is blocked and returns 401 Unauthorized or 403 Forbidden.",
+                status: "not_started"
+              },
+              {
+                id: "tc-revenue-report-excel-export",
+                title: "Verify export endpoint returns correct spreadsheet binary type",
+                type: "integration",
+                precondition: "Client is authenticated with role: Admin",
+                steps: [
+                  "Invoke endpoint: GET /api/support/reports/revenue?startDate=2026-07-01&endDate=2026-07-17&format=excel"
+                ],
+                expectedResult: "Response code is 200 OK. Headers contain Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet. Body contains valid binary data.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-revenue-report-contract", content: "API contract is documented in this node.", checked: true },
+              { id: "dc-revenue-report-roles", content: "Required clients/roles are assigned and data isolation logic is strictly defined.", checked: true },
+              { id: "dc-revenue-report-business-rules", content: "Business rules (calculate based on 'Completed' payments only) are documented.", checked: true },
+              { id: "dc-revenue-report-json", content: "Success response uses common API response format for JSON.", checked: true },
+              { id: "dc-revenue-report-excel", content: "Excel export mechanism (format=excel) is fully defined.", checked: true },
+              { id: "dc-revenue-report-error", content: "Error response is clear and does not leak sensitive data.", checked: true },
+              { id: "dc-revenue-report-tests", content: "At least three test cases (including the binary export test) are defined.", checked: true },
+              { id: "dc-revenue-report-markdown", content: "Feature can be exported as AI-readable Markdown.", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing Spring Boot Support API project structure.\nEnsure you add org.apache.poi:poi-ooxml to pom.xml or build.gradle if not already present for Excel generation.\nUse Spring Data JPA @Query or JdbcTemplate to perform heavy grouping (GROUP BY) directly at the database level rather than fetching all records into Java memory.\nEnsure the endpoint returns ResponseEntity<Resource> or streams directly to HttpServletResponse when format=excel is requested to avoid OutOfMemory (OOM) errors on large datasets.\nApply @Transactional(readOnly = true) to the service methods handling report generation.\nCheck existing tests before adding new ones, implement the Excel export test case properly."
           },
           {
             id: "leaf-rep-traffic",
