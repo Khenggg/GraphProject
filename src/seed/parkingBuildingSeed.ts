@@ -4105,12 +4105,127 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-pay-webhook",
             title: "PayOS Webhook",
             type: "leaf_feature",
+            status: "in_progress",
+            priority: "high",
             clients: ["System"],
+            tags: ["payments", "payos", "webhook", "security"],
+            summary: "Cung cấp một endpoint an toàn nhận thông báo trạng thái giao dịch bất đồng bộ từ cổng thanh toán PayOS.",
+            objective: "Cung cấp một endpoint an toàn (Webhook) nhận thông báo trạng thái giao dịch bất đồng bộ (Asynchronous Notification) từ cổng thanh toán PayOS. Sau khi nhận và xác thực chữ ký số thành công, hệ thống tự động cập nhật trạng thái thanh toán của hóa đơn tương ứng, kết thúc phiên đỗ xe (hoặc gia hạn vé tháng), và sẵn sàng kích hoạt lệnh mở barie thông qua IoT gateway tại cổng ra.",
+            inScope: [
+              "Tiếp nhận payload POST request từ PayOS.",
+              "Xác thực chữ ký số (Webhook Signature Validation) sử dụng thuật toán HMAC-SHA256 cùng mã Checksum Key của PayOS.",
+              "Xử lý tính trùng lặp (Idempotency Control) để tránh việc xử lý một giao dịch nhiều lần khi nhận trùng webhook.",
+              "Cập nhật trạng thái giao dịch (Payments) và trạng thái phiên đỗ xe (ParkingSessions) tương ứng trong database.",
+              "Xử lý kịch bản ngoại lệ (lệch tiền thanh toán thực tế, sai mã hóa đơn)."
+            ],
+            outOfScope: [
+              "Tạo link thanh toán trực tuyến (được xử lý ở API Checkout riêng biệt).",
+              "Giao diện người dùng hiển thị kết quả (Webhook hoạt động hoàn toàn ở background)."
+            ],
+            permissions: [
+              { role: "System", permission: "Chỉ có hệ thống PayOS (hoặc các request giả lập có Signature hợp lệ) mới có quyền gửi dữ liệu tới endpoint này." }
+            ],
+            businessRules: [
+              "Signature Verification Constraint: Bắt buộc phải tính toán lại chữ ký HMAC-SHA256 từ data nhận được bằng Webhook Checksum Key được cấu hình trong AppSettings. Nếu chữ ký không khớp, hệ thống phải từ chối xử lý ngay lập tức.",
+              "Idempotency: Nếu một giao dịch thanh toán đã được cập nhật trạng thái là Paid / Completed, mọi Webhook tiếp theo của giao dịch đó phải bị bỏ qua và lập tức trả về HTTP 200 OK (để báo cho PayOS biết hệ thống đã xử lý thành công, tránh việc PayOS gửi lại).",
+              "Amount Matching Rules: Số tiền nhận từ Webhook (data.amount) phải khớp chính xác 100% với số tiền cần thanh toán được ghi nhận trong cơ sở dữ liệu (Payments.Amount). Nếu xảy ra hiện tượng sai lệch: Trạng thái giao dịch chuyển thành UnderReview. Không tự động hoàn tất phiên đỗ xe (không mở barie). Ghi log cảnh báo mức độ Critical để ban quản lý xử lý thủ công."
+            ],
+            dbExistingTables: ["ParkingSessions"],
+            dbNewTablesSql: `-- Table to manage transaction payment records\nCREATE TABLE Payments (\n  Id UUID PRIMARY KEY,\n  SessionId UUID NOT NULL REFERENCES ParkingSessions(Id),\n  OrderCode BIGINT NOT NULL,\n  PaymentLinkId VARCHAR(100) NOT NULL,\n  Amount DECIMAL(18, 2) NOT NULL,\n  Status VARCHAR(50) NOT NULL,\n  PaymentMethod VARCHAR(50) NOT NULL,\n  TransactionReference VARCHAR(100),\n  CreatedAt TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,\n  CompletedAt TIMESTAMP WITH TIME ZONE\n);\n\nCREATE UNIQUE INDEX IX_Payments_OrderCode ON Payments (OrderCode);\nCREATE UNIQUE INDEX IX_Payments_PaymentLinkId ON Payments (PaymentLinkId);`,
+            dbRelationships: [
+              "Một ParkingSession có thể có 1-nhiều bản ghi Payments (trong trường hợp giao dịch đầu bị thất bại/hết hạn và người dùng phải tạo lại giao dịch mới)."
+            ],
+            validationRules: [
+              { field: "signature (Root)", rule: "Phải trùng khớp với chữ ký được tạo bằng thuật toán HMAC-SHA256 trên các trường dữ liệu của data kết hợp với Webhook Checksum Key.", errorMessage: "INVALID_SIGNATURE" },
+              { field: "data.orderCode", rule: "Phải tồn tại một bản ghi trong bảng Payments có OrderCode tương ứng.", errorMessage: "ORDER_NOT_FOUND" },
+              { field: "data.amount", rule: "Số tiền nhận được từ PayOS phải khớp chính xác với Payments.Amount đã tạo trong DB.", errorMessage: "AMOUNT_MISMATCH" }
+            ],
+            securityRules: [
+              "Signature Validation: Đây là chốt chặn bảo mật duy nhất. AI bắt buộc phải viết hàm tính chữ ký nghiêm ngặt.",
+              "Không sử dụng trực tiếp dữ liệu từ payload để cập nhật DB khi chưa qua bước kiểm tra chữ ký.",
+              "HTTPS Only: Endpoint này chỉ chấp nhận kết nối qua giao thức HTTPS bảo mật."
+            ],
+            logEvents: [
+              "Nhận được Webhook từ PayOS (Log rõ orderCode và paymentLinkId).",
+              "Kết quả xác thực chữ ký (Thành công / Thất bại).",
+              "Cập nhật trạng thái giao dịch hoàn tất (Ghi rõ số tiền thực tế nhận được).",
+              "Cảnh báo mức độ nghiêm trọng (Critical): Khi xảy ra sai lệch số tiền (AMOUNT_MISMATCH)."
+            ],
+            noLogEvents: [
+              "Số tài khoản ngân hàng của khách hàng (data.accountNumber), mã bí mật Webhook Checksum Key trong cấu hình hệ thống."
+            ],
+            integrationPoints: [
+              { system: "PayOS API Service", responsibility: "Sử dụng SDK hoặc API của PayOS để đối chiếu thêm trạng thái giao dịch nếu cần." },
+              { system: "Gate Control Service", responsibility: "Lắng nghe sự kiện thanh toán thành công thông qua Event Bus (hoặc SignalR) để gửi tín hiệu mở cổng tự động cho xe ra." }
+            ],
+            uiComponents: "Kiosk/App realtime SignalR listener - no direct UI for the webhook itself.",
+            uiStateSuccess: "Khi nhận được tín hiệu Webhook thành công thông qua Realtime Connection (SignalR), UI của Kiosk/App sẽ tự động chuyển từ trạng thái 'Đang chờ thanh toán...' (Waiting for Payment) sang màn hình màu xanh lá 'Thành công! Mời xe ra khỏi bãi' mà người dùng không cần bấm nút reload thủ công.",
             endpoints: ["POST /api/core/payments/payos/webhook"],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/payments/payos/webhook"),
-            testCases: defaultApiTests("PayOS Webhook", ["System"], ["POST /api/core/payments/payos/webhook"]),
-            doneCriteria: defaultDoneCriteria("PayOS Webhook")
+            apiContracts: [
+              {
+                id: "contract-payos-webhook",
+                name: "POST /api/core/payments/payos/webhook",
+                content: `Method: POST\nPath: /api/core/payments/payos/webhook\nHeaders:\n  Content-Type: application/json\n\n// NOTE: Endpoint này không dùng Header Bearer Token thông thường\n// mà dùng cơ chế xác thực dựa trên chữ ký trong Body của PayOS.\n\nRequest Body (from PayOS):\n{\n  "code": "00",\n  "desc": "success",\n  "data": {\n    "orderCode": 123456,\n    "amount": 30000,\n    "description": "Thanh toan phi do xe phien 59A-12345",\n    "accountNumber": "0123456789",\n    "reference": "FT2619283712",\n    "transactionDateTime": "2026-07-17T17:00:00Z",\n    "currency": "VND",\n    "paymentLinkId": "payos-link-uuid-abc123",\n    "signature": "8a36d93610cfb1c1d476f59bf0f5d496a798b04a8b7cf7a9b1c7da20e3ad1b2c"\n  },\n  "signature": "9c23f81520dfb2c1d476f59bf0f5d496a798b04a8b7cf7a9b1c7da20e3ad1b2d"\n}\n\n// Response 200 OK (Luôn trả về 200 cho PayOS nếu request hợp lệ về mặt kỹ thuật,\n// kể cả khi logic nghiệp vụ bị lỗi/lệch tiền)\n{\n  "success": true,\n  "message": "Webhook processed successfully."\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-payos-valid-signature",
+                title: "Verify successful payment processing with valid PayOS signature",
+                type: "integration",
+                precondition: "Có một bản ghi Payments với OrderCode = 123456, Amount = 30000 và Status = Pending.",
+                steps: [
+                  "Tạo mock payload hợp lệ từ PayOS có chữ ký đúng chuẩn.",
+                  "POST tới /api/core/payments/payos/webhook."
+                ],
+                expectedResult: "HTTP 200 OK. Bản ghi Payments chuyển sang Completed. Phiên đỗ xe liên kết chuyển trạng thái sẵn sàng cho xe ra.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payos-invalid-signature",
+                title: "Verify Webhook is rejected if signature is invalid",
+                type: "api",
+                precondition: "Payload gửi lên có signature bị sai lệch.",
+                steps: [
+                  "Gửi POST request với chữ ký ngẫu nhiên không đúng thuật toán."
+                ],
+                expectedResult: "HTTP 400 Bad Request hoặc 401 Unauthorized với thông báo lỗi INVALID_SIGNATURE. Không có thay đổi trạng thái nào trong DB.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payos-amount-mismatch",
+                title: "Verify amount mismatch transitions payment to UnderReview",
+                type: "integration",
+                precondition: "Bản ghi Payments lưu trong DB yêu cầu thanh toán 30000 VND.",
+                steps: [
+                  "Gửi mock payload từ PayOS có chữ ký đúng nhưng trường amount = 20000 VND."
+                ],
+                expectedResult: "HTTP 200 OK (để phản hồi PayOS nhận tin). Nhưng bản ghi Payments trong DB cập nhật trạng thái thành UnderReview và ghi log cảnh báo sai tiền. Trạng thái đỗ xe vẫn giữ nguyên, không giải phóng xe.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payos-idempotency",
+                title: "Verify duplicate Webhook requests (Idempotency) are handled safely",
+                type: "integration",
+                precondition: "Một giao dịch đã được thanh toán thành công (Status = Completed).",
+                steps: [
+                  "Gửi lại chính xác payload webhook đã thành công của giao dịch đó một lần nữa."
+                ],
+                expectedResult: "HTTP 200 OK lập tức trả về. Database không bị cập nhật lại (không ghi đè thời gian CompletedAt, không trigger lại luồng mở barie).",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-payos-contract", content: "API contract is documented in this node.", checked: true },
+              { id: "dc-payos-public-access", content: "Webhook endpoint is publicly accessible without typical user-JWT authorization (instead secured via Signature Validation).", checked: true },
+              { id: "dc-payos-hmac", content: "Dynamic Signature verification based on HMAC-SHA256 is implemented and fully tested.", checked: true },
+              { id: "dc-payos-idempotency", content: "Double-execution (Idempotency) prevention mechanism is implemented and validated.", checked: true },
+              { id: "dc-payos-mismatch", content: "Amount mismatch scenarios are handled safely by routing to UnderReview status instead of blindly marking as paid.", checked: true },
+              { id: "dc-payos-session-update", content: "Successfully updating payment status triggers the business process to free the corresponding active parking session.", checked: true },
+              { id: "dc-payos-log-filter", content: "Sensitive details like personal bank account numbers are filtered out from application logging.", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing .NET Core API project structures and patterns.\nImplement utility methods for parsing, sorting, and generating HMAC-SHA256 letters matching PayOS signature standards exactly.\nUtilize Entity Framework transactions to ensure updates to Payments and ParkingSessions tables happen atomically.\nImplement distributed locks or pessimistic DB locking on Payments where OrderCode matches, preventing race conditions from simultaneous duplicate webhook posts.\nCheck existing test suites and add tests covering valid webhook, duplicate webhook, invalid signature, and mismatched amounts.\nRun all tests to ensure no regressions.\nReport changed files, verification results, and any environment variable changes needed (e.g., PayOS:WebhookChecksumKey)."
           },
           {
             id: "leaf-pay-online",
@@ -4287,7 +4402,58 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-inc-lost-card",
             title: "Lost Card Claim Management",
             type: "leaf_feature",
+            status: "in_progress",
+            priority: "medium",
             clients: ["Staff", "Manager"],
+            tags: ["incidents", "lost-card", "file-upload", "documents", "audit"],
+            summary: "Cung cấp các API quản lý tài liệu minh chứng đi kèm với mỗi sự vụ báo mất thẻ (Lost Card Case).",
+            objective: "Cung cấp các API quản lý tài liệu minh chứng (hồ sơ, hình ảnh CCCD, giấy tờ xe, biên bản cam kết) đi kèm với mỗi sự vụ báo mất thẻ (Lost Card Case). Các tài liệu này là điều kiện bắt buộc (bằng chứng pháp lý) để Staff/Manager xác minh chủ xe, áp phí phạt mất thẻ (LostCardFee), lập hóa đơn thanh toán và thực hiện mở cổng cho xe xuất bãi một cách hợp lệ.",
+            inScope: [
+              "Hỗ trợ tải lên tài liệu minh chứng dạng tệp tin đơn lẻ (POST) hoặc tải lên hàng loạt (POST Batch).",
+              "Lưu trữ metadata của tài liệu (tên file, đường dẫn lưu trữ, định dạng, dung lượng) vào cơ sở dữ liệu PostgreSQL.",
+              "Truy xuất danh sách tài liệu minh chứng đã tải lên theo từng vụ việc (caseId).",
+              "Cho phép xóa tài liệu minh chứng nếu upload nhầm trước khi vụ việc được đóng/hoàn tất."
+            ],
+            outOfScope: [
+              "Dịch vụ lưu trữ vật lý tệp tin (File Storage Service như AWS S3, Azure Blob, hoặc Local Storage sẽ được gọi qua một Interface trừu tượng IStorageService).",
+              "Quy trình xử lý thanh toán thực tế cho phí mất thẻ (được quản lý bởi luồng Payment)."
+            ],
+            permissions: [
+              { role: "Staff", permission: "Read/Write/Delete - Tiếp nhận yêu cầu tại quầy, trực tiếp chụp ảnh giấy tờ, upload tài liệu minh chứng và có thể xóa file vừa upload nếu có sai sót." },
+              { role: "Manager", permission: "Read/Write/Delete - Kiểm tra, đối chiếu hồ sơ minh chứng trước khi phê duyệt đóng hồ sơ hoặc miễn giảm phí phạt nếu có lý do chính đáng." }
+            ],
+            businessRules: [
+              "Case Validation: Chỉ cho phép upload hoặc thay đổi tài liệu đối với các vụ việc mất thẻ (LostCardCases) đang ở trạng thái xử lý (Pending, Processing). Một khi sự vụ đã đóng (Resolved, Closed), mọi hành vi thay đổi tài liệu (Thêm, Xóa) đều bị cấm hoàn toàn để bảo vệ tính toàn vẹn hồ sơ pháp lý.",
+              "File Validation Constraints: Chỉ chấp nhận các định dạng tệp tin: .jpg, .jpeg, .png, .pdf. Dung lượng tối đa cho mỗi file tải lên là 5MB.",
+              "Database Constraints: Bản ghi thông tin tài liệu phải liên kết chặt chẽ với bảng sự vụ mất thẻ thông qua khóa ngoại kiểu UUID."
+            ],
+            dbExistingTables: ["LostCardCases", "AuditLogs"],
+            dbNewTablesSql: `CREATE TABLE LostCardDocuments (\n    Id UUID PRIMARY KEY,\n    CaseId UUID NOT NULL REFERENCES LostCardCases(Id) ON DELETE CASCADE,\n    DocumentType VARCHAR(50) NOT NULL, -- ID_Card, Vehicle_Registration, Handover_Report, Other\n    FileName VARCHAR(255) NOT NULL,\n    FileUrl VARCHAR(512) NOT NULL,\n    FileSize BIGINT NOT NULL,          -- Lưu dung lượng theo bytes để kiểm soát giới hạn\n    FileExtension VARCHAR(10) NOT NULL,-- .jpg, .png, .pdf\n    UploadedAt TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    UploadedBy VARCHAR(100) NOT NULL\n);\n\n-- Index tối ưu tốc độ tìm kiếm tài liệu theo vụ việc\nCREATE INDEX IX_LostCardDocuments_CaseId ON LostCardDocuments(CaseId);`,
+            dbRelationships: [
+              "Một sự vụ mất thẻ (LostCardCase) có quan hệ 1-Nhiều (1-n) với LostCardDocuments."
+            ],
+            validationRules: [
+              { field: "caseId", rule: "Phải là một UUID hợp lệ và tồn tại trong bảng LostCardCases.", errorMessage: "LOST_CARD_CASE_NOT_FOUND" },
+              { field: "caseState", rule: "Sự vụ phải có trạng thái khác Resolved hoặc Closed.", errorMessage: "CANNOT_MODIFY_CLOSED_CASE" },
+              { field: "file", rule: "Không được trống, định dạng phải là hình ảnh hoặc PDF, dung lượng tối đa 5MB.", errorMessage: "INVALID_FILE_FORMAT_OR_SIZE" },
+              { field: "documentType", rule: "Phải thuộc một trong các nhóm định nghĩa sẵn (ID_Card, Vehicle_Registration, Handover_Report, Other).", errorMessage: "INVALID_DOCUMENT_TYPE" }
+            ],
+            securityRules: [
+              "Role-Based Access Control (RBAC): Chỉ những tài khoản có Claim Role là Staff hoặc Manager mới có quyền truy cập và thao tác trên các endpoints này.",
+              "Malicious File Scan: Trước khi ghi file vào Storage, backend phải thực hiện kiểm tra phần mở rộng thực tế của tệp tin (MIME Type check) để ngăn chặn lỗ hổng tải lên mã độc (Web Shell, Executable files)."
+            ],
+            logEvents: [
+              "Tải lên tài liệu mới thành công (Ghi rõ caseId, documentId, fileName, uploadedBy).",
+              "Xóa tài liệu khỏi hệ thống (Ghi rõ documentId đã xóa và định danh người thực hiện)."
+            ],
+            noLogEvents: [
+              "Nội dung nhị phân (binary content) của tệp tin, thông tin Token trong Header."
+            ],
+            integrationPoints: [
+              { system: "Object Storage Service (S3/Azure/Local)", responsibility: "Tiếp nhận luồng byte dữ liệu từ .NET API, thực hiện lưu trữ vật lý và trả về URL truy cập công khai/bảo mật." }
+            ],
+            uiComponents: "Page: /staff/incident-management/lost-cards/{caseId}. Components: Drag & Drop Zone cho batch upload; danh sách tệp hiển thị dạng Card/Thumbnail với Preview; nút Xóa kèm Pop-over xác nhận.",
+            uiStateSuccess: "Processing State: Progress bar theo % cho file lớn đang upload. Success/Error: Toast notification chi tiết (ví dụ: 'Đã tải lên thành công 3/3 file' hoặc 'File xxx.exe không đúng định dạng').",
             endpoints: [
               "POST /api/core/lost-cards/{caseId}/documents",
               "POST /api/core/lost-cards/{caseId}/documents/batch",
@@ -4295,12 +4461,74 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
               "DELETE /api/core/lost-cards/{caseId}/documents/{documentId}"
             ],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/lost-cards/{caseId}/documents"),
-            testCases: defaultApiTests("Lost Card Claim Management", ["Staff"], ["GET /api/core/lost-cards/{caseId}/documents"]),
+            apiContracts: [
+              {
+                id: "contract-lost-card-upload-single",
+                name: "POST /api/core/lost-cards/{caseId}/documents",
+                content: `Method: POST\nPath: /api/core/lost-cards/{caseId}/documents\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: multipart/form-data\nRequest Body:\n  file: [Binary File]\n  documentType: "ID_Card" (ID_Card, Vehicle_Registration, Handover_Report, Other)\nResponse 201 Created:\n{\n  "success": true,\n  "message": "Document uploaded successfully.",\n  "data": {\n    "documentId": "4a1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb7a",\n    "fileName": "cccd_mat_truoc.jpg",\n    "fileUrl": "https://storage.parking.com/lost-cards/4a1deb4d/cccd_mat_truoc.jpg"\n  }\n}`
+              },
+              {
+                id: "contract-lost-card-upload-batch",
+                name: "POST /api/core/lost-cards/{caseId}/documents/batch",
+                content: `Method: POST\nPath: /api/core/lost-cards/{caseId}/documents/batch\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: multipart/form-data\nRequest Body:\n  files: [Binary File 1, Binary File 2, ...]\n  documentTypes: ["ID_Card", "Vehicle_Registration", ...]\nResponse 201 Created:\n{\n  "success": true,\n  "message": "Batch documents uploaded successfully.",\n  "data": [\n    {\n      "documentId": "4a1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb7a",\n      "fileName": "cccd_mat_truoc.jpg",\n      "fileUrl": "https://storage.parking.com/lost-cards/4a1deb4d/cccd_mat_truoc.jpg"\n    },\n    {\n      "documentId": "5c1fdf4e-4b7e-5cad-8cee-3c0e8c4dda8b",\n      "fileName": "cavet_xe.jpg",\n      "fileUrl": "https://storage.parking.com/lost-cards/4a1deb4d/cavet_xe.jpg"\n    }\n  ]\n}`
+              },
+              {
+                id: "contract-lost-card-get-docs",
+                name: "GET /api/core/lost-cards/{caseId}/documents",
+                content: `Method: GET\nPath: /api/core/lost-cards/{caseId}/documents\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "data": [\n    {\n      "documentId": "4a1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb7a",\n      "documentType": "ID_Card",\n      "fileName": "cccd_mat_truoc.jpg",\n      "fileSize": 1542000,\n      "fileUrl": "https://storage.parking.com/lost-cards/4a1deb4d/cccd_mat_truoc.jpg",\n      "uploadedBy": "staff_nguyen_van_a",\n      "uploadedAt": "2026-07-17T10:30:00Z"\n    }\n  ]\n}`
+              },
+              {
+                id: "contract-lost-card-delete-doc",
+                name: "DELETE /api/core/lost-cards/{caseId}/documents/{documentId}",
+                content: `Method: DELETE\nPath: /api/core/lost-cards/{caseId}/documents/4a1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb7a\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "message": "Document deleted successfully."\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-lost-card-batch-upload-success",
+                title: "Verify Staff can upload multiple documents using Batch API successfully",
+                type: "integration",
+                precondition: "Sự vụ mất thẻ có CaseId = 32b6e1b2-1b1a-4d2a-89aa-5561a317bf01 đang ở trạng thái Pending.",
+                steps: [
+                  "Authenticate user as Staff.",
+                  "Tạo HTTP POST Multipart request gửi kèm 2 file ảnh (goc_chup_1.jpg, goc_chup_2.png) tới endpoint /api/core/lost-cards/{caseId}/documents/batch."
+                ],
+                expectedResult: "HTTP 201 Created. Danh sách trả về chứa 2 bản ghi tài liệu mới có mã UUID và đường dẫn URL lưu trữ đầy đủ.",
+                status: "not_started"
+              },
+              {
+                id: "tc-lost-card-upload-closed-case",
+                title: "Verify upload is rejected when Lost Card Case is already Closed",
+                type: "api",
+                precondition: "Sự vụ mất thẻ có trạng thái Closed.",
+                steps: [
+                  "Gửi POST request upload tệp tin lên vụ việc đã đóng đó."
+                ],
+                expectedResult: "HTTP 400 Bad Request kèm mã lỗi CANNOT_MODIFY_CLOSED_CASE. Trạng thái dữ liệu không bị biến động.",
+                status: "not_started"
+              },
+              {
+                id: "tc-lost-card-invalid-file",
+                title: "Verify upload rejects files exceeding 5MB limit or having invalid extension",
+                type: "unit",
+                precondition: "Người dùng đăng nhập quyền Staff.",
+                steps: [
+                  "Gửi một tệp tin dung lượng 7MB hoặc tệp tin có tên trojan.exe tới endpoint upload."
+                ],
+                expectedResult: "HTTP 400 Bad Request kèm thông báo lỗi INVALID_FILE_FORMAT_OR_SIZE.",
+                status: "not_started"
+              }
+            ],
             doneCriteria: [
-              ...defaultDoneCriteria("Lost Card Claim Management"),
-              { id: "dc-lost-docs", content: "Lost card documentation and replacement fee details are managed securely.", checked: false }
-            ]
+              { id: "dc-lost-card-contract", content: "API contract is documented in this node.", checked: true },
+              { id: "dc-lost-card-roles", content: "Required roles (Staff, Manager) are assigned and validated.", checked: true },
+              { id: "dc-lost-card-business-rules", content: "Business rules (strictly block uploads/deletions on Closed/Resolved cases) are enforced in DB/Service layer.", checked: true },
+              { id: "dc-lost-card-file-validation", content: "File validation logic (MIME type check, max 5MB size) works correctly.", checked: true },
+              { id: "dc-lost-card-responses", content: "Success and error responses are standard and do not leak system path traces.", checked: true },
+              { id: "dc-lost-card-db-model", content: "Database model mapping for LostCardDocuments using UUID PK is successfully designed.", checked: true },
+              { id: "dc-lost-card-audit", content: "Audit entries are recorded when documents are added or removed.", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing .NET Core API structure (specifically, where the File Storage layer is abstracted via IStorageService).\nUse a custom validation filter or FluentValidation to enforce file extension limits before saving data.\nEnsure that file upload processes are stream-based where possible to minimize memory allocation on the API host for large payloads.\nImplement atomic DB transactions: The file metadata should only be written to PostgreSQL after the physical file storage upload succeeds. If the DB save fails, trigger a rollback task to delete the uploaded file from the storage.\nCheck and run existing test projects. Add newly specified tests under the LostCardClaim directory.\nVerify code compiles without warnings and run all tests before completing the task."
           },
           {
             id: "leaf-inc-mismatch",
@@ -4336,709 +4564,820 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-rep-dashboard",
             title: "Support Dashboard",
             type: "leaf_feature",
-            clients: ["MANAGER", "ADMIN"],
-            status: "ready",
+            status: "in_progress",
             priority: "medium",
-            tags: ["dashboard", "metrics", "read-only"],
-            summary: "Provides a real-time operational dashboard for Managers and Administrators to monitor the current status of the parking building.",
-            ownerService: "Spring Boot Support API",
-            endpoints: ["GET /api/support/dashboard"],
-            objective: "Provides a real-time operational dashboard for Managers and Administrators to monitor the current status of the parking building. The system aggregates real-time metrics directly from core tables such as parking_sessions, slots, lost_card_cases, and payments to present instant KPIs without causing table-locking overhead on the primary transactional write backend (.NET Core API).",
+            clients: ["Manager", "Admin"],
+            tags: ["reporting", "dashboard", "analytics", "cache"],
+            summary: "Cung cấp một API tổng hợp dữ liệu thời gian thực (Real-time Aggregation) để xây dựng trang Dashboard Giám sát Vận hành dành cho Manager và Admin.",
+            objective: "Cung cấp một API tổng hợp dữ liệu thời gian thực (Real-time Aggregation) để xây dựng trang Dashboard Giám sát Vận hành dành cho Manager và Admin. API này tổng hợp và phân tích toàn bộ các chỉ số vận hành quan trọng như: trạng thái xử lý sự cố (Incidents), thống kê báo mất thẻ (LostCardCases), danh sách giao dịch lỗi cần duyệt lại (UnderReview Payments), hiệu suất xử lý của nhân viên và xu hướng sự cố phát sinh theo thời gian.",
             inScope: [
-              "Aggregate the number of available, occupied, and under-maintenance slots in real-time, categorized by floor/area.",
-              "Count the total number of currently active parking sessions (ACTIVE).",
-              "Count unresolved operational alerts: pending lost card cases (LOST_CARD_PENDING) and pending license plate mismatches (MISMATCH_PENDING).",
-              "Compute tentative cumulative revenue collected during the current day (casual parking fees + monthly pass renewals)."
+              "Tổng hợp các chỉ số KPI vận hành theo chu kỳ thời gian (Daily, Weekly, Monthly) hoặc theo khoảng thời gian tùy chọn (startDate đến endDate).",
+              "Đếm số lượng sự vụ theo trạng thái (Pending, Processing, Resolved).",
+              "Thống kê các khoản thanh toán nghi vấn cần rà soát thủ công (Trạng thái UnderReview từ PayOS Webhook).",
+              "Thống kê số lượng mất thẻ và các tài liệu minh chứng đi kèm.",
+              "Trả về danh sách top sự cố khẩn cấp (Critical Incidents) chưa được xử lý để hiển thị trên bảng cảnh báo của Manager."
             ],
             outOfScope: [
-              "Deep trend analysis over multiple years or AI-driven traffic forecasting.",
-              "Real-time automated data pushing via WebSockets (the client handles data updates via periodic pulling/polling)."
+              "Biểu đồ hóa dữ liệu trực quan (phần này do Frontend xử lý dựa trên JSON trả về).",
+              "Xuất file báo cáo định dạng Excel, PDF (sẽ do một Feature chuyên dụng khác đảm nhận)."
             ],
             permissions: [
-              { role: "MANAGER", permission: "Authorized to view all aggregated dashboard metrics for operational staff coordination." },
-              { role: "ADMIN", permission: "Authorized to view all dashboard metrics to ensure system health and tracking stability." }
+              { role: "Admin", permission: "Read-Only - Truy cập toàn bộ số liệu phân tích vận hành trên toàn bộ các tòa nhà/bãi đỗ thuộc hệ thống." },
+              { role: "Manager", permission: "Read-Only - Truy cập số liệu phân tích vận hành thuộc phạm vi tòa nhà được phân quyền quản lý." }
             ],
             businessRules: [
-              "Read-Only Compliance: As a feature owned by the Spring Boot Support API, the service tier must strictly use SELECT queries and must never perform any insert, update, or delete actions against core tables.",
-              "No Uncommitted Reads: Metrics calculations depend entirely on committed PostgreSQL transactional records, omitting uncommitted changes from the .NET Core API side.",
-              "Data Shape Constraint: The payload must be encapsulated within the common project ApiResponse wrapper using camelCase for all Java-based JSON response keys."
+              "Read-Only Transaction Isolation: Vì Spring Boot Support API chịu trách nhiệm đọc dữ liệu báo cáo từ shared PostgreSQL, tất cả các truy vấn JPA/Hibernate tại service này phải được đánh dấu @Transactional(readOnly = true) để tối ưu hóa hiệu năng bộ nhớ (bypass dirty checking).",
+              "Date Range Limit: Mặc định nếu người dùng không truyền startDate và endDate, hệ thống sẽ tự động lấy dữ liệu trong vòng 30 ngày gần nhất. Giới hạn khoảng cách tối đa giữa 2 ngày truy vấn không được vượt quá 90 ngày để tránh làm nghẽn DB (tránh quét toàn bộ bảng dữ liệu lớn).",
+              "Data Refreshment Cache: Để tránh việc Manager F5 liên tục làm quá tải hệ thống, kết quả của Dashboard có thể được cache tạm thời (In-Memory Cache như Caffeine hoặc Redis) với thời gian sống (TTL) là 1 phút."
             ],
-            dbExistingTables: ["parking_sessions", "slots", "floors", "lost_card_cases", "payments"],
-            dbRelationships: [
-              "parking_sessions: Filter by ACTIVE state to count active instances.",
-              "slots: Group by AVAILABLE, OCCUPIED, LOCKED statuses.",
-              "floors: Map floor descriptions and categorize slot distributions.",
-              "lost_card_cases: Count unresolved instances where state matches PENDING.",
-              "payments: Sum total successful collections within the current day where status is PAID."
-            ],
+            dbExistingTables: ["LostCardCases", "Payments", "Incidents"],
+            dbNewTablesSql: "",
+            dbRelationships: [],
             validationRules: [
-              { field: "token", rule: "Standard request token validation is enforced via the security context middleware layer. No complex request bodies are required for this aggregated fetch.", errorMessage: "TOKEN_INVALID_OR_EXPIRED" }
+              { field: "startDate", rule: "Định dạng yyyy-MM-dd hợp lệ. Không được lớn hơn ngày hiện tại.", errorMessage: "INVALID_START_DATE" },
+              { field: "endDate", rule: "Định dạng yyyy-MM-dd hợp lệ. Phải lớn hơn hoặc bằng startDate.", errorMessage: "INVALID_END_DATE" },
+              { field: "Range", rule: "endDate trừ startDate không được vượt quá 90 ngày.", errorMessage: "DATE_RANGE_EXCEEDED_MAX_LIMIT" }
             ],
             securityRules: [
-              "Enforce security role matching filters inside the Spring Security pipeline context, throwing an access denied response if the caller lacks MANAGER or ADMIN roles.",
-              "Do not expose internal user credentials, session tokens, or sensitive network configurations within the response structure."
+              "Role Validation: Chặn toàn bộ các truy cập từ các Role không phải là Manager hoặc Admin. Trả về 403 Forbidden.",
+              "Data Isolation: Nếu truy cập bằng tài khoản Manager, câu lệnh SQL/JPA đằng sau phải tự động bổ sung điều kiện lọc theo BuildingId của tòa nhà mà Manager đó phụ trách quản lý (đọc từ JWT Claims). Admin sẽ không bị giới hạn này."
             ],
             logEvents: [
-              "Log access to the dashboard (DASHBOARD_VIEWED) along with the performing Manager/Admin ID and execution duration for infrastructure performance tracking."
+              "Log các lượt truy cập dashboard kèm theo bộ lọc thời gian (startDate, endDate), ID người dùng và thời gian xử lý truy vấn (Query execution duration)."
             ],
-            noLogEvents: [],
+            noLogEvents: [
+              "Không ghi log danh sách chi tiết các vụ việc hoặc thông tin định danh cá nhân của khách hàng nhúng trong danh sách trả về."
+            ],
             integrationPoints: [
-              { system: "Spring Boot Support API", responsibility: "Executes read-only aggregation queries directly against PostgreSQL." }
+              { system: "PostgreSQL Shared Database", responsibility: "Kết nối trực tiếp để thực hiện các truy vấn aggregate dữ liệu." },
+              { system: "Caffeine/Redis Cache Manager", responsibility: "Sử dụng cache lớp trung gian để giảm tải cho database khi tần suất gọi API từ phía Admin web tăng cao." }
             ],
-            uiPage: "/manager/dashboard",
-            uiComponents: "Points to the Spring Boot Support API port (supportApi - Port 8080).",
-            uiStateLoading: "Renders a skeleton loader overlaying all quantitative metric cards and disables the manual \"Refresh Data\" action button.",
-            uiStateEmpty: "N/A",
-            uiStateError: "Displays an error toast message notification flagging connection dropouts or security denials.",
-            uiStateSuccess: "Populates metric components with loaded numerical parameters and charts depicting floor capacity breakdowns.",
-            notes: "Shared Enum Values: SlotStatus (AVAILABLE, OCCUPIED, LOCKED). SessionStatus (ACTIVE, LOST_CARD_PENDING, MISMATCH_PENDING). PaymentStatus (PAID).",
-            dependencies: [],
-            risks: [],
+            uiComponents: "Page: /admin/operational-analytics hoặc /manager/dashboard. UI States: Skeleton Loader cho summary cards và charts; CountUp animation; Badge Pulse màu đỏ cho Critical/UnderReview items; Empty State graphic; Alert Box lỗi.",
+            uiStateSuccess: "KPI numbers rendered with count-up animations, and Critical or UnderReview items have a pulsing red badge to draw attention.",
+            endpoints: ["GET /api/support/dashboard"],
+            ownerService: "Spring Boot Support API",
             apiContracts: [
               {
-                id: "api-contract-support-dashboard",
+                id: "contract-support-dashboard",
                 name: "GET /api/support/dashboard",
-                content: `Method: GET\nPath: /api/support/dashboard\nHeaders:\n  Authorization: Bearer <token>\n\nSuccess Response (200 OK):\nSee Data Contracts.\n\nUnauthorized Response (401 Unauthorized):\n{\n  "success": false,\n  "message": "Unauthorized access.",\n  "data": null,\n  "errors": [\n    { "field": "token", "message": "TOKEN_INVALID_OR_EXPIRED" }\n  ],\n  "timestamp": "2026-07-08T01:07:00+07:00"\n}`
-              }
-            ],
-            dataContracts: [
-              {
-                id: "mock-data-support-dashboard",
-                name: "Mock Response (JSON)",
-                content: `{\n  "success": true,\n  "message": "Dashboard summary retrieved successfully.",\n  "data": {\n    "activeSessionsCount": 142,\n    "totalSlots": 500,\n    "occupiedSlots": 320,\n    "availableSlots": 170,\n    "maintenanceSlots": 10,\n    "todayRevenue": 4850000.00,\n    "alerts": {\n      "pendingLostCards": 3,\n      "pendingPlateMismatches": 2\n    },\n    "floorSummaries": [\n      {\n        "floorId": 1,\n        "floorName": "Floor G",\n        "totalSlots": 150,\n        "occupiedSlots": 120,\n        "availableSlots": 30\n      },\n      {\n        "floorId": 2,\n        "floorName": "Floor B1",\n        "totalSlots": 150,\n        "occupiedSlots": 90,\n        "availableSlots": 60\n      }\n    ]\n  },\n  "errors": null,\n  "timestamp": "2026-07-08T01:07:00+07:00"\n}`
+                content: `Method: GET\nPath: /api/support/dashboard?startDate=2026-07-01&endDate=2026-07-17\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "data": {\n    "summary": {\n      "totalIncidents": 142,\n      "pendingIncidents": 12,\n      "processingIncidents": 8,\n      "resolvedIncidents": 122,\n      "activeLostCardCases": 5,\n      "paymentsUnderReviewCount": 3\n    },\n    "efficiencyKPI": {\n      "avgResolutionTimeMinutes": 45.2,\n      "longestResolutionTimeMinutes": 320.0\n    },\n    "incidentDistribution": [\n      { "category": "Lost_Card", "count": 28 },\n      { "category": "Gate_Failure", "count": 84 },\n      { "category": "Payment_Issue", "count": 22 },\n      { "category": "Other", "count": 8 }\n    ],\n    "unresolvedCriticalIncidents": [\n      {\n        "id": "1a3deb4d-3b7d-4bad-9bdd-2b0d7b3dcb01",\n        "category": "Payment_Issue",\n        "description": "Payment mismatch for Order 123456. Expected 30k but got 20k",\n        "severity": "Critical",\n        "reportedAt": "2026-07-17T15:30:00Z"\n      }\n    ]\n  }\n}`
               }
             ],
             testCases: [
               {
-                id: "tc-dashboard-01",
-                title: "Verify authorized client (Manager) can access Support Dashboard successfully",
-                type: "api",
-                precondition: "The calling client is fully authenticated and possesses the role: MANAGER.",
+                id: "tc-support-dashboard-success",
+                title: "Verify Manager can pull Support Dashboard with custom valid dates",
+                type: "integration",
+                precondition: "Người dùng đăng nhập thành công bằng tài khoản Manager.",
                 steps: [
-                  "Dispatch an HTTP request: GET /api/support/dashboard alongside the valid Bearer token."
+                  "Gửi request GET tới /api/support/dashboard?startDate=2026-06-01&endDate=2026-06-15."
                 ],
-                expectedResult: "HTTP 200 OK is returned, where success equals true and the operational counters match the database state.",
+                expectedResult: "HTTP 200 OK. Phản hồi trả về đúng định dạng JSON chứa các mục summary, efficiencyKPI, và unresolvedCriticalIncidents.",
                 status: "not_started"
               },
               {
-                id: "tc-dashboard-02",
-                title: "Verify unauthorized role is rejected when accessing Support Dashboard",
+                id: "tc-support-dashboard-date-exceeded",
+                title: "Verify query validation fails if date range exceeds 90 days",
                 type: "api",
-                precondition: "The user acts anonymously or holds an insufficient role such as DRIVER or STAFF.",
+                precondition: "Token Admin hợp lệ.",
                 steps: [
-                  "Invoke endpoint GET /api/support/dashboard without a secure token or with a standard Staff token."
+                  "Gửi request GET tới /api/support/dashboard?startDate=2026-01-01&endDate=2026-05-01 (4 tháng)."
                 ],
-                expectedResult: "HTTP 403 Forbidden or 401 Unauthorized is returned, blocking illegal access to high-level metrics.",
+                expectedResult: "HTTP 400 Bad Request kèm mã lỗi DATE_RANGE_EXCEEDED_MAX_LIMIT.",
+                status: "not_started"
+              },
+              {
+                id: "tc-support-dashboard-unauthorized",
+                title: "Verify non-authorized users (Staff / Guest) are strictly blocked",
+                type: "api",
+                precondition: "Token có role là Staff hoặc không có Token.",
+                steps: [
+                  "Gửi request GET tới /api/support/dashboard."
+                ],
+                expectedResult: "HTTP 403 Forbidden hoặc HTTP 401 Unauthorized.",
                 status: "not_started"
               }
             ],
             doneCriteria: [
-              { id: "dc-dashboard-01", content: "Endpoints match the path specifications of /api/support/dashboard.", checked: false },
-              { id: "dc-dashboard-02", content: "Identity checks validate Manager and Admin privileges successfully.", checked: false },
-              { id: "dc-dashboard-03", content: "Execution flows are read-only, avoiding row locks or state alterations on core records.", checked: false },
-              { id: "dc-dashboard-04", content: "Response structures conform precisely to the standard project ApiResponse entity wrapper.", checked: false }
-            ]
+              { id: "dc-support-dashboard-contract", content: "API contract is documented in this node.", checked: true },
+              { id: "dc-support-dashboard-roles", content: "Required clients/roles (Manager, Admin) are assigned.", checked: true },
+              { id: "dc-support-dashboard-validation", content: "Date range validation logic is strictly enforced (max 90 days query limit).", checked: true },
+              { id: "dc-support-dashboard-isolation", content: "Data isolation between Admin (system-wide) and Manager (building-level) is validated.", checked: true },
+              { id: "dc-support-dashboard-underreview", content: "UnderReview payment alerts are aggregated and displayed accurately.", checked: true },
+              { id: "dc-support-dashboard-json-format", content: "Response payload uses the global standardized success/error JSON response structure.", checked: true },
+              { id: "dc-support-dashboard-ui-states", content: "UI states (idle, loading, success, empty, error) are fully documented.", checked: true },
+              { id: "dc-support-dashboard-tests", content: "At least three automated tests are written and pass.", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing project structures in the Spring Boot Support API workspace. Follow established package naming conventions (e.g., com.parking.support.controller, service, dto).\nMark service class/methods handling this dashboard with @Transactional(readOnly = true) to avoid transaction lock contention on the shared DB.\nWrite database queries using optimized JPQL or Spring Data native @Query annotations. Minimize loading entire entity graphs; construct flat Projection/DTO classes directly from SQL select clauses.\nImplement a lightweight caching abstraction (e.g., Spring @Cacheable using Caching Provider Caffeine) with a TTL of 60 seconds to safeguard system availability.\nCheck and run existing tests before adding dashboard-related test code under /src/test/java.\nRun clean package builds and verify that all dashboard integration tests pass successfully."
           },
           {
             id: "leaf-rep-revenue",
             title: "Revenue Report",
             type: "leaf_feature",
-            clients: ["MANAGER", "ADMIN"],
-            status: "ready",
+            status: "in_progress",
             priority: "high",
-            tags: ["report", "revenue", "financial", "read-only"],
-            summary: "Generates financial breakdowns for parking building operations within a chosen date range.",
-            ownerService: "Spring Boot Support API",
-            endpoints: ["GET /api/support/reports/revenue"],
-            objective: "Generates financial breakdowns for parking building operations within a chosen date range. This component aggregates financial data across two separate operational revenue models: casual short-stay vehicle entry tariffs and long-term pre-allocated Monthly Pass subscription enrollments/renewals.",
+            clients: ["Manager", "Admin"],
+            tags: ["reporting", "revenue", "excel", "analytics"],
+            summary: "Cung cấp API truy xuất và tổng hợp dữ liệu doanh thu của bãi đỗ xe trong một khoảng thời gian nhất định.",
+            objective: "Cung cấp API truy xuất và tổng hợp dữ liệu doanh thu của bãi đỗ xe trong một khoảng thời gian nhất định. API hỗ trợ trả về dữ liệu dưới dạng JSON (để vẽ biểu đồ, hiển thị lưới dữ liệu trên web) hoặc xuất trực tiếp ra file Excel (Spreadsheet) phục vụ công tác kế toán, đối soát. Báo cáo sẽ bóc tách doanh thu chi tiết theo từng loại phương tiện (Car, Motorbike, Bicycle) và phương thức thanh toán (Cash, Online_PayOS).",
             inScope: [
-              "Filter and calculate data matching successful payment flows (PAID) that fall within the specified startDate and endDate boundaries.",
-              "Separate revenue streams by category classification: short-stay tickets (CASUAL) and monthly subscription passes (MONTHLY_PASS).",
-              "Aggregate data points grouped by individual days to enable frontend line or bar graph calculations."
+              "Gom nhóm và tính tổng doanh thu dựa trên các giao dịch (Payments) có trạng thái là Completed.",
+              "Cung cấp bộ lọc theo khoảng thời gian (startDate, endDate).",
+              "Phân loại doanh thu theo phương thức thanh toán và loại phương tiện.",
+              "Trả về chuỗi dữ liệu (Time-series data) theo từng ngày để vẽ biểu đồ xu hướng doanh thu.",
+              "Hỗ trợ tham số format=excel để Stream trực tiếp dữ liệu dạng file .xlsx về client."
             ],
             outOfScope: [
-              "Monetary transaction refunds or invoice cancellations (handled exclusively through the transactional workflow of the .NET Core API engine)."
+              "Tính toán các khoản chi phí vận hành (điện, nước, lương nhân viên) hoặc lợi nhuận ròng.",
+              "Thay đổi, chỉnh sửa trạng thái hóa đơn (Read-only API)."
             ],
             permissions: [
-              { role: "MANAGER", permission: "Granted read access to comprehensive financial reporting and revenue data streams for performance audits." },
-              { role: "ADMIN", permission: "Granted access to view all financial data metrics for auditing across different backend databases." }
+              { role: "Admin", permission: "Read-Only - Được phép xem báo cáo doanh thu tổng của toàn bộ hệ thống hoặc lọc theo từng bãi đỗ." },
+              { role: "Manager", permission: "Read-Only - Chỉ được phép xem báo cáo doanh thu thuộc bãi đỗ/tòa nhà mà mình được phân quyền quản lý." }
             ],
             businessRules: [
-              "Separation of Read Concerns: Heavy aggregation actions (SUM, COUNT) run on optimized reporting queries in the Spring Boot Support API, keeping database resource usage separate from the checkout transaction workloads handled by the .NET Core API.",
-              "Timezone Standardization: Parameters passed by the client (startDate, endDate) must convert cleanly to ISO 8601 UTC before executing PostgreSQL query lookups to prevent data grouping errors across varying timezone bounds."
+              "Completed Transactions Only: Báo cáo doanh thu CHỈ được tính dựa trên các bản ghi Payments có Status = 'Completed'. Các trạng thái Pending, Failed, hoặc UnderReview bị loại trừ hoàn toàn.",
+              "Date Range Limitation: Khoảng thời gian truy vấn tối đa cho một lần gọi API (hiển thị JSON) là 1 năm (365 ngày) để tối ưu hiệu năng DB.",
+              "Read-Only Transaction Isolation: Các truy vấn bắt buộc sử dụng @Transactional(readOnly = true) để tránh gây lock bảng Payments làm ảnh hưởng đến luồng thanh toán thời gian thực của hệ thống."
             ],
-            dbExistingTables: ["payments", "parking_sessions", "monthly_passes"],
+            dbExistingTables: ["Payments", "ParkingSessions"],
+            dbNewTablesSql: "",
             dbRelationships: [
-              "payments: Retrieve amount, payment_method, status, and created_at fields to compile overall sum evaluations.",
-              "parking_sessions: Evaluate historical tickets to extract casual billing values matching CASUAL classifications.",
-              "monthly_passes: Identify invoice components tied to subscription additions/renewals matching MONTHLY_PASS criteria."
+              "Sử dụng INNER JOIN giữa Payments và ParkingSessions thông qua SessionId."
             ],
             validationRules: [
-              { field: "startDate", rule: "Must be provided and match ISO 8601 UTC format constraints.", errorMessage: "START_DATE_REQUIRED" },
-              { field: "endDate", rule: "Must be provided and fall on a timestamp equal to or greater than startDate.", errorMessage: "END_DATE_MUST_BE_AFTER_START_DATE" }
+              { field: "startDate", rule: "Định dạng yyyy-MM-dd. Bắt buộc truyền.", errorMessage: "INVALID_START_DATE" },
+              { field: "endDate", rule: "Định dạng yyyy-MM-dd. Bắt buộc >= startDate.", errorMessage: "INVALID_END_DATE" },
+              { field: "Range", rule: "endDate - startDate <= 365 ngày.", errorMessage: "DATE_RANGE_EXCEEDS_1_YEAR" },
+              { field: "format", rule: "Chỉ nhận json hoặc excel. Mặc định là json.", errorMessage: "INVALID_FORMAT_TYPE" }
             ],
             securityRules: [
-              "Explicit check evaluating the identity profile for either MANAGER or ADMIN roles before reading rows.",
-              "Prevent SQL Injection by using named parameter queries or JPA Repository binding methods; raw concatenation of date text strings into query syntax is forbidden."
+              "Role Validation: Kiểm tra quyền Manager và Admin.",
+              "Data Isolation: Manager chỉ được phép Query các bản ghi Payments thuộc các ParkingSessions nằm trong khu vực/tòa nhà của họ."
             ],
             logEvents: [
-              "Record analytical query executions (REVENUE_REPORT_VIEWED) to audit trails to maintain transparency regarding access to corporate finance logs."
+              "Log khi có request xuất file Excel thành công (ghi rõ thời gian thực thi để giám sát hiệu năng)."
             ],
-            noLogEvents: [],
-            integrationPoints: [],
-            uiPage: "/manager/reports/revenue",
-            uiComponents: "Frontend analytical financial growth tracking panels.",
-            uiStateLoading: "Renders a centralized progress loader over chart frames to signal heavy background data crunching.",
-            uiStateEmpty: "If no successful transactions match the selected dates, render an empty dashboard indicator showing: 'No revenue records found for this period.'",
-            uiStateError: "Display validation errors if date bounds are invalid.",
-            uiStateSuccess: "Passes compiled array variables into frontend plotting utilities (e.g., Recharts or Chart.js) to render structured financial breakdowns.",
-            notes: "Shared Enum Values: PaymentStatus: PAID.",
-            dependencies: [],
-            risks: [],
+            noLogEvents: [
+              "Nội dung chi tiết của báo cáo hoặc Token xác thực."
+            ],
+            integrationPoints: [
+              { system: "Internal Library", responsibility: "Sử dụng thư viện Apache POI (chuẩn công nghiệp của hệ sinh thái Java/Spring Boot) để tạo và stream file Excel in-memory." }
+            ],
+            uiComponents: "Page: /admin/revenue-report. Components: Date Range Picker, Thẻ tổng quan (Tổng doanh thu), Biểu đồ hình tròn (phân bổ theo xe/phương thức thanh toán), Biểu đồ đường (Line chart xu hướng hàng ngày). Interactions: Nút 'Export to Excel' để tải file .xlsx kèm Loading Spinner.",
+            uiStateSuccess: "When the query is successful, the dashboard renders overview metrics, pie charts for vehicles/methods, and a Daily trends line chart. Excel file download starts when format=excel is used.",
+            endpoints: ["GET /api/support/reports/revenue"],
+            ownerService: "Spring Boot Support API",
             apiContracts: [
               {
-                id: "api-contract-revenue-report",
-                name: "GET /api/support/reports/revenue",
-                content: `Method: GET\nPath: /api/support/reports/revenue\nQuery Parameters:\n  startDate: "2026-06-01T00:00:00Z" (Required)\n  endDate: "2026-06-30T23:59:59Z" (Required)\nHeaders:\n  Authorization: Bearer <token>\n\nSuccess Response (200 OK):\nSee Data Contracts.\n\nValidation Error Response (400 Bad Request):\n{\n  "success": false,\n  "message": "Validation failed.",\n  "data": null,\n  "errors": [\n    { "field": "endDate", "message": "END_DATE_MUST_BE_AFTER_START_DATE" }\n  ],\n  "timestamp": "2026-07-08T01:07:00+07:00"\n}`
-              }
-            ],
-            dataContracts: [
+                id: "contract-revenue-report-json",
+                name: "GET /api/support/reports/revenue (JSON)",
+                content: `Method: GET\nPath: /api/support/reports/revenue?startDate=2026-07-01&endDate=2026-07-17&format=json\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "data": {\n    "summary": {\n      "totalRevenue": 15500000.00,\n      "totalTransactions": 450\n    },\n    "revenueByMethod": [\n      { "method": "Online_PayOS", "amount": 10500000.00 },\n      { "method": "Cash", "amount": 5000000.00 }\n    ],\n    "revenueByVehicleType": [\n      { "vehicleType": "Car", "amount": 12000000.00 },\n      { "vehicleType": "Motorbike", "amount": 3500000.00 }\n    ],\n    "dailyTrends": [\n      { "date": "2026-07-01", "amount": 1200000.00 },\n      { "date": "2026-07-02", "amount": 950000.00 }\n    ]\n  }\n}`
+              },
               {
-                id: "mock-data-revenue-report",
-                name: "Mock Response (JSON)",
-                content: `{\n  "success": true,\n  "message": "Revenue report retrieved successfully.",\n  "data": {\n    "totalRevenue": 125000000.00,\n    "casualRevenueTotal": 75000000.00,\n    "monthlyPassRevenueTotal": 50000000.00,\n    "items": [\n      {\n        "date": "2026-06-01",\n        "casualRevenue": 2500000.00,\n        "monthlyPassRevenue": 2000000.00,\n        "dailyTotal": 4500000.00\n      },\n      {\n        "date": "2026-06-02",\n        "casualRevenue": 3000000.00,\n        "monthlyPassRevenue": 1500000.00,\n        "dailyTotal": 4500000.00\n      }\n    ]\n  },\n  "errors": null,\n  "timestamp": "2026-07-08T01:07:00+07:00"\n}`
+                id: "contract-revenue-report-excel",
+                name: "GET /api/support/reports/revenue (Excel)",
+                content: `Method: GET\nPath: /api/support/reports/revenue?startDate=2026-07-01&endDate=2026-07-17&format=excel\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\nHeaders:\n  Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\n  Content-Disposition: attachment; filename="Revenue_Report_20260701_20260717.xlsx"\nBody: [Binary Stream]`
               }
             ],
             testCases: [
               {
-                id: "tc-rev-01",
+                id: "tc-revenue-report-manager-success",
                 title: "Verify authorized client (Manager) can access Revenue Report successfully",
-                type: "api",
-                precondition: "Manager holds a legitimate non-expired authentication token.",
+                type: "integration",
+                precondition: "Client is authenticated with role: Manager",
                 steps: [
-                  "Call: GET /api/support/reports/revenue?startDate=2026-06-01T00:00:00Z&endDate=2026-06-02T23:59:59Z."
+                  "Authenticate user as Manager",
+                  "Invoke endpoint: GET /api/support/reports/revenue?startDate=2026-07-01&endDate=2026-07-17&format=json"
                 ],
-                expectedResult: "Returns 200 OK where totalRevenue mathematically matches compiled payments for the specified range.",
+                expectedResult: "Request succeeds and returns the correct JSON payload with summary, revenueByMethod, and dailyTrends.",
                 status: "not_started"
               },
               {
-                id: "tc-rev-02",
+                id: "tc-revenue-report-unauthorized",
                 title: "Verify unauthorized role is rejected when accessing Revenue Report",
                 type: "api",
-                precondition: "The calling identity is assigned a standard guest or driver account profile (DRIVER).",
+                precondition: "User is anonymous or lacks required role (e.g., Staff)",
                 steps: [
-                  "Attempt to fetch financial metrics using the driver's security token."
+                  "Attempt to invoke endpoint: GET /api/support/reports/revenue without token/role"
                 ],
-                expectedResult: "Returns a 403 Forbidden status code, blocking access to restricted financial data.",
+                expectedResult: "Request is blocked and returns 401 Unauthorized or 403 Forbidden.",
+                status: "not_started"
+              },
+              {
+                id: "tc-revenue-report-excel-export",
+                title: "Verify export endpoint returns correct spreadsheet binary type",
+                type: "integration",
+                precondition: "Client is authenticated with role: Admin",
+                steps: [
+                  "Invoke endpoint: GET /api/support/reports/revenue?startDate=2026-07-01&endDate=2026-07-17&format=excel"
+                ],
+                expectedResult: "Response code is 200 OK. Headers contain Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet. Body contains valid binary data.",
                 status: "not_started"
               }
             ],
             doneCriteria: [
-              { id: "dc-rev-01", content: "Financial data outputs align with the date boundaries submitted in query parameters.", checked: false },
-              { id: "dc-rev-02", content: "Computed sums match database transactional entries in the payments tracking table.", checked: false },
-              { id: "dc-rev-03", content: "Formatted JSON results use the ApiResponse structure required across the engineering ecosystem.", checked: false }
-            ]
+              { id: "dc-revenue-report-contract", content: "API contract is documented in this node.", checked: true },
+              { id: "dc-revenue-report-roles", content: "Required clients/roles are assigned and data isolation logic is strictly defined.", checked: true },
+              { id: "dc-revenue-report-business-rules", content: "Business rules (calculate based on 'Completed' payments only) are documented.", checked: true },
+              { id: "dc-revenue-report-json", content: "Success response uses common API response format for JSON.", checked: true },
+              { id: "dc-revenue-report-excel", content: "Excel export mechanism (format=excel) is fully defined.", checked: true },
+              { id: "dc-revenue-report-error", content: "Error response is clear and does not leak sensitive data.", checked: true },
+              { id: "dc-revenue-report-tests", content: "At least three test cases (including the binary export test) are defined.", checked: true },
+              { id: "dc-revenue-report-markdown", content: "Feature can be exported as AI-readable Markdown.", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing Spring Boot Support API project structure.\nEnsure you add org.apache.poi:poi-ooxml to pom.xml or build.gradle if not already present for Excel generation.\nUse Spring Data JPA @Query or JdbcTemplate to perform heavy grouping (GROUP BY) directly at the database level rather than fetching all records into Java memory.\nEnsure the endpoint returns ResponseEntity<Resource> or streams directly to HttpServletResponse when format=excel is requested to avoid OutOfMemory (OOM) errors on large datasets.\nApply @Transactional(readOnly = true) to the service methods handling report generation.\nCheck existing tests before adding new ones, implement the Excel export test case properly."
           },
           {
             id: "leaf-rep-traffic",
             title: "Traffic Report",
             type: "leaf_feature",
-            clients: ["MANAGER", "ADMIN"],
-            status: "ready",
+            status: "in_progress",
             priority: "medium",
-            tags: ["report", "traffic", "flow", "read-only"],
-            summary: "Builds automated reporting structures highlighting vehicle movement flows throughout the facility.",
-            ownerService: "Spring Boot Support API",
-            endpoints: ["GET /api/support/reports/traffic"],
-            objective: "Builds automated reporting structures highlighting vehicle movement flows throughout the facility. This feature breaks down the total volume of incoming vehicles (Inflow/Entries) alongside outgoing vehicles (Outflow/Exits) within scheduled monitoring intervals.",
+            clients: ["Manager", "Admin"],
+            tags: ["reporting", "traffic", "excel", "analytics"],
+            summary: "Cung cấp API để truy xuất và phân tích lưu lượng phương tiện ra/vào bãi đỗ xe trong một khoảng thời gian cụ thể.",
+            objective: "Cung cấp API để truy xuất và phân tích lưu lượng phương tiện ra/vào bãi đỗ xe trong một khoảng thời gian cụ thể. Báo cáo này giúp ban quản lý nắm bắt được tổng số lượt xe luân chuyển, phân bổ theo loại phương tiện (Car, Motorbike, Bicycle), và đặc biệt là phân tích xu hướng lưu lượng theo từng khung giờ (Hourly Trends) để xác định các khung giờ cao điểm (Peak Hours), từ đó tối ưu hóa việc phân bổ nhân sự trực chốt.",
             inScope: [
-              "Calculate overall facility inflows by parsing timestamp strings inside the entry_time field of the parking_sessions table.",
-              "Calculate vehicle exit activity by analyzing data trends inside the exit_time field of the parking_sessions database table.",
-              "Provide enhanced filtering based on specific vehicle categories via the vehicleTypeId query parameter.",
-              "Group volume outputs into hourly or daily buckets based on the requested date range."
+              "Đếm tổng số lượt xe vào (Check-in) và lượt xe ra (Check-out) trong khoảng thời gian được chọn.",
+              "Thống kê lưu lượng phân bổ theo từng loại phương tiện (VehicleType).",
+              "Phân tích và nhóm dữ liệu theo từng giờ trong ngày để tìm ra khung giờ cao điểm.",
+              "Hỗ trợ định dạng trả về JSON để Frontend vẽ biểu đồ.",
+              "Hỗ trợ tham số format=excel để xuất báo cáo dạng file .xlsx."
             ],
             outOfScope: [
-              "Manual modifications to entry/exit timestamps within this analytical context (timestamps are treated as immutable log entries)."
+              "Truy xuất hình ảnh camera thời gian thực của các lượt xe ra/vào.",
+              "Thao tác đóng/mở barie (thuộc về luồng xử lý Transactional của .NET Core)."
             ],
             permissions: [
-              { role: "MANAGER", permission: "Authorized to evaluate traffic spikes to optimize lane management staffing across check-in lanes." },
-              { role: "ADMIN", permission: "Full administrative clearance to extract and evaluate mobility logs." }
+              { role: "Admin", permission: "Read-Only - Được phép xem báo cáo lưu lượng của tất cả các bãi đỗ xe trong hệ thống." },
+              { role: "Manager", permission: "Read-Only - Chỉ được phép xem báo cáo lưu lượng của bãi đỗ xe thuộc quyền quản lý." }
             ],
             businessRules: [
-              "Database Index Optimization: Because parking_sessions accumulates millions of rows over time, the Spring Boot Support API leverages database indexes on the entry_time and exit_time columns to ensure query execution stays under 200ms, preventing full-table scans that could degrade database responsiveness."
+              "Data Source: Dữ liệu báo cáo được tổng hợp chủ yếu từ bảng ParkingSessions dựa trên CheckInTime và CheckOutTime.",
+              "Date Range Limitation: Khoảng thời gian truy vấn startDate và endDate không được vượt quá 365 ngày để bảo vệ hiệu năng Database.",
+              "Read-Only Transaction Isolation: Bắt buộc sử dụng @Transactional(readOnly = true) tại tầng Service để tối ưu bộ nhớ và không block các insert mới từ hệ thống IoT.",
+              "Timezone Handling: Mọi tính toán gom nhóm theo giờ/ngày (GROUP BY) phải được xử lý cẩn thận theo múi giờ vận hành của bãi đỗ xe (mặc định là Asia/Ho_Chi_Minh hoặc UTC+7)."
             ],
-            dbExistingTables: ["parking_sessions", "vehicle_types"],
-            dbRelationships: [
-              "parking_sessions: Analyze and count entries via entry_time, exit_time, and vehicle_type_id.",
-              "vehicle_types: Validate the existence of specific type IDs if passed by the client."
-            ],
+            dbExistingTables: ["ParkingSessions"],
+            dbNewTablesSql: "",
+            dbRelationships: [],
             validationRules: [
-              { field: "startDate / endDate", rule: "Mandatory fields conforming to standard ISO time strings.", errorMessage: "INVALID_DATE_FORMAT" },
-              { field: "vehicleTypeId", rule: "If provided, the value must match a valid ID within the vehicle category configuration matrix.", errorMessage: "VEHICLE_TYPE_NOT_FOUND" }
+              { field: "startDate", rule: "Định dạng yyyy-MM-dd. Bắt buộc truyền.", errorMessage: "INVALID_START_DATE" },
+              { field: "endDate", rule: "Định dạng yyyy-MM-dd. Bắt buộc lớn hơn hoặc bằng startDate.", errorMessage: "INVALID_END_DATE" },
+              { field: "Range", rule: "endDate - startDate <= 365 ngày.", errorMessage: "DATE_RANGE_EXCEEDS_MAX_LIMIT" },
+              { field: "format", rule: "Chỉ nhận giá trị json hoặc excel. Mặc định là json.", errorMessage: "INVALID_FORMAT_TYPE" }
             ],
             securityRules: [
-              "Strict JWT authentication token parsing on every request. Unauthenticated or unauthorized requests must be rejected immediately with an HTTP 401 or 403 status code."
+              "Role-Based Access: Chỉ chấp nhận JWT có claim role là Manager hoặc Admin.",
+              "Tenant Isolation: Dữ liệu trả về cho Manager phải được tự động thêm điều kiện WHERE BuildingId = [Manager_Building_Id] ở mọi truy vấn SQL."
             ],
             logEvents: [
-              "Log the reporting event (TRAFFIC_REPORT_VIEWED) with details of the applied filter parameters and the active user ID."
+              "Ghi log khi hệ thống thực hiện xuất file Excel, bao gồm các thông số thời gian lọc và định danh người dùng."
             ],
-            noLogEvents: [],
-            integrationPoints: [],
-            uiPage: "/manager/reports/traffic",
-            uiComponents: "Dual-bar chart layout to contrast inflow patterns against exit patterns.",
-            uiStateLoading: "Renders a semi-transparent loading state over chart frames while the background request resolves.",
-            uiStateEmpty: "N/A",
-            uiStateError: "Display validation errors.",
-            uiStateSuccess: "Feeds array data into a dual-bar chart layout to contrast inflow patterns against exit patterns.",
-            notes: "Must optimize queries with DB indexes.",
-            dependencies: [],
-            risks: [],
+            noLogEvents: [
+              "Không log chi tiết biển số xe (License Plate) nếu không có sự cho phép đặc biệt. Không log token hoặc mật khẩu."
+            ],
+            integrationPoints: [
+              { system: "Apache POI", responsibility: "Tích hợp thư viện Java Apache POI để khởi tạo, định dạng và stream workbook Excel (.xlsx) xuống Client." }
+            ],
+            uiComponents: "Page: /admin/traffic-report. Components: Bộ lọc khoảng thời gian (Date Range Picker); Biểu đồ đường (Line Chart) theo giờ tìm điểm Peak; Biểu đồ cột (Bar Chart) theo ngày; Biểu đồ tròn (Pie Chart) tỷ trọng phương tiện; Nút 'Export to Excel'.",
+            uiStateSuccess: "When the query succeeds, the charts (line, bar, pie) render accurately on frontend. Excel download triggers automatically with binary stream.",
+            endpoints: ["GET /api/support/reports/traffic"],
+            ownerService: "Spring Boot Support API",
             apiContracts: [
               {
-                id: "api-contract-traffic-report",
-                name: "GET /api/support/reports/traffic",
-                content: `Method: GET\nPath: /api/support/reports/traffic\nQuery Parameters:\n  startDate: "2026-07-01T00:00:00Z" (Required)\n  endDate: "2026-07-07T23:59:59Z" (Required)\n  vehicleTypeId: 1 (Optional - isolate tracking to a singular vehicle type)\nHeaders:\n  Authorization: Bearer <token>\n\nSuccess Response (200 OK):\nSee Data Contracts.`
-              }
-            ],
-            dataContracts: [
+                id: "contract-traffic-report-json",
+                name: "GET /api/support/reports/traffic (JSON)",
+                content: `Method: GET\nPath: /api/support/reports/traffic?startDate=2026-07-01&endDate=2026-07-17&format=json\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "data": {\n    "summary": {\n      "totalCheckIns": 1450,\n      "totalCheckOuts": 1420,\n      "currentlyActive": 30\n    },\n    "trafficByVehicleType": [\n      { "vehicleType": "Car", "checkIns": 450, "checkOuts": 440 },\n      { "vehicleType": "Motorbike", "checkIns": 900, "checkOuts": 880 },\n      { "vehicleType": "Bicycle", "checkIns": 100, "checkOuts": 100 }\n    ],\n    "hourlyPeakTrends": [\n      { "hourOfDay": 7, "avgCheckIns": 150, "avgCheckOuts": 20 },\n      { "hourOfDay": 8, "avgCheckIns": 200, "avgCheckOuts": 50 },\n      { "hourOfDay": 17, "avgCheckIns": 30, "avgCheckOuts": 220 }\n    ],\n    "dailyTraffic": [\n      { "date": "2026-07-01", "checkIns": 120, "checkOuts": 115 },\n      { "date": "2026-07-02", "checkIns": 135, "checkOuts": 135 }\n    ]\n  }\n}`
+              },
               {
-                id: "mock-data-traffic-report",
-                name: "Mock Response (JSON)",
-                content: `{\n  "success": true,\n  "message": "Traffic report retrieved successfully.",\n  "data": {\n    "totalEntries": 1500,\n    "totalExits": 1420,\n    "items": [\n      {\n        "timeLabel": "2026-07-01",\n        "entriesCount": 700,\n        "exitsCount": 650\n      },\n      {\n        "timeLabel": "2026-07-02",\n        "entriesCount": 800,\n        "exitsCount": 770\n      }\n    ]\n  },\n  "errors": null,\n  "timestamp": "2026-07-08T01:07:00+07:00"\n}`
+                id: "contract-traffic-report-excel",
+                name: "GET /api/support/reports/traffic (Excel)",
+                content: `Method: GET\nPath: /api/support/reports/traffic?startDate=2026-07-01&endDate=2026-07-17&format=excel\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\nHeaders:\n  Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\n  Content-Disposition: attachment; filename="Traffic_Report_20260701_20260717.xlsx"\nBody: [Binary Stream]`
               }
             ],
             testCases: [
               {
-                id: "tc-traffic-01",
+                id: "tc-traffic-report-manager-success",
                 title: "Verify authorized client (Manager) can access Traffic Report successfully",
-                type: "api",
-                precondition: "Manager holds a legitimate authentication profile and valid token.",
+                type: "integration",
+                precondition: "Client is authenticated with role: Manager",
                 steps: [
-                  "Call: GET /api/support/reports/traffic?startDate=2026-07-01T00:00:00Z&endDate=2026-07-07T23:59:59Z."
+                  "Authenticate user as Manager",
+                  "Invoke endpoint: GET /api/support/reports/traffic?startDate=2026-07-01&endDate=2026-07-02&format=json"
                 ],
-                expectedResult: "HTTP 200 OK response containing discrete daily counts for both entriesCount and exitsCount.",
+                expectedResult: "Request succeeds and returns the correct JSON payload containing summary, trafficByVehicleType, hourlyPeakTrends.",
                 status: "not_started"
               },
               {
-                id: "tc-traffic-02",
+                id: "tc-traffic-report-unauthorized",
                 title: "Verify unauthorized role is rejected when accessing Traffic Report",
                 type: "api",
-                precondition: "Anonymous request missing secure authorization headers.",
+                precondition: "User is anonymous or lacks required role (e.g. Staff)",
                 steps: [
-                  "Call the endpoint without providing an Authorization header."
+                  "Attempt to invoke endpoint: GET /api/support/reports/traffic without token/role"
                 ],
-                expectedResult: "The security middleware blocks execution, returning an HTTP 401 Unauthorized status.",
+                expectedResult: "Request is blocked and returns 401 Unauthorized or 403 Forbidden.",
+                status: "not_started"
+              },
+              {
+                id: "tc-traffic-report-excel-export",
+                title: "Verify export endpoint returns correct spreadsheet binary type",
+                type: "integration",
+                precondition: "Client is authenticated with role: Admin",
+                steps: [
+                  "Invoke endpoint: GET /api/support/reports/traffic?startDate=2026-07-01&endDate=2026-07-02&format=excel"
+                ],
+                expectedResult: "Response code is 200 OK. Headers contain Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.",
                 status: "not_started"
               }
             ],
             doneCriteria: [
-              { id: "dc-traffic-01", content: "Aggregated metrics match database record counts when validating entry/exit timestamps manually.", checked: false },
-              { id: "dc-traffic-02", content: "API performance stays snappy, resolving heavy lookups in under 200ms due to optimized database indexes.", checked: false }
-            ]
+              { id: "dc-traffic-report-contract", content: "API contract is documented in this node, including json and excel output formats.", checked: true },
+              { id: "dc-traffic-report-roles", content: "Required clients/roles (Admin, Manager) are assigned and tenant isolation is defined.", checked: true },
+              { id: "dc-traffic-report-business-rules", content: "Business rules regarding Date Range limitations and timezone handling are visible in AI export.", checked: true },
+              { id: "dc-traffic-report-json", content: "Success response uses common API response format.", checked: true },
+              { id: "dc-traffic-report-error", content: "Error response is clear and does not leak sensitive data.", checked: true },
+              { id: "dc-traffic-report-tests", content: "At least three test cases are defined, explicitly covering the Excel export test.", checked: true },
+              { id: "dc-traffic-report-markdown", content: "Feature can be exported as AI-readable Markdown.", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing project structure within the Spring Boot Support API.\nReuse the Excel generation abstraction (e.g., Apache POI wrapper utilities) implemented previously in the Revenue Report if applicable.\nUse Spring Data @Query with native SQL or JPQL to execute COUNT, GROUP BY operations for the hourlyPeakTrends directly in PostgreSQL, avoiding fetching massive amounts of raw ParkingSessions rows into application memory.\nApply @Transactional(readOnly = true) to all read operations in the service layer.\nStream the .xlsx response directly via the HttpServletResponse output stream to prevent OutOfMemory (OOM) issues on large data ranges.\nCheck existing tests before adding new ones, implement the specified integration tests."
           },
           {
             id: "leaf-rep-occupancy",
             title: "Occupancy Report",
             type: "leaf_feature",
-            clients: ["MANAGER", "ADMIN"],
-            status: "ready",
+            status: "in_progress",
             priority: "medium",
-            tags: ["report", "occupancy", "utilization", "read-only"],
-            summary: "Provides analytical breakdowns detailing space utilization efficiency over time.",
-            ownerService: "Spring Boot Support API",
-            endpoints: ["GET /api/support/reports/occupancy"],
-            objective: "Provides analytical breakdowns detailing space utilization efficiency over time. This functionality allows the management team to monitor space utilization trends, identify peak utilization windows, and analyze vehicle stay durations to optimize slot allocations.",
+            clients: ["Manager", "Admin"],
+            tags: ["reporting", "occupancy", "excel", "analytics"],
+            summary: "Cung cấp API phân tích hiệu suất sử dụng vị trí đỗ (Occupancy Rate) thời gian thực và lịch sử biến động mật độ đỗ xe theo ngày/giờ.",
+            objective: "Cung cấp API phân tích hiệu suất sử dụng vị trí đỗ (Occupancy Rate) thời gian thực và lịch sử biến động mật độ đỗ xe theo ngày/giờ. API hỗ trợ trả về dữ liệu cấu trúc JSON phục vụ vẽ biểu đồ trực quan (mật độ hiện tại, xu hướng lấp đầy) và xuất file báo cáo Excel chi tiết phục vụ cho việc lập kế hoạch vận hành và quy hoạch bãi đỗ.",
             inScope: [
-              "Compute space utilization percentages by analyzing allocation data from the slots and parking_sessions tables over a designated date range.",
-              "Calculate the average vehicle stay duration, normalized to minutes.",
-              "Support granular filtering by Floor (floorId) or Area (areaId) to evaluate specific facility zones."
+              "Tính toán các chỉ số sử dụng mặt bằng thời gian thực: Tổng số chỗ đỗ, số chỗ đang trống, số chỗ đang đỗ và tỷ lệ lấp đầy hiện tại (Real-time Occupancy Rate).",
+              "Thống kê hiệu suất sử dụng chỗ đỗ lịch sử (Historical Occupancy) theo khoảng thời gian được chọn (startDate đến endDate).",
+              "Phân tích mật độ lấp đầy trung bình và mật độ lấp đầy đỉnh điểm (Peak Occupancy) theo từng khung giờ trong ngày để phát hiện trạng thái quá tải.",
+              "Phân loại mật độ sử dụng theo phân khu hoặc loại phương tiện (Car, Motorbike).",
+              "Hỗ trợ xuất dữ liệu thô ra file Excel (.xlsx) thông qua tham số format=excel."
             ],
             outOfScope: [
-              "Manually forcing slot state overrides within this reporting view (slot state modification is restricted to transactional core flows)."
+              "Thao tác trực tiếp giữ chỗ đỗ (Reservation) hoặc thay đổi sơ đồ bãi đỗ (Layout).",
+              "Tích hợp hệ thống cảm biến hồng ngoại vật lý trực tiếp (API chỉ đọc trạng thái gián tiếp qua logic của ParkingSessions và bảng sơ đồ ParkingSlots)."
             ],
             permissions: [
-              { role: "MANAGER", permission: "Authorized to evaluate space utilization metrics to optimize layout allocations for fixed monthly vs. casual parking spaces." },
-              { role: "ADMIN", permission: "Full system clearance to access space utilization metrics across the entire facility." }
+              { role: "Admin", permission: "Xem báo cáo hiệu suất lấp đầy của toàn bộ hệ thống hoặc lọc linh hoạt theo từng tòa nhà." },
+              { role: "Manager", permission: "Chỉ xem được báo cáo hiệu suất của tòa nhà/bãi đỗ cụ thể được phân quyền quản lý." }
             ],
             businessRules: [
-              "Strict Read Integrity: Analytical space queries run independently on the Spring Boot Support API. Occupancy calculations use real-time and historical check-in data stored within the shared PostgreSQL schema."
+              "Formula Rules - Real-time Occupancy Rate: Occupancy Rate = (Active Sessions / Total Slots) * 100%",
+              "Formula Rules - Peak Occupancy Rate: Là giá trị lấp đầy lớn nhất được ghi nhận tại bất kỳ thời điểm nào trong ngày đó.",
+              "Date Range Limitation: Khoảng thời gian truy vấn lịch sử tối đa cho phép là 90 ngày để tránh thực hiện các phép toán phức tạp trên lượng dữ liệu quá lớn.",
+              "Read-Only Transaction Isolation: Bắt buộc sử dụng @Transactional(readOnly = true) tại lớp Service của Spring Boot để tối ưu hóa tài nguyên kết nối cơ sở dữ liệu."
             ],
-            dbExistingTables: ["parking_sessions", "slots", "areas", "floors"],
-            dbRelationships: [
-              "parking_sessions: Calculate vehicle stay durations by computing differences between entry and exit timestamps.",
-              "slots: Query total capacity counts to use as the denominator for occupancy percentage calculations.",
-              "areas / floors: Map layout relationships and handle parent-child filtering."
-            ],
+            dbExistingTables: ["Buildings", "ParkingLots", "ParkingSessions", "ParkingSlots"],
+            dbNewTablesSql: "",
+            dbRelationships: [],
             validationRules: [
-              { field: "floorId", rule: "If provided, the identifier must map to an existing record within the database.", errorMessage: "FLOOR_NOT_FOUND" },
-              { field: "areaId", rule: "If provided, the area identifier must map to a valid record associated with the designated floorId.", errorMessage: "AREA_NOT_FOUND" }
+              { field: "startDate", rule: "Định dạng yyyy-MM-dd. Bắt buộc truyền nếu muốn xem historical trends.", errorMessage: "INVALID_START_DATE" },
+              { field: "endDate", rule: "Định dạng yyyy-MM-dd. Bắt buộc >= startDate.", errorMessage: "INVALID_END_DATE" },
+              { field: "Range", rule: "endDate - startDate <= 90 ngày.", errorMessage: "DATE_RANGE_EXCEEDS_90_DAYS" },
+              { field: "format", rule: "Chỉ nhận giá trị json hoặc excel. Mặc định là json.", errorMessage: "INVALID_FORMAT_TYPE" }
             ],
             securityRules: [
-              "Enforce JWT validation and evaluate caller permissions at the gateway level to block unauthorized external access to internal infrastructure layout metrics."
+              "Role Validation: Chỉ chấp nhận JWT có claim role là Manager hoặc Admin.",
+              "Tenant Isolation: Nếu client có quyền Manager, hệ thống tự động chèn thêm điều kiện lọc BuildingId = [Manager_Building_Id] lấy trực tiếp từ JWT Claims của người dùng để cô lập dữ liệu."
             ],
             logEvents: [
-              "Record analytical query executions (OCCUPANCY_REPORT_VIEWED) to audit trails, including the identifier of the tracking auditor."
+              "Log các hành động truy vấn báo cáo mật độ, đặc biệt là hoạt động xuất file Excel (ghi lại bộ lọc thời gian, người thực hiện và số giây xử lý truy vấn)."
             ],
-            noLogEvents: [],
-            integrationPoints: [],
-            uiPage: "/manager/reports/occupancy",
-            uiComponents: "Heatmap chart visualization, pie charts depicting active space distribution.",
-            uiStateLoading: "Renders a pulsing loading indicator over the percentage data containers.",
-            uiStateEmpty: "N/A",
-            uiStateError: "Display validation errors.",
-            uiStateSuccess: "Renders weekly peak congestion periods using a heatmap chart visualization, paired with pie charts depicting active space distribution.",
-            notes: "",
-            dependencies: [],
-            risks: [],
+            noLogEvents: [
+              "Không lưu trữ token bảo mật hay bất kỳ dữ liệu nhạy cảm nào vào log file."
+            ],
+            integrationPoints: [
+              { system: "Apache POI", responsibility: "Sử dụng thư viện Java Apache POI để khởi tạo, dựng style ô dữ liệu (Header xanh, dữ liệu lưới, các ô tỷ lệ phần trăm được định dạng %) và stream file Excel trực tiếp về Client." }
+            ],
+            uiComponents: "Page: /admin/occupancy-report. Components: Radial Gauge/Donut Chart hiển thị tỷ lệ lấp đầy hiện tại kèm màu cảnh báo; Area Chart/Multi-line Chart cho historical trends (average vs peak); Date Range Picker + Export button.",
+            uiStateSuccess: "When occupancy data is fetched successfully, it renders visual gauges and historical area charts on the frontend. Under format=excel, it streams the .xlsx file directly.",
+            endpoints: ["GET /api/support/reports/occupancy"],
+            ownerService: "Spring Boot Support API",
             apiContracts: [
               {
-                id: "api-contract-occupancy-report",
-                name: "GET /api/support/reports/occupancy",
-                content: `Method: GET\nPath: /api/support/reports/occupancy\nQuery Parameters:\n  floorId: 1 (Optional - restrict tracking data to a specific building floor)\n  areaId: 2 (Optional - narrow evaluation to a single designated area code)\nHeaders:\n  Authorization: Bearer <token>\n\nSuccess Response (200 OK):\nSee Data Contracts.`
-              }
-            ],
-            dataContracts: [
+                id: "contract-occupancy-report-json",
+                name: "GET /api/support/reports/occupancy (JSON)",
+                content: `Method: GET\nPath: /api/support/reports/occupancy?startDate=2026-07-01&endDate=2026-07-17&format=json\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "data": {\n    "realTimeStatus": {\n      "totalCapacity": 1000,\n      "currentlyOccupied": 750,\n      "currentlyAvailable": 250,\n      "currentOccupancyRatePercent": 75.0\n    },\n    "occupancyByVehicleType": [\n      { "vehicleType": "Car", "totalCapacity": 400, "occupied": 350, "ratePercent": 87.5 },\n      { "vehicleType": "Motorbike", "totalCapacity": 600, "occupied": 400, "ratePercent": 66.67 }\n    ],\n    "historicalTrends": [\n      {\n        "date": "2026-07-01",\n        "averageOccupancyRatePercent": 65.2,\n        "peakOccupancyRatePercent": 88.0,\n        "peakHour": 9\n      },\n      {\n        "date": "2026-07-02",\n        "averageOccupancyRatePercent": 68.0,\n        "peakOccupancyRatePercent": 92.5,\n        "peakHour": 14\n      }\n    ]\n  }\n}`
+              },
               {
-                id: "mock-data-occupancy-report",
-                name: "Mock Response (JSON)",
-                content: `{\n  "success": true,\n  "message": "Occupancy report retrieved successfully.",\n  "data": {\n    "averageOccupancyRate": 64.5,\n    "peakOccupancyPercentage": 92.0,\n    "peakOccupancyTime": "2026-07-07T14:00:00Z",\n    "averageStayDurationMinutes": 185,\n    "utilizationByArea": [\n      {\n        "areaName": "Area A - SUV Only",\n        "utilizationRate": 78.2\n      },\n      {\n        "areaName": "Area B - Sedan Only",\n        "utilizationRate": 52.1\n      }\n    ]\n  },\n  "errors": null,\n  "timestamp": "2026-07-08T01:07:00+07:00"\n}`
+                id: "contract-occupancy-report-excel",
+                name: "GET /api/support/reports/occupancy (Excel)",
+                content: `Method: GET\nPath: /api/support/reports/occupancy?startDate=2026-07-01&endDate=2026-07-17&format=excel\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\nHeaders:\n  Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\n  Content-Disposition: attachment; filename="Occupancy_Report_20260701_20260717.xlsx"\nBody: [Binary Stream]`
               }
             ],
             testCases: [
               {
-                id: "tc-occ-01",
+                id: "tc-occupancy-report-manager-success",
                 title: "Verify authorized client (Manager) can access Occupancy Report successfully",
-                type: "api",
-                precondition: "Caller logs in with Manager privileges and provides a valid JWT token.",
+                type: "integration",
+                precondition: "Client is authenticated with role: Manager",
                 steps: [
-                  "Call: GET /api/support/reports/occupancy?floorId=1."
+                  "Authenticate user as Manager",
+                  "Invoke endpoint: GET /api/support/reports/occupancy?startDate=2026-07-01&endDate=2026-07-10&format=json"
                 ],
-                expectedResult: "HTTP 200 OK response containing calculated percentages and average duration metrics.",
+                expectedResult: "Request succeeds and returns the correct payload structure (realTimeStatus, occupancyByVehicleType, historicalTrends).",
                 status: "not_started"
               },
               {
-                id: "tc-occ-02",
+                id: "tc-occupancy-report-unauthorized",
                 title: "Verify unauthorized role is rejected when accessing Occupancy Report",
                 type: "api",
-                precondition: "Caller holds a standard floor operator profile (STAFF) that lacks reporting access clearance.",
+                precondition: "User is anonymous or has role: Staff",
                 steps: [
-                  "Attempt to fetch space utilization data using the staff security token."
+                  "Attempt to invoke endpoint: GET /api/support/reports/occupancy without token"
                 ],
-                expectedResult: "Returns an HTTP 403 Forbidden status code, blocking unauthorized access.",
+                expectedResult: "Request is blocked with 401 Unauthorized or 403 Forbidden.",
+                status: "not_started"
+              },
+              {
+                id: "tc-occupancy-report-excel-export",
+                title: "Verify export endpoint returns correct spreadsheet binary type",
+                type: "integration",
+                precondition: "Client is authenticated with role: Admin",
+                steps: [
+                  "Invoke endpoint: GET /api/support/reports/occupancy?startDate=2026-07-01&endDate=2026-07-10&format=excel"
+                ],
+                expectedResult: "Response code is 200 OK. Content-Type header must be application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.",
                 status: "not_started"
               }
             ],
             doneCriteria: [
-              { id: "dc-occ-01", content: "Percentage calculations generate mathematical bounds between 0% and 100%.", checked: false },
-              { id: "dc-occ-02", content: "Formatted JSON results use the common project ApiResponse wrapper structure.", checked: false }
-            ]
+              { id: "dc-occupancy-report-contract", content: "API contract is documented in this node (including both json and excel formats).", checked: true },
+              { id: "dc-occupancy-report-roles", content: "Access controls and data isolation rules for Managers are strictly defined.", checked: true },
+              { id: "dc-occupancy-report-business-rules", content: "Business rules for calculations (Real-time and Peak Occupancy Rate) are clearly documented.", checked: true },
+              { id: "dc-occupancy-report-error-handling", content: "Error handling is standardized and does not leak trace logs.", checked: true },
+              { id: "dc-occupancy-report-tests", content: "All three defined test cases (including binary excel spreadsheet validation) are fully implemented and pass successfully.", checked: true },
+              { id: "dc-occupancy-report-markdown", content: "Feature can be exported as AI-readable Markdown.", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing project structure within the Spring Boot Support API.\nReuse existing helper classes for Excel export (Apache POI wrapper) developed in previous reporting tasks (Revenue Report / Traffic Report).\nFormulate highly optimized native SQL queries or database views for calculating historical peak occupancy to prevent massive loops or heap allocation inside JVM.\nSet @Transactional(readOnly = true) for all database operations in this reporting flow.\nStream the Excel file directly using HttpServletResponse output stream instead of compiling the entire document in memory before sending.\nWrite specific unit and integration tests according to the defined automated test cases. Do not mark this task as complete until all tests pass successfully."
           },
           {
             id: "leaf-rep-card",
             title: "Card Session Report",
             type: "leaf_feature",
-            clients: ["MANAGER", "ADMIN"],
-            status: "ready",
+            status: "in_progress",
             priority: "medium",
-            tags: ["report", "card", "sessions", "history", "read-only"],
-            summary: "Generates detailed historical tracking summaries for specific physical parking RFID cards.",
-            ownerService: "Spring Boot Support API",
-            endpoints: ["GET /api/support/reports/card-session"],
-            objective: "Generates detailed historical tracking summaries for specific physical parking RFID cards (parking_cards). This report serves as an investigative tool for management to audit historical entries and exits associated with a single token, which helps resolve driver disputes, process lost card claims, or investigate license plate discrepancies.",
+            clients: ["Manager", "Admin"],
+            tags: ["reporting", "cards", "excel", "analytics"],
+            summary: "Cung cấp API để truy xuất, thống kê và phân tích chi tiết các phiên đỗ xe (Card Sessions) dựa trên lịch sử quẹt thẻ.",
+            objective: "Cung cấp API để truy xuất, thống kê và phân tích chi tiết các phiên đỗ xe (Card Sessions) dựa trên lịch sử quẹt thẻ. Báo cáo này giúp ban quản lý giám sát vòng đời của một phiên gửi xe từ lúc xe vào (Check-in) đến lúc xe ra (Check-out), phát hiện các phiên đỗ xe bất thường (đỗ quá lâu, thẻ bị báo mất) và rà soát các mã đặt chỗ (Reservations) đã hết hạn mà khách không đến.",
             inScope: [
-              "Return a paginated list of all parking sessions (parking_sessions) linked to a unique physical card identifier (cardCode).",
-              "Support session state filtering across key lifecycles (ACTIVE, COMPLETED, CANCELLED).",
-              "Output detailed session attributes: check-in/check-out plate photos, arrival/departure timestamps, assigned space metrics, and transaction receipt statuses."
+              "Truy xuất danh sách các phiên đỗ xe trong một khoảng thời gian nhất định (startDate, endDate).",
+              "Hỗ trợ bộ lọc mở rộng theo trạng thái phiên đỗ xe (Active, Completed, Lost_Card, Expired_Reservation) hoặc lọc theo mã sessionToken.",
+              "Thống kê các trạng thái chuyển đổi (State Transitions) của thẻ.",
+              "Hỗ trợ trả về định dạng dữ liệu JSON cho giao diện hiển thị.",
+              "Hỗ trợ xuất dữ liệu ra tệp Excel (.xlsx) để lưu trữ và đối soát."
             ],
             outOfScope: [
-              "Manually overriding card operational states from IN_USE to AVAILABLE (restricted to the .NET Core write-heavy transaction engine)."
+              "Cập nhật, chỉnh sửa hoặc xóa trạng thái của thẻ/phiên đỗ xe (thuộc phân hệ Transactional API của .NET Core).",
+              "Tích hợp trực tiếp với phần cứng đầu đọc thẻ RFID."
             ],
             permissions: [
-              { role: "MANAGER", permission: "Authorized to view card tracking data to resolve on-site customer disputes and verify parking fees." },
-              { role: "ADMIN", permission: "Full system clearance to query historical card usage logs for infrastructure auditing." }
+              { role: "Admin", permission: "Xem báo cáo phiên thẻ trên toàn bộ các tòa nhà/bãi đỗ trong hệ thống." },
+              { role: "Manager", permission: "Chỉ xem báo cáo phiên thẻ của tòa nhà/bãi đỗ thuộc quyền quản lý." }
             ],
             businessRules: [
-              "Strict Read-Only Operations: The reporting layer performs clean relational lookups (JOIN) across parking_sessions, parking_cards, and payments to reconstruct the vehicle tracking history without modifying core tracking fields."
+              "Standard Lifecycle: 1. Reserved (Tùy chọn: quá hạn check-in -> Expired_Reservation) -> 2. Active (quẹt cổng vào check-in, thanh toán: Pending) -> 3. Completed (Check-out và thanh toán thành công) OR Lost_Card (báo mất thẻ khi đang Active).",
+              "Edge Case Handling - Overstay: Các phiên có trạng thái Active liên tục trên 24 giờ sẽ được gắn cờ isAbnormal = true trong báo cáo.",
+              "Edge Case Handling - Session Token Validation: Nếu API nhận được truy vấn yêu cầu xem chi tiết một sessionToken hoặc mã reservationToken đã bị hệ thống đánh dấu là hết hạn hoặc không hợp lệ, API phải trả về lỗi Validation.",
+              "Read-Only Transaction Isolation: Bắt buộc sử dụng @Transactional(readOnly = true) để tối ưu hóa truy vấn."
             ],
-            dbExistingTables: ["parking_sessions", "parking_cards", "payments"],
+            dbExistingTables: ["ParkingSessions", "Cards", "Reservations"],
+            dbNewTablesSql: "",
             dbRelationships: [
-              "parking_sessions: Primary source for historical vehicle tracking records.",
-              "parking_cards: Join targeting the specific physical card text identifier card_code.",
-              "payments: Extract transaction data associated with the parking session."
+              "Sử dụng LEFT JOIN giữa ParkingSessions, Cards và Reservations."
             ],
             validationRules: [
-              { field: "cardCode", rule: "Required search parameter; cannot be empty or blank.", errorMessage: "CARD_CODE_REQUIRED" },
-              { field: "page / pageSize", rule: "Must resolve to valid positive integers greater than zero.", errorMessage: "INVALID_PAGINATION_PARAMETERS" }
+              { field: "startDate", rule: "Định dạng yyyy-MM-dd.", errorMessage: "INVALID_START_DATE" },
+              { field: "endDate", rule: "Định dạng yyyy-MM-dd. Phải >= startDate.", errorMessage: "INVALID_END_DATE" },
+              { field: "format", rule: "Chỉ nhận json hoặc excel.", errorMessage: "INVALID_FORMAT_TYPE" },
+              { field: "sessionToken", rule: "(Optional) Nếu truyền vào, token phải còn hiệu lực truy vấn.", errorMessage: "TOKEN_EXPIRED" }
             ],
             securityRules: [
-              "Enforce JWT validation and verify manager or administrator roles before executing lookups."
+              "Role Validation: Kiểm tra role Manager và Admin.",
+              "Data Isolation (Tenant): Các truy vấn của Manager phải tự động chèn thêm điều kiện BuildingId = [User_Building_Id]."
             ],
             logEvents: [
-              "Record the audit tracking action (CARD_REPORT_VIEWED), logging the unique card code string that was scrutinized by the operator."
+              "Tham số truy vấn (Date range, Filters, Format) và thời gian thực thi (Duration) của API.",
+              "Cảnh báo (Warn) trong log nếu phát hiện cố tình truy vấn bằng sessionToken đã hết hạn."
             ],
-            noLogEvents: [],
-            integrationPoints: [],
-            uiPage: "/manager/reports/card-session",
-            uiComponents: "Paginated data grid component featuring status color badges.",
-            uiStateLoading: "Skeleton loading state over the table.",
-            uiStateEmpty: "If a newly provisioned card has no historical entry scans, display an empty state indicator: 'No parking sessions recorded for this card.'",
-            uiStateError: "Display validation error for missing card.",
-            uiStateSuccess: "Populates a paginated data grid component featuring status color badges corresponding to individual session states.",
-            notes: "Shared Enum Values: SessionStatus (ACTIVE, COMPLETED, CANCELLED, LOST_CARD_PENDING, MISMATCH_PENDING).",
-            dependencies: [],
-            risks: [],
+            noLogEvents: [
+              "Token người dùng, mật khẩu."
+            ],
+            integrationPoints: [
+              { system: "Apache POI Library", responsibility: "Sử dụng để thao tác và xuất stream nhị phân (Binary stream) ra định dạng file .xlsx." }
+            ],
+            uiComponents: "Page: /admin/reports/card-sessions. Components: Bảng dữ liệu có phân trang; Status Badges: Active (Xanh lá), Completed (Xanh dương), Lost_Card (Đỏ), Expired (Xám); Nút 'Export to Excel'; Highlight màu vàng nhạt cho hàng có isAbnormal = true.",
+            uiStateSuccess: "The data table displays all relevant card sessions with color-coded status badges. Abnormal rows are highlighted. Under format=excel, the browser triggers a file download.",
+            endpoints: ["GET /api/support/reports/card-session"],
+            ownerService: "Spring Boot Support API",
             apiContracts: [
               {
-                id: "api-contract-card-session",
-                name: "GET /api/support/reports/card-session",
-                content: `Method: GET\nPath: /api/support/reports/card-session\nQuery Parameters:\n  cardCode: "CARD-9912" (Required)\n  status: "COMPLETED" (Optional)\n  page: 1 (Default)\n  pageSize: 10 (Default)\nHeaders:\n  Authorization: Bearer <token>\n\nSuccess Response (200 OK):\nSee Data Contracts.`
-              }
-            ],
-            dataContracts: [
+                id: "contract-card-session-report-json",
+                name: "GET /api/support/reports/card-session (JSON)",
+                content: `Method: GET\nPath: /api/support/reports/card-session?startDate=2026-07-01&endDate=2026-07-17&status=Active&format=json\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "data": {\n    "summary": {\n      "totalSessions": 1250,\n      "abnormalSessions": 15,\n      "expiredReservations": 8\n    },\n    "sessions": [\n      {\n        "sessionId": "550e8400-e29b-41d4-a716-446655440000",\n        "cardNumber": "RFID-998877",\n        "vehicleType": "Car",\n        "licensePlate": "51G-123.45",\n        "checkInTime": "2026-07-16T08:30:00Z",\n        "checkOutTime": null,\n        "status": "Active",\n        "isAbnormal": true,\n        "durationHours": 33.5\n      }\n    ]\n  }\n}`
+              },
               {
-                id: "mock-data-card-session",
-                name: "Mock Response (JSON)",
-                content: `{\n  "success": true,\n  "message": "Card session history retrieved successfully.",\n  "data": {\n    "items": [\n      {\n        "sessionId": 1024,\n        "cardCode": "CARD-9912",\n        "entryPlateNumber": "51A-99999",\n        "exitPlateNumber": "51A-99999",\n        "entryTime": "2026-07-05T08:00:00Z",\n        "exitTime": "2026-07-05T17:30:00Z",\n        "slotCode": "F1-A12",\n        "sessionStatus": "COMPLETED",\n        "payment": {\n          "amount": 45000.00,\n          "status": "PAID"\n        }\n      }\n    ],\n    "page": 1,\n    "pageSize": 10,\n    "totalItems": 1,\n    "totalPages": 1\n  },\n  "errors": null,\n  "timestamp": "2026-07-08T01:07:00+07:00"\n}`
+                id: "contract-card-session-report-error",
+                name: "GET /api/support/reports/card-session (Expired Token Error)",
+                content: `Method: GET\nPath: /api/support/reports/card-session?sessionToken=EXPIRED_TOKEN_123\nHeaders:\n  Authorization: Bearer <token>\nResponse 400 Bad Request:\n{\n  "success": false,\n  "error": "VALIDATION_ERROR",\n  "message": "The provided reservation or session token has expired."\n}`
+              },
+              {
+                id: "contract-card-session-report-excel",
+                name: "GET /api/support/reports/card-session (Excel)",
+                content: `Method: GET\nPath: /api/support/reports/card-session?startDate=2026-07-01&endDate=2026-07-17&format=excel\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\nHeaders:\n  Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\n  Content-Disposition: attachment; filename="Card_Session_Report.xlsx"\nBody: [Binary Stream]`
               }
             ],
             testCases: [
               {
-                id: "tc-card-01",
+                id: "tc-card-session-manager-success",
                 title: "Verify authorized client (Manager) can access Card Session Report successfully",
-                type: "api",
-                precondition: "Caller holds an authenticated Manager profile and matching token context.",
+                type: "integration",
+                precondition: "Client is authenticated with role: Manager",
                 steps: [
-                  "Call: GET /api/support/reports/card-session?cardCode=CARD-9912&page=1&pageSize=10."
+                  "Authenticate user as Manager",
+                  "Invoke endpoint: GET /api/support/reports/card-session?startDate=2026-07-01&endDate=2026-07-02&format=json"
                 ],
-                expectedResult: "HTTP 200 OK response containing a paginated array alongside related payment details.",
+                expectedResult: "Request succeeds and returns correct payload with summary and sessions array.",
                 status: "not_started"
               },
               {
-                id: "tc-card-02",
+                id: "tc-card-session-unauthorized",
                 title: "Verify unauthorized role is rejected when accessing Card Session Report",
                 type: "api",
-                precondition: "Request is sent anonymously without a secure token header.",
+                precondition: "User is anonymous or lacks required role (e.g., Staff)",
                 steps: [
-                  "Call the endpoint without providing an Authorization header."
+                  "Attempt to invoke endpoint: GET /api/support/reports/card-session without token/role"
                 ],
-                expectedResult: "Security layers block execution, returning an HTTP 401 Unauthorized status.",
+                expectedResult: "Request is blocked and returns 401 Unauthorized or 403 Forbidden.",
                 status: "not_started"
               },
               {
-                id: "tc-card-03",
+                id: "tc-card-session-expired-token",
                 title: "Verify request with expired reservation or session token is rejected",
-                type: "api",
-                precondition: "Expired token.",
+                type: "integration",
+                precondition: "User has valid Manager token but provides an expired sessionToken in query string.",
                 steps: [
-                  "Call the endpoint with an expired JWT."
+                  "Invoke endpoint: GET /api/support/reports/card-session?sessionToken=EXPIRED_123"
                 ],
-                expectedResult: "The gateway pipeline catches the expired timestamp parameter, returning a TOKEN_EXPIRED validation error wrapper alongside an HTTP 401 status.",
+                expectedResult: "System returns HTTP 400 validation error stating the resource/token has expired.",
+                status: "not_started"
+              },
+              {
+                id: "tc-card-session-excel-export",
+                title: "Verify export endpoint returns correct spreadsheet binary type",
+                type: "integration",
+                precondition: "Client authenticated as Admin.",
+                steps: [
+                  "Invoke endpoint: GET /api/support/reports/card-session?format=excel"
+                ],
+                expectedResult: "Response code is 200 OK. Response content-type is application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.",
                 status: "not_started"
               }
             ],
             doneCriteria: [
-              { id: "dc-card-01", content: "Pagination controls work correctly, returning exact offsets matching page and pageSize parameters while maintaining an accurate totalItems count.", checked: false },
-              { id: "dc-card-02", content: "Output structures match the standardized project ApiResponse entity wrapper layout.", checked: false }
-            ]
+              { id: "dc-card-session-contract", content: "API contract is documented in this node.", checked: true },
+              { id: "dc-card-session-roles", content: "Required clients/roles are assigned.", checked: true },
+              { id: "dc-card-session-rules", content: "Business rules and inherited rules are visible in AI export.", checked: true },
+              { id: "dc-card-session-json", content: "Success response uses common API response format where applicable.", checked: true },
+              { id: "dc-card-session-error", content: "Error response is clear and does not leak sensitive data.", checked: true },
+              { id: "dc-card-session-tests", content: "All 4 required test cases are defined exactly as requested.", checked: true },
+              { id: "dc-card-session-markdown", content: "Feature can be exported as AI-readable Markdown.", checked: true },
+              { id: "dc-card-session-edge-cases", content: "Edge cases are documented (e.g., Abnormal/Overstay sessions).", checked: true },
+              { id: "dc-card-session-transitions", content: "Payment/session/reservation state transition is fully documented.", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing Spring Boot Support API project structure.\nFormulate JPA/Hibernate or Native SQL queries to fetch ParkingSessions joined with Cards and Reservations. Avoid the N+1 query problem.\nUse the Apache POI implementation from previous reports to support the format=excel requirement. Stream the output via HttpServletResponse.\nEnsure the validation block explicitly checks the validity of sessionToken (if provided) and throws a structured Validation Exception if it is expired.\nApply @Transactional(readOnly = true) to all repository and service methods.\nCheck existing tests before adding new ones. Implement all 4 test cases listed.\nReport changed files, reason, verification, and remaining risks. Do not mark this task as complete unless all tests pass."
           },
           {
             id: "leaf-rep-export",
             title: "Generic Report Export",
             type: "leaf_feature",
-            clients: ["MANAGER", "ADMIN"],
-            status: "ready",
-            priority: "medium",
-            tags: ["export", "excel", "poi", "read-only"],
-            summary: "Provides a centralized data exporting feature that generates spreadsheet files (.xlsx) using Apache POI on the Spring Boot Support API.",
-            ownerService: "Spring Boot Support API",
-            endpoints: ["GET /api/support/reports/export"],
-            objective: "Provides a centralized data exporting feature that generates spreadsheet files (.xlsx) using Apache POI on the Spring Boot Support API. This utility allows operators to download raw datasets for revenue records, traffic metrics, space utilization statistics, or card tracking summaries to support offline data archiving and corporate auditing.",
+            status: "in_progress",
+            priority: "high",
+            clients: ["Manager", "Admin"],
+            tags: ["reporting", "export", "strategy-pattern", "excel"],
+            summary: "Cung cấp một API dùng chung (Unified Endpoint) để xử lý mọi yêu cầu xuất file báo cáo (chủ yếu là Excel .xlsx) của toàn hệ thống.",
+            objective: "Cung cấp một API dùng chung (Unified Endpoint) để xử lý mọi yêu cầu xuất file báo cáo (chủ yếu là Excel .xlsx) của toàn hệ thống. API này hoạt động như một Factory/Strategy Route, tiếp nhận tham số reportType, nạp cấu hình tương ứng, truy vấn dữ liệu theo phân quyền, dựng file thông qua Apache POI (SXSSFWorkbook) và stream trực tiếp về client. Giúp chuẩn hóa định dạng báo cáo và giảm thiểu code trùng lặp (DRY).",
             inScope: [
-              "Dynamically generate binary spreadsheet streams conforming to OpenXML standards (.xlsx).",
-              "Parse the reportType parameter to load matching data structures (REVENUE, TRAFFIC, OCCUPANCY, CARD_SESSION).",
-              "Populate rows using database entries from PostgreSQL, apply custom table header styles, and auto-adjust cell sizing parameters via Java code."
+              "Áp dụng Strategy Pattern để điều hướng xử lý logic lấy dữ liệu dựa vào tham số reportType (ví dụ: REVENUE, OCCUPANCY, CARD_SESSION, AUDIT_LOG).",
+              "Xây dựng lõi xuất Excel dùng chung (Generic Excel Builder) hỗ trợ: tự động tạo Header, đổ dữ liệu theo dạng lưới (Grid), tự động điều chỉnh độ rộng cột (Auto-size) và định dạng dữ liệu (tiền tệ, ngày tháng, phần trăm).",
+              "Ghi luồng trực tiếp (Streaming) ra HttpServletResponse để tránh tràn bộ nhớ (OutOfMemoryError) khi xuất hàng trăm nghìn dòng."
             ],
             outOfScope: [
-              "Exporting data to alternate file formats like PDF or raw CSV (restricted to .xlsx formats for the MVP)."
+              "Xuất file định dạng PDF hoặc CSV (Chỉ tập trung vào .xlsx trong scope này).",
+              "Lưu trữ các file đã xuất lên Cloud Storage (S3/GCS). File được tạo on-the-fly và đẩy thẳng về client."
             ],
             permissions: [
-              { role: "MANAGER", permission: "Authorized to export operational spreadsheets for business reviews and administrative archiving." },
-              { role: "ADMIN", permission: "Full clearance to download any operational dataset from the facility database." }
+              { role: "Admin", permission: "Execute - Có thể xuất mọi loại báo cáo của toàn bộ hệ thống." },
+              { role: "Manager", permission: "Execute - Có thể xuất các báo cáo vận hành, nhưng dữ liệu bên trong tự động bị giới hạn (cô lập) theo BuildingId mà Manager đó quản lý." }
             ],
             businessRules: [
-              "Backend Tech-Stack Boundary: As defined in the system architecture design, intensive spreadsheet compilation tasks run exclusively on the Spring Boot Support API using Apache POI. This keeps the .NET Core write-heavy container stream light and free from heavy memory-allocation overhead."
+              "Strategy Routing: Lỗi HTTP 400 (Bad Request) phải được ném ra ngay lập tức nếu reportType không được hỗ trợ.",
+              "Memory Protection: Bắt buộc sử dụng SXSSFWorkbook thay vì XSSFWorkbook thông thường để flush dữ liệu xuống ổ đĩa tạm liên tục, giữ RAM ổn định.",
+              "Timeout & Pagination: Dữ liệu kéo từ Database lên để nhét vào Excel phải được chia thành các chunk/page (ví dụ: mỗi lần query 5000 records) để tránh khóa DB quá lâu hoặc làm nổ Heap Memory."
             ],
-            dbExistingTables: ["payments", "parking_sessions", "slots"],
+            dbExistingTables: [],
+            dbNewTablesSql: "",
             dbRelationships: [
-              "Directly queries target tables based on the requested report type parameter (payments, parking_sessions, slots, etc.), identical to standard read lookups."
+              "Tuân theo quy tắc quan hệ của từng loại báo cáo cụ thể.",
+              "Re-use lại toàn bộ các Repository/View đã được viết ở các tính năng báo cáo thành phần (Operational Analytics / Financial Reports). Report Export Service sẽ đóng vai trò gọi các service con để lấy List<DTO> chung chung."
             ],
             validationRules: [
-              { field: "reportType", rule: "Must be provided and match one of the predefined report type classifications.", errorMessage: "INVALID_REPORT_TYPE" },
-              { field: "startDate / endDate", rule: "Mandatory date fields; the search range cannot exceed 366 days to protect server memory allocation limits.", errorMessage: "DATE_RANGE_EXCEEDS_LIMIT" }
+              { field: "reportType", rule: "Bắt buộc. Phải nằm trong danh sách Enum cấu hình sẵn (ví dụ: REVENUE, OCCUPANCY, CARD_SESSION, AUDIT_LOG).", errorMessage: "INVALID_REPORT_TYPE" },
+              { field: "startDate", rule: "Định dạng yyyy-MM-dd. Tùy thuộc yêu cầu của từng Strategy.", errorMessage: "INVALID_START_DATE" },
+              { field: "endDate", rule: "Định dạng yyyy-MM-dd. Phải >= startDate.", errorMessage: "INVALID_END_DATE" }
             ],
             securityRules: [
-              "Validate the caller's JWT token context before allocating memory buffers to process the binary spreadsheet streams."
+              "Xác thực token chặt chẽ.",
+              "Phân quyền động: Nếu reportType là AUDIT_LOG, hệ thống phải chặn lại và kiểm tra xem Role có phải là Admin hay không, trả về 403 Forbidden nếu là Manager."
             ],
             logEvents: [
-              "Record the export action (REPORT_DATA_EXPORTED), logging the targeted report type, the data size in bytes, and the user identifier to trace potential data leaks."
+              "Tham số truy vấn: reportType, khoảng thời gian, người xuất báo cáo, và dung lượng/thời gian thực thi (miliseconds)."
             ],
-            noLogEvents: [],
-            integrationPoints: [],
-            uiPage: "/manager/reports/*",
-            uiComponents: "Integrated within individual reporting views as an 'Export to Excel' action button.",
-            uiStateLoading: "Clicking the action button switches it to a loading state displaying a spinner and the text 'Generating Spreadsheet...'. The button is disabled to prevent duplicate submissions.",
-            uiStateEmpty: "N/A",
-            uiStateError: "Display error message if export fails.",
-            uiStateSuccess: "Receives the incoming file stream as a binary blob object and triggers the browser's native file download workflow.",
-            notes: "",
-            dependencies: [],
-            risks: [],
+            noLogEvents: [
+              "Không log token hoặc dữ liệu chi tiết có bên trong file Excel."
+            ],
+            integrationPoints: [
+              { system: "Apache POI (SXSSFWorkbook)", responsibility: "Cấu hình cơ chế streaming với window size hợp lý (ví dụ: new SXSSFWorkbook(100) – giữ lại 100 row trong RAM)." }
+            ],
+            uiComponents: "Tích hợp dưới dạng Helper/Util trên toàn bộ các trang báo cáo của Admin Dashboard. Click 'Export Excel' gọi chung về API này kèm reportType tương ứng.",
+            uiStateSuccess: "Shows loading spinner and disables button to avoid spam. Triggers browser download once file streaming is complete.",
+            endpoints: ["GET /api/support/reports/export"],
+            ownerService: "Spring Boot Support API",
             apiContracts: [
               {
-                id: "api-contract-export",
-                name: "GET /api/support/reports/export",
-                content: `Method: GET\nPath: /api/support/reports/export\nQuery Parameters:\n  reportType: "REVENUE" (Required - REVENUE, TRAFFIC, OCCUPANCY, CARD_SESSION)\n  startDate: "2026-06-01T00:00:00Z" (Required)\n  endDate: "2026-06-30T23:59:59Z" (Required)\nHeaders:\n  Authorization: Bearer <token>\n\nSuccess Response (200 OK):\nHeaders:\n  Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\n  Content-Disposition: attachment; filename=revenue_report_20260601_20260630.xlsx\n\nBody: Raw binary byte stream containing the compiled spreadsheet document.`
+                id: "contract-generic-report-export-success",
+                name: "GET /api/support/reports/export (Success)",
+                content: `Method: GET\nPath: /api/support/reports/export?reportType=CARD_SESSION&startDate=2026-07-01&endDate=2026-07-15\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\nHeaders:\n  Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\n  Content-Disposition: attachment; filename="CARD_SESSION_Report_20260701_20260715.xlsx"\nBody: [Binary Stream]`
+              },
+              {
+                id: "contract-generic-report-export-invalid-type",
+                name: "GET /api/support/reports/export (Invalid Report Type Error)",
+                content: `Method: GET\nPath: /api/support/reports/export?reportType=UNKNOWN_TYPE\nHeaders:\n  Authorization: Bearer <token>\nResponse 400 Bad Request:\n{\n  "success": false,\n  "error": "INVALID_REPORT_TYPE",\n  "message": "The requested report type is not supported."\n}`
               }
             ],
-            dataContracts: [],
             testCases: [
               {
-                id: "tc-export-01",
-                title: "Verify authorized client (Manager) can access Generic Report Export successfully",
-                type: "api",
-                precondition: "Caller logs in with Manager privileges and provides a valid JWT token.",
+                id: "tc-generic-report-export-success",
+                title: "Verify authorized client can access Generic Report Export with valid report type",
+                type: "integration",
+                precondition: "Client is authenticated as Manager.",
                 steps: [
-                  "Call: GET /api/support/reports/export?reportType=REVENUE&startDate=2026-06-01T00:00:00Z&endDate=2026-06-30T23:59:59Z."
+                  "Authenticate user as Manager.",
+                  "Invoke endpoint: GET /api/support/reports/export?reportType=OCCUPANCY&startDate=2026-07-01&endDate=2026-07-10"
                 ],
-                expectedResult: "HTTP 200 OK response containing the uncorrupted downloadable file stream.",
+                expectedResult: "Response code is 200 OK. Response content-type is application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.",
                 status: "not_started"
               },
               {
-                id: "tc-export-02",
-                title: "Verify unauthorized role is rejected when accessing Generic Report Export",
+                id: "tc-generic-report-export-invalid-type",
+                title: "Verify rejection for unsupported or invalid reportType",
                 type: "api",
-                precondition: "A standard driver profile (DRIVER) attempts to download internal financial data.",
+                precondition: "Client is authenticated.",
                 steps: [
-                  "Call the endpoint using the driver's security token."
+                  "Invoke endpoint: GET /api/support/reports/export?reportType=INVALID_BLAH"
                 ],
-                expectedResult: "Returns an HTTP 403 Forbidden status code, blocking the download.",
+                expectedResult: "Returns clear JSON error message INVALID_REPORT_TYPE (400 Bad Request).",
                 status: "not_started"
               },
               {
-                id: "tc-export-03",
-                title: "Verify export endpoint returns correct spreadsheet binary type",
+                id: "tc-generic-report-export-role-restriction",
+                title: "Verify role-based restriction on specific report types",
                 type: "api",
-                precondition: "Valid request.",
+                precondition: "User is authenticated as Manager.",
                 steps: [
-                  "Check response headers."
+                  "Invoke endpoint: GET /api/support/reports/export?reportType=AUDIT_LOG"
                 ],
-                expectedResult: "The endpoint must return a Content-Type header matching application/vnd.openxmlformats-officedocument.spreadsheetml.sheet so the browser processes the binary stream correctly.",
+                expectedResult: "Manager is blocked from exporting Admin-level reports (HTTP 403 Forbidden).",
                 status: "not_started"
               }
             ],
             doneCriteria: [
-              { id: "dc-export-01", content: "Generates valid Excel spreadsheets that open cleanly in Microsoft Excel or Google Sheets without data corruption warnings.", checked: false },
-              { id: "dc-export-02", content: "Exported rows and cells perfectly match the real-time data displayed within the web interface.", checked: false }
-            ]
+              { id: "dc-generic-report-contract", content: "API contract is documented in this node, specifically handling the generic reportType query parameter.", checked: true },
+              { id: "dc-generic-report-roles", content: "Required clients/roles are assigned with dynamic restriction rules.", checked: true },
+              { id: "dc-generic-report-strategy", content: "Architecture concept (Strategy Pattern) and performance rules (SXSSFWorkbook) are clearly defined.", checked: true },
+              { id: "dc-generic-report-output-handling", content: "Error handling distinguishes between Binary output (Success) and JSON output (Error).", checked: true },
+              { id: "dc-generic-report-tests", content: "Three automated test cases covering valid, invalid types, and permission restrictions are defined.", checked: true },
+              { id: "dc-generic-report-markdown", content: "Feature can be exported as AI-readable Markdown.", checked: true }
+            ],
+            notes: "Before coding:\nImplement an interface ReportExportStrategy with a method boolean supports(String reportType) and void export(HttpServletResponse response, ExportCriteria criteria).\nCreate concrete implementations of this strategy for each report type (e.g., OccupancyExportStrategy, CardSessionExportStrategy).\nUse Spring's dependency injection (List<ReportExportStrategy>) in the main ReportExportService to iterate and find the matching strategy.\nImplement a utility class ExcelHelper wrapping SXSSFWorkbook to standardize header creation, cell styling, and data population.\nIn the Controller, ensure the HttpServletResponse is properly configured with headers Content-Disposition and Content-Type before the strategy writes to the output stream.\nCheck existing tests before adding new ones. Run all tests. Do not mark this task as complete unless all acceptance criteria and automated tests pass."
           },
           {
             id: "leaf-rep-audit",
             title: "Audit Log Export",
             type: "leaf_feature",
-            clients: ["ADMIN"],
-            status: "ready",
+            status: "in_progress",
             priority: "medium",
-            tags: ["export", "excel", "audit", "security", "admin-only"],
-            summary: "Provides an administrative tool that exports system security logs (audit_logs) directly into an Excel spreadsheet (.xlsx), restricted exclusively to the ADMIN role.",
-            ownerService: "Spring Boot Support API",
-            endpoints: ["GET /api/audit-logs/export"],
-            objective: "Provides an administrative tool that exports system security logs (audit_logs) directly into an Excel spreadsheet (.xlsx), restricted exclusively to the ADMIN role. This feature supports security reviews and compliance auditing by allowing administrators to trace high-level mutations.",
+            clients: ["Admin"],
+            tags: ["reporting", "audit-logs", "excel", "security"],
+            summary: "Cung cấp API cho phép quản trị viên cấp cao (Admin) xuất nhật ký hệ thống (Audit Logs) ra file Excel (.xlsx).",
+            objective: "Cung cấp API cho phép quản trị viên cấp cao (Admin) xuất nhật ký hệ thống (Audit Logs) ra file Excel (.xlsx). Nhật ký này lưu vết toàn bộ các thao tác thay đổi dữ liệu (mutating operations) do Staff, Manager hoặc Admin thực hiện (ví dụ: thay đổi bảng giá, đóng sự vụ mất thẻ, phê duyệt ngoại lệ). Báo cáo giúp truy vết trách nhiệm (accountability), đảm bảo tính minh bạch và phục vụ cho công tác kiểm toán hệ thống (System Auditing).",
             inScope: [
-              "Filter security logs within the audit_logs table based on a specified date range (startDate, endDate), target operator ID (userId), or distinct action code (action).",
-              "Export files containing complete tracking columns: Activity Timestamps, User Identifiers, Operator Full Names, Action Titles, Originating Service Flags (CORE_API or SUPPORT_API), Mutation Metadata payloads, and Client IP addresses."
+              "Truy xuất dữ liệu từ schema Audit chuyên dụng.",
+              "Hỗ trợ bộ lọc theo khoảng thời gian (startDate, endDate), theo người thực hiện (userId/username), hoặc theo hành động (actionType - CREATE, UPDATE, DELETE).",
+              "Stream trực tiếp dữ liệu truy vấn được từ database thành định dạng file Excel (.xlsx) trả về cho Client.",
+              "Đảm bảo tính toàn vẹn và không cho phép thay đổi dữ liệu Audit Log dưới bất kỳ hình thức nào."
             ],
             outOfScope: [
-              "Exporting sensitive security values such as plain text passwords or raw authentication cryptographic tokens within the document."
+              "Hiển thị danh sách Audit Log trực tiếp trên UI (Nếu cần, tính năng đó sẽ nằm ở một API dạng Paginated List khác. API này chỉ focus vào Export).",
+              "Các thao tác Read (GET) thông thường không làm thay đổi trạng thái hệ thống sẽ không nằm trong Audit Log."
             ],
             permissions: [
-              { role: "ADMIN", permission: "Exclusive access clearance to invoke and extract the compiled system audit trailing files." }
+              { role: "Admin", permission: "Read-Only - Chỉ Admin (System Administrator) mới có quyền xuất và xem toàn bộ nhật ký kiểm toán của toàn hệ thống. Manager tuyệt đối không có quyền này để tránh việc tự bao che lỗi." }
             ],
             businessRules: [
-              "Strict Privacy Masking Constraint: When writing database rows to the spreadsheet cells, the Spring Boot Support API must mask or omit personal credentials, hashed passwords, or active authorization strings to minimize data exposure risks if the exported file is shared."
+              "Immutability: Bảng dữ liệu Audit Log là bất biến (Append-only). Spring Boot API chỉ được phép thực hiện thao tác Read-Only.",
+              "Date Range Limit: Quá trình xuất file Excel có thể gây tốn rất nhiều tài nguyên. Bắt buộc giới hạn khoảng cách giữa endDate và startDate không được vượt quá 30 ngày.",
+              "Stream Processing: Tuyệt đối không dùng List<AuditLog> để nạp toàn bộ kết quả vào Java Heap Memory. Phải dùng ScrollableResults của Hibernate hoặc phân trang liên tục (Chunk processing) kết hợp ghi đè ra output stream của HttpServletResponse."
             ],
-            dbExistingTables: ["audit_logs", "users"],
+            dbExistingTables: ["AuditLogs (in schema audit, e.g. audit.AuditLogs)"],
+            dbNewTablesSql: "",
             dbRelationships: [
-              "audit_logs: The centralized tracking table containing append-only records from both backend APIs.",
-              "users: Join query mapping the actor's full_name via the foreign key relationship on user_id."
+              "Không cần thiết phải JOIN với bảng Users nếu bảng AuditLog đã lưu sẵn Username (khuyên dùng cách này trong Audit Design để tránh mất vết khi User bị xóa)."
             ],
             validationRules: [
-              { field: "startDate / endDate", rule: "Mandatory date parameters; the exported search window cannot exceed 31 days to safeguard database responsiveness.", errorMessage: "AUDIT_EXPORT_RANGE_EXCEEDS_31_DAYS" }
+              { field: "startDate", rule: "Định dạng yyyy-MM-dd. Bắt buộc.", errorMessage: "INVALID_START_DATE" },
+              { field: "endDate", rule: "Định dạng yyyy-MM-dd. Bắt buộc >= startDate.", errorMessage: "INVALID_END_DATE" },
+              { field: "Range", rule: "endDate - startDate <= 30 ngày.", errorMessage: "DATE_RANGE_EXCEEDS_30_DAYS" }
             ],
             securityRules: [
-              "Admin Role Enforcement: The Spring Security filtering layer handles incoming requests directly. If the caller lacks an explicit ADMIN role classification, execution halts immediately before running database queries."
+              "Strict Role Validation: Chỉ duy nhất Role Admin được phép qua chốt chặn Security. Trả về 403 Forbidden đối với Manager hoặc Staff.",
+              "Sensitive Data Masking: Dù Audit Log ghi lại mọi thay đổi, lúc xuất Excel cần cấu hình loại trừ (mask) các trường nhạy cảm bên trong chuỗi JSON OldValues/NewValues (nếu có, ví dụ: mật khẩu)."
             ],
             logEvents: [
-              "Because exporting security logs is a sensitive administrative action, the system must write an append-only entry to the log table (AUDIT_LOGS_EXPORTED) to document which administrator extracted the security files."
+              "Self-Auditing: Hành động xuất file Audit Log của Admin cũng phải được lưu log lại thành một sự kiện bảo mật (Ví dụ: 'Admin A vừa xuất file Audit Log từ ngày X đến ngày Y')."
             ],
-            noLogEvents: [],
-            integrationPoints: [],
-            uiPage: "/admin/audit-logs",
-            uiComponents: "Button to trigger export, modal overlay during generation.",
-            uiStateLoading: "Renders a full-screen blurred background loading overlay containing a security notification banner: 'Compiling system security records, please wait...'.",
-            uiStateEmpty: "N/A",
-            uiStateError: "Display error message if export fails.",
-            uiStateSuccess: "Closes the modal overlay view and triggers the browser's native file download workflow to save the spreadsheet.",
-            notes: "",
-            dependencies: [],
-            risks: [],
+            noLogEvents: [
+              "Không lưu lại dữ liệu Token."
+            ],
+            integrationPoints: [
+              { system: "Apache POI (SXSSFWorkbook)", responsibility: "Vì dữ liệu xuất ra có thể lên đến hàng trăm nghìn dòng, KHÔNG sử dụng XSSFWorkbook thông thường, bắt buộc phải dùng SXSSFWorkbook (Streaming Version) của thư viện Apache POI để giới hạn bộ nhớ RAM." }
+            ],
+            uiComponents: "Page: /admin/system/audit-logs. Components: Bảng điều khiển bộ lọc (Từ ngày - Đến ngày, Select Box chọn loại hành động CREATE/UPDATE/DELETE/ALL); Nút 'Export to Excel'.",
+            uiStateSuccess: "Clicking export disables the button, shows a loading spinner, streams the file, and triggers the browser to save it once complete.",
+            endpoints: ["GET /api/audit-logs/export"],
+            ownerService: "Spring Boot Support API",
             apiContracts: [
               {
-                id: "api-contract-audit-export",
+                id: "contract-audit-log-export",
                 name: "GET /api/audit-logs/export",
-                content: `Method: GET\nPath: /api/audit-logs/export\nQuery Parameters:\n  startDate: "2026-07-01T00:00:00Z" (Required)\n  endDate: "2026-07-08T23:59:59Z" (Required)\n  action: "SESSION_CANCELLED" (Optional - filter by a specific action classification code)\nHeaders:\n  Authorization: Bearer <token>\n\nSuccess Response (200 OK):\nHeaders:\n  Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\n  Content-Disposition: attachment; filename=system_audit_logs_20260701.xlsx\n\nBody: Raw binary byte stream containing the compiled audit log spreadsheet.`
+                content: `Method: GET\nPath: /api/audit-logs/export?startDate=2026-07-01&endDate=2026-07-15&actionType=UPDATE\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\nHeaders:\n  Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\n  Content-Disposition: attachment; filename="AuditLogs_20260701_20260715.xlsx"\nBody: [Binary Stream of Excel File]`
               }
             ],
-            dataContracts: [],
             testCases: [
               {
-                id: "tc-audit-exp-01",
+                id: "tc-audit-log-export-admin-success",
                 title: "Verify authorized client (Admin) can access Audit Log Export successfully",
-                type: "api",
-                precondition: "Caller holds administrative privileges and provides a valid JWT token context.",
+                type: "integration",
+                precondition: "Client is authenticated with role: Admin",
                 steps: [
-                  "Call: GET /api/audit-logs/export?startDate=2026-07-01T00:00:00Z&endDate=2026-07-02T23:59:59Z."
+                  "Authenticate user as Admin.",
+                  "Invoke endpoint: GET /api/audit-logs/export?startDate=2026-07-01&endDate=2026-07-05"
                 ],
-                expectedResult: "HTTP 200 OK response containing the uncorrupted downloadable file stream with all system modification rows intact.",
+                expectedResult: "Request succeeds and streams a valid file.",
                 status: "not_started"
               },
               {
-                id: "tc-audit-exp-02",
+                id: "tc-audit-log-export-unauthorized",
                 title: "Verify unauthorized role is rejected when accessing Audit Log Export",
                 type: "api",
-                precondition: "A standard facility manager profile (MANAGER) attempts to download high-level system logs.",
+                precondition: "User is authenticated with role: Manager (or anonymous)",
                 steps: [
-                  "Call the endpoint using the manager's security token."
+                  "Attempt to invoke endpoint: GET /api/audit-logs/export with Manager token."
                 ],
-                expectedResult: "Returns an HTTP 403 Forbidden status code, blocking access.",
+                expectedResult: "Request is blocked and returns 403 Forbidden.",
                 status: "not_started"
               },
               {
-                id: "tc-audit-exp-03",
+                id: "tc-audit-log-export-binary-check",
                 title: "Verify export endpoint returns correct spreadsheet binary type",
-                type: "api",
-                precondition: "Valid request.",
+                type: "integration",
+                precondition: "User is Admin. Valid date range.",
                 steps: [
-                  "Check response headers."
+                  "Invoke endpoint: GET /api/audit-logs/export?startDate=2026-07-01&endDate=2026-07-05"
                 ],
-                expectedResult: "The endpoint must return a Content-Type header matching application/vnd.openxmlformats-officedocument.spreadsheetml.sheet to ensure correct browser handling.",
+                expectedResult: "Response content-type is strictly application/vnd.openxmlformats-officedocument.spreadsheetml.sheet and the payload is not empty.",
                 status: "not_started"
               }
             ],
             doneCriteria: [
-              { id: "dc-audit-exp-01", content: "Access is restricted exclusively to the administrative profile ADMIN.", checked: false },
-              { id: "dc-audit-exp-02", content: "Hashed credentials, private key indicators, or active token values are stripped from all spreadsheet rows.", checked: false },
-              { id: "dc-audit-exp-03", content: "Successfully logs an internal entry within the audit table documenting the export activity.", checked: false }
-            ]
+              { id: "dc-audit-log-export-contract", content: "API contract is documented in this node.", checked: true },
+              { id: "dc-audit-log-export-roles", content: "Required clients/roles (Admin strictly) are assigned.", checked: true },
+              { id: "dc-audit-log-export-business-rules", content: "Business rules (30 days limit) and inherited rules are visible in AI export.", checked: true },
+              { id: "dc-audit-log-export-streaming", content: "Streaming implementation constraints (SXSSFWorkbook) are documented to avoid OOM.", checked: true },
+              { id: "dc-audit-log-export-error", content: "Error response is clear and does not leak sensitive data.", checked: true },
+              { id: "dc-audit-log-export-tests", content: "All 3 test cases, including the binary spreadsheet verification, are defined.", checked: true },
+              { id: "dc-audit-log-export-markdown", content: "Feature can be exported as AI-readable Markdown.", checked: true }
+            ],
+            notes: "Before coding:\nInspect the existing project structure in the Spring Boot Support API.\nLocate the entity mapped to the Audit Logs schema (e.g., AuditLog). Ensure the repository interface supports fetching data by date ranges.\nImport org.apache.poi:poi-ooxml in pom.xml / build.gradle if not present. Use SXSSFWorkbook instead of XSSFWorkbook for streaming large datasets safely.\nImplement the service layer with @Transactional(readOnly = true).\nFetch data in chunks (Pages) or use Java 8 Stream (@Query returning Stream<AuditLog>) wrapped in a try-with-resources block to write directly to the Excel row context.\nStream the final output directly to HttpServletResponse.getOutputStream() rather than wrapping it in a custom JSON response. Set the necessary Headers (Content-Disposition, Content-Type).\nEnforce strict Admin role checks using @PreAuthorize(\"hasRole('ADMIN')\").\nCheck existing tests before adding new ones. Implement the 3 test cases fully."
           }
         ]
       },
