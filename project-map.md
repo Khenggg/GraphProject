@@ -1,6 +1,6 @@
 # Project Map
 
-> Generated: 2026-07-19 16:21:09
+> Generated: 2026-07-19 16:23:41
 > Generator: `scripts/export-project-map.ps1`
 
 This file contains the project architecture and a direct source-code snapshot. The snapshot is generated from the source tree and filtered by `projectmapignore`.
@@ -48,7 +48,7 @@ src/main.tsx -> src/App.tsx
 | `src/domain/taxonomy.ts` | 8301 |
 | `src/index.css` | 1592 |
 | `src/main.tsx` | 240 |
-| `src/seed/parkingBuildingSeed.ts` | 873924 |
+| `src/seed/parkingBuildingSeed.ts` | 872663 |
 | `src/seed/parkingTaxonomyMigration.ts` | 27295 |
 | `src/store/featureTreeStore.ts` | 24426 |
 | `src/tests/aiExport.test.ts` | 1952 |
@@ -5220,16 +5220,16 @@ export function createParkingBuildingSeedTree(): FeatureNode[] {
             id: "leaf-auth-session",
             title: "Login & Session Management",
             type: "leaf_feature",
-            summary: "User authentication flows, current user profile retrieval, JWT token refreshing, and session termination.",
-            clients: ["Driver", "Staff", "Manager", "Admin"],
+            summary: "User authentication flows, current user profile retrieval, JWT token refreshing, session termination, and password reset.",
+            clients: ["Guest", "Driver", "Staff", "Manager", "Admin"],
             status: "ready",
             priority: "high",
-            tags: ["auth", "session", "security"],
+            tags: ["auth", "session", "security", "password-reset"],
             dependencies: [],
             risks: [],
-            notes: "Immediate session revocation requires access token blacklisting using JWT jti claims.",
+            notes: "Immediate session revocation requires access token blacklisting using JWT jti claims. Reset token must expire within 15 minutes.",
             ownerService: ".NET Core API",
-            objective: "Implement complete authentication and session management for the Parking Building Management System. This feature must allow users to:\n1. Login with username and password.\n2. Receive a short-lived JWT access token.\n3. Receive a secure refresh token.\n4. Retrieve the current authenticated user profile.\n5. Refresh expired access tokens using refresh token rotation.\n6. Logout and revoke the current session.\n7. Prevent disabled or inactive users from accessing protected APIs.\n\nThe .NET Core API is the owner of authentication. The Spring Boot Support API must be able to validate the JWT issued by the .NET Core API.",
+            objective: "Implement complete authentication and session management for the Parking Building Management System. This feature must allow users to:\n1. Login with username and password.\n2. Receive a short-lived JWT access token.\n3. Receive a secure refresh token.\n4. Retrieve the current authenticated user profile.\n5. Refresh expired access tokens using refresh token rotation.\n6. Logout and revoke the current session.\n7. Prevent disabled or inactive users from accessing protected APIs.\n8. Request a password reset link and set a new password.\n\nThe .NET Core API is the owner of authentication. The Spring Boot Support API must be able to validate the JWT issued by the .NET Core API.",
             inScope: [
               "Login with username and password.",
               "Receive a short-lived JWT access token.",
@@ -5237,7 +5237,9 @@ export function createParkingBuildingSeedTree(): FeatureNode[] {
               "Retrieve the current authenticated user profile.",
               "Refresh expired access tokens using refresh token rotation.",
               "Logout and revoke the current session.",
-              "Prevent disabled or inactive users from accessing protected APIs."
+              "Prevent disabled or inactive users from accessing protected APIs.",
+              "Endpoint to request a password reset email.",
+              "Endpoint to verify reset token and set a new password."
             ],
             outOfScope: [
               "Third-party OAuth identity providers (Google, Facebook).",
@@ -5245,6 +5247,7 @@ export function createParkingBuildingSeedTree(): FeatureNode[] {
               "Frontend UI theme customization."
             ],
             permissions: [
+              { role: "Guest", permission: "Can request reset link and reset password." },
               { role: "Driver", permission: "Can login, retrieve own profile, refresh token, and logout." },
               { role: "Staff", permission: "Can login, retrieve own profile, refresh token, and logout." },
               { role: "Manager", permission: "Can login, retrieve own profile, refresh token, and logout." },
@@ -5318,7 +5321,9 @@ CREATE TABLE revoked_access_tokens (
               "POST /api/core/auth/login",
               "GET /api/core/auth/me",
               "POST /api/core/auth/refresh-token",
-              "POST /api/core/auth/logout"
+              "POST /api/core/auth/logout",
+              "POST /api/core/auth/forgot-password",
+              "POST /api/core/auth/reset-password"
             ],
             apiContracts: [
               {
@@ -6138,41 +6143,6 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
               { id: "dc-reg-43", content: "Audit/application log records DRIVER_REGISTERED.", checked: false },
               { id: "dc-reg-44", content: "Automated test cases pass.", checked: false }
             ]
-          },
-          {
-            id: "leaf-auth-forget-password",
-            title: "Forget Password",
-            type: "leaf_feature",
-            clients: ["Guest"],
-            status: "ready",
-            priority: "high",
-            tags: ["auth", "password", "reset", "security"],
-            summary: "Allows users to request a password reset link and set a new password.",
-            objective: "Implement a secure forget password flow. Users can request a reset link sent to their email. Using the secure token from the link, they can set a new password.",
-            inScope: [
-              "Endpoint to request a password reset email.",
-              "Endpoint to verify reset token and set a new password.",
-              "Secure token generation with expiration (e.g., 15 minutes)."
-            ],
-            outOfScope: [
-              "SMS based password reset."
-            ],
-            permissions: [
-              { role: "Guest", permission: "Can request reset link and reset password." }
-            ],
-            businessRules: [
-              "Reset token must expire within 15 minutes.",
-              "Reset token must be single-use.",
-              "Password reset must enforce strong password policy."
-            ],
-            endpoints: [
-              "POST /api/core/auth/forgot-password",
-              "POST /api/core/auth/reset-password"
-            ],
-            ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/auth/forgot-password"),
-            testCases: defaultApiTests("Forget Password", ["Guest"], ["POST /api/core/auth/forgot-password"]),
-            doneCriteria: defaultDoneCriteria("Forget Password")
           }
         ]
       },
