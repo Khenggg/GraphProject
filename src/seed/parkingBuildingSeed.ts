@@ -11107,38 +11107,247 @@ Response Success (201 Created):
         type: "category",
         summary: "System logs check, DB sync, and debugging routines.",
         children: [
+          
+          
+          
           {
             id: "leaf-diag-core-health",
             title: "Core Health Check",
             type: "leaf_feature",
             clients: ["Admin", "System"],
-            endpoints: ["GET /api/core/health"],
-            ownerService: ".NET Core API",
-            apiContracts: createApiContract("GET /api/core/health"),
-            testCases: defaultApiTests("Core Health Check", ["Admin"], ["GET /api/core/health"]),
-            doneCriteria: defaultDoneCriteria("Core Health Check")
+            status: "ready",
+            priority: "high",
+            tags: ["health", "core", "diagnostics"],
+            summary: "Provides real-time observability for the .NET Core API via liveness and readiness probes.",
+            objective: "Ensure infrastructure can determine traffic routing (live) and if dependencies are reachable (ready), providing admins with detailed component health.",
+            inScope: ["Verify component health", "Check PostgreSQL connection", "Check RabbitMQ state"],
+            outOfScope: ["Data dumps", "System remediation"],
+            permissions: [{ role: "Admin", permission: "Reads detailed health data with valid JWT" }],
+            businessRules: [
+              "Liveness checks must NEVER query the database.",
+              "Readiness checks must enforce strict timeouts (500ms maximum)."
+            ],
+            validationRules: [{ field: "request", rule: "No query parameters allowed", errorMessage: "Bad Request: Parameters are forbidden on health endpoints" }],
+            securityRules: [
+              "Detailed health must require a valid Admin JWT.",
+              "Stack traces, connection strings, and credential secrets must NEVER be included."
+            ],
+            logEvents: ["Health transition to degraded/offline", "Audit log detailed health access"],
+            noLogEvents: ["Successful liveness pings"],
+            integrationPoints: [
+              { system: "Shared PostgreSQL", responsibility: "Check connection pool health" }
+            ],
+            uiPage: "/admin/health",
+            uiComponents: "Health Dashboard, Status Indicators",
+            uiStateLoading: "Show loading skeleton for dependency latencies",
+            uiStateEmpty: "Health metrics are continuous, empty state is never rendered.",
+            uiStateError: "Display degraded status with warning icons",
+            uiStateSuccess: "Display healthy status in green",
+            metadata: { ownerService: ".NET Core API", endpoints: ["GET /api/core/health/live", "GET /api/core/health"] },
+            dbExistingTables: ["sys_health_checks"],
+            dbRelationships: ["sys_health_checks connects to the primary reporting node"],
+            dbNewTablesSql: "-- No new tables required for this feature",
+            apiContracts: [{ id: "api-core-health", name: "GET /api/core/health", content: "Returns status and component latencies array." }],
+            uiContracts: [{ id: "ui-core-health", name: "Health Dashboard Widget", content: "Displays green/red/yellow status indicators" }],
+            dataContracts: [{ id: "data-core-health", name: "Health Status Response", content: "JSON object containing status, components, version, checkedAt" }],
+            testCases: [
+              { id: "tc-core-health-1", title: "Verify liveness returns 200 UP", type: "api", expectedResult: "Returns 200 OK without DB access", status: "not_started" }
+            ],
+            doneCriteria: [{ id: "dc-core-health-1", content: "Infrastructure routes traffic based on liveness", checked: false }],
+            dependencies: ["Infrastructure orchestrator (Kubernetes)", "Shared PostgreSQL"],
+            risks: ["High traffic to detailed health may cause minor DB load", "Liveness deadlock false positive"],
+            notes: "Liveness is strictly unauthenticated but must be network restricted."
           },
           {
             id: "leaf-diag-support-health",
             title: "Support Health Check",
             type: "leaf_feature",
             clients: ["Admin", "System"],
-            endpoints: ["GET /api/support/health"],
-            ownerService: "Spring Boot Support API",
-            apiContracts: createApiContract("GET /api/support/health"),
-            testCases: defaultApiTests("Support Health Check", ["Admin"], ["GET /api/support/health"]),
-            doneCriteria: defaultDoneCriteria("Support Health Check")
+            status: "ready",
+            priority: "high",
+            tags: ["health", "support", "diagnostics"],
+            summary: "Expose the operational health and projection lag of the Spring Boot Support API.",
+            objective: "Verify read-heavy reporting services are functional and quantify delay between Core command API and Support CQRS read models.",
+            inScope: ["Application liveness", "Database read-replica connectivity", "Event consumer offset lag"],
+            outOfScope: ["Raw data dumps", "Query execution"],
+            permissions: [{ role: "Admin", permission: "Reads detailed health including projection lag" }],
+            businessRules: [
+              "Support health reports projection freshness, NOT Core command state correctness.",
+              "Service remains available (HTTP 200) even if data is stale, up to a configurable threshold."
+            ],
+            validationRules: [{ field: "request", rule: "No query parameters allowed", errorMessage: "Bad Request: Parameters are forbidden on health endpoints" }],
+            securityRules: [
+              "Admin JWT required for detailed health.",
+              "Mask consumer endpoint details."
+            ],
+            logEvents: ["Lag exceeds 300-second warning threshold"],
+            noLogEvents: ["Liveness ping"],
+            integrationPoints: [
+              { system: "Event Stream", responsibility: "Determine offset lag" }
+            ],
+            uiPage: "/admin/health",
+            uiComponents: "Projection Freshness Widget",
+            uiStateLoading: "Show loading spinner",
+            uiStateEmpty: "Health metrics are continuous, empty state is never rendered.",
+            uiStateError: "Show 'asOf' warning for stale data",
+            uiStateSuccess: "Show real-time sync status",
+            metadata: { ownerService: "Spring Boot Support API", endpoints: ["GET /api/support/health"] },
+            dbExistingTables: ["consumer_offsets"],
+            dbRelationships: ["consumer_offsets tracks partition offset progression"],
+            dbNewTablesSql: "-- No new tables required for this feature",
+            apiContracts: [{ id: "api-support-health", name: "GET /api/support/health", content: "Returns projectionLagSeconds and asOf timestamp." }],
+            uiContracts: [{ id: "ui-support-health", name: "Projection Freshness Widget", content: "Displays lag in seconds and 'as of' time" }],
+            dataContracts: [{ id: "data-support-health", name: "Support Health Response", content: "JSON object containing lag metrics and component array" }],
+            testCases: [
+              { id: "tc-support-health-1", title: "Verify projection lag calculation", type: "api", expectedResult: "Returns accurate lag in seconds", status: "not_started" }
+            ],
+            doneCriteria: [{ id: "dc-support-health-1", content: "Operators distinguish availability from freshness", checked: false }],
+            dependencies: ["Event Bus (RabbitMQ/Kafka)", "Spring Boot Actuator"],
+            risks: ["Consumer lag spikes during high load", "Read replica replication delay"],
+            notes: "The service remains 'available' even if data is stale."
           },
           {
             id: "leaf-diag-db-check",
             title: "Database Check",
             type: "leaf_feature",
             clients: ["Admin", "System"],
-            endpoints: ["GET /api/core/db-check"],
-            ownerService: ".NET Core API",
-            apiContracts: createApiContract("GET /api/core/db-check"),
-            testCases: defaultApiTests("Database Check", ["Admin"], ["GET /api/core/db-check"]),
-            doneCriteria: defaultDoneCriteria("Database Check")
+            status: "ready",
+            priority: "high",
+            tags: ["health", "database", "diagnostics"],
+            summary: "Bounded diagnostic check of primary PostgreSQL to verify connectivity, schema, and invariants.",
+            objective: "Give DBAs immediate insight into database health without dumping customer data.",
+            inScope: ["Connectivity test", "Latency measurement", "Schema version verification", "Connection pool utilization"],
+            outOfScope: ["Migration execution", "Arbitrary SQL queries", "Customer data reads"],
+            permissions: [{ role: "Admin", permission: "Execute check requires fresh Admin session" }],
+            businessRules: [
+              "Queries must be strictly bounded (max timeout 1000ms).",
+              "Invariant checks must be aggregate counts only."
+            ],
+            validationRules: [{ field: "request", rule: "No parameters allowed", errorMessage: "Bad Request: Parameters are forbidden on database diagnostic endpoints" }],
+            securityRules: [
+              "Never return physical DSN, database username, or raw SQL."
+            ],
+            logEvents: ["Connection pool exhausted", "Long-running locks detected"],
+            noLogEvents: ["Routine healthy check polling"],
+            integrationPoints: [
+              { system: "Primary PostgreSQL", responsibility: "Query pg_stat_activity" }
+            ],
+            uiPage: "/admin/database",
+            uiComponents: "Metrics Dashboard",
+            uiStateLoading: "Show skeleton graphs",
+            uiStateEmpty: "Metrics are continuous, empty state is never rendered.",
+            uiStateError: "Display pool exhaustion error",
+            uiStateSuccess: "Display pool usage and active locks",
+            metadata: { ownerService: ".NET Core API", endpoints: ["GET /api/core/db-check"] },
+            dbExistingTables: ["__EFMigrationsHistory", "pg_stat_activity"],
+            dbRelationships: ["pg_stat_activity links to active database processes"],
+            dbNewTablesSql: "-- No new tables required for this feature",
+            apiContracts: [{ id: "api-db-check", name: "GET /api/core/db-check", content: "Returns latency, schema version, pool percentage." }],
+            uiContracts: [{ id: "ui-db-check", name: "Database Diagnostics Dashboard", content: "Renders pool utilization percentage and lock counts" }],
+            dataContracts: [{ id: "data-db-check", name: "Database Diagnostic Response", content: "JSON array of database invariants and aggregate counts" }],
+            testCases: [
+              { id: "tc-db-check-1", title: "Test pool utilization extraction", type: "integration", expectedResult: "Returns active connection count without DSN", status: "not_started" }
+            ],
+            doneCriteria: [{ id: "dc-db-check-1", content: "Admins view active locks safely", checked: false }],
+            dependencies: ["PostgreSQL System Catalogs", "EF Core Diagnostics"],
+            risks: ["Querying pg_stat_activity requires special user permissions", "Potential for lock contention if queried too frequently"],
+            notes: "Implement strict retry/backoff to prevent accidental DDoS from the admin portal."
+          },
+          {
+            id: "leaf-diag-res-dump",
+            title: "Reservation Debug Dump",
+            type: "leaf_feature",
+            clients: ["Admin"],
+            status: "ready",
+            priority: "high",
+            tags: ["diagnostics", "reservation", "break-glass"],
+            summary: "Bounded, redacted diagnostic view of a specific reservation's state transitions.",
+            objective: "Facilitate active incident triage without creating a mass data-exfiltration vector.",
+            inScope: ["Reservation timeline", "Vehicle linkage", "Slot allocation", "Audit history"],
+            outOfScope: ["Mass export", "Raw PII", "Full payment credentials"],
+            permissions: [{ role: "Admin", permission: "Requires Break-Glass flag and incident correlation" }],
+            businessRules: [
+              "Max 100 related event rows returned.",
+              "Strict timeline ordering must be maintained."
+            ],
+            validationRules: [{ field: "incidentId", rule: "Required correlation ID", errorMessage: "Missing incident correlation parameter" }],
+            securityRules: [
+              "Mask all License Plates and Contact Details.",
+              "Show only gateway transaction reference."
+            ],
+            logEvents: ["High-priority security audit log detailing dumped Reservation ID"],
+            noLogEvents: ["Internal query trace steps"],
+            integrationPoints: [
+              { system: "Payment Gateway", responsibility: "Link masked payment refs" }
+            ],
+            uiPage: "/admin/incidents",
+            uiComponents: "Incident Timeline Viewer",
+            uiStateLoading: "Spinner overlay",
+            uiStateEmpty: "Reservation diagnostic view requires an anchor ID.",
+            uiStateError: "Show 403 Break-Glass Disabled",
+            uiStateSuccess: "Render redacted chronological timeline",
+            metadata: { ownerService: ".NET Core API", endpoints: ["GET /api/core/diagnostics/reservations/{id}"] },
+            dbExistingTables: ["reservations", "reservation_events"],
+            dbRelationships: ["reservation_events linked via reservation_id"],
+            dbNewTablesSql: "-- No new tables required for this feature",
+            apiContracts: [{ id: "api-res-dump", name: "GET /api/core/diagnostics/reservations/{id}", content: "Redacted state timeline with PII masks." }],
+            uiContracts: [{ id: "ui-res-dump", name: "Reservation Timeline View", content: "Renders sequential events for the reservation" }],
+            dataContracts: [{ id: "data-res-dump", name: "Reservation Timeline DTO", content: "Array of masked event details and timestamps" }],
+            testCases: [
+              { id: "tc-res-dump-1", title: "Verify Break-Glass guard", type: "api", expectedResult: "403 when Break-Glass disabled", status: "not_started" }
+            ],
+            doneCriteria: [{ id: "dc-res-dump-1", content: "Data exfiltration mitigated", checked: false }],
+            dependencies: ["Incident Management Correlation ID Service"],
+            risks: ["Potential exposure of sensitive data if masking logic fails"],
+            notes: "Strict masking policies apply to all text fields before returning."
+          },
+          {
+            id: "leaf-diag-sess-dump",
+            title: "Session Debug Dump",
+            type: "leaf_feature",
+            clients: ["Admin"],
+            status: "ready",
+            priority: "high",
+            tags: ["diagnostics", "session", "break-glass"],
+            summary: "Bounded, redacted timeline of a parking session including barrier commands.",
+            objective: "Debug stuck vehicles or barrier anomalies during active incidents.",
+            inScope: ["Entry/exit times", "Gate ACK/NACK events", "Pricing calculations"],
+            outOfScope: ["Raw base64 ALPR images", "Mass export"],
+            permissions: [{ role: "Admin", permission: "Requires Break-Glass flag and incident correlation" }],
+            businessRules: [
+              "Timeline truncates at most recent 100 events.",
+              "Must distinguish software events from hardware barrier ACKs."
+            ],
+            validationRules: [{ field: "incidentId", rule: "Required correlation ID", errorMessage: "Missing incident correlation parameter" }],
+            securityRules: [
+              "Mask Parking Card serial numbers.",
+              "Return temporary CDN URIs for images, not raw bytes."
+            ],
+            logEvents: ["High-priority security audit log generated for access"],
+            noLogEvents: ["Transient hardware status polling"],
+            integrationPoints: [
+              { system: "Barrier Gates", responsibility: "Correlate mechanical ACKs" }
+            ],
+            uiPage: "/admin/incidents",
+            uiComponents: "Incident Timeline Viewer",
+            uiStateLoading: "Spinner overlay",
+            uiStateEmpty: "Session diagnostic view requires an anchor ID.",
+            uiStateError: "Show 403 Break-Glass Disabled",
+            uiStateSuccess: "Render session gate interaction timeline",
+            metadata: { ownerService: ".NET Core API", endpoints: ["GET /api/core/diagnostics/sessions/{id}"] },
+            dbExistingTables: ["sessions", "session_events"],
+            dbRelationships: ["session_events linked via session_id"],
+            dbNewTablesSql: "-- No new tables required for this feature",
+            apiContracts: [{ id: "api-sess-dump", name: "GET /api/core/diagnostics/sessions/{id}", content: "Timeline array distinguishing exits and barriers." }],
+            uiContracts: [{ id: "ui-sess-dump", name: "Session Hardware Timeline View", content: "Renders sequential events differentiating software/hardware" }],
+            dataContracts: [{ id: "data-sess-dump", name: "Session Timeline DTO", content: "Array of masked event details and hardware responses" }],
+            testCases: [
+              { id: "tc-sess-dump-1", title: "Verify truncation", type: "api", expectedResult: "Truncates at 100 events", status: "not_started" }
+            ],
+            doneCriteria: [{ id: "dc-sess-dump-1", content: "Barrier anomalies diagnosed safely", checked: false }],
+            dependencies: ["Incident Management Correlation ID Service", "Hardware Abstraction Layer"],
+            risks: ["Barrier event spam could overwhelm memory if truncation fails"],
+            notes: "Images must strictly use short-lived URLs."
           },
           { id: "leaf-diag-res-dump", title: "Reservation Debug Dump", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Reservation Debug Dump", ["Admin"], []), doneCriteria: defaultDoneCriteria("Reservation Debug Dump") },
           { id: "leaf-diag-sess-dump", title: "Session Debug Dump", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Session Debug Dump", ["Admin"], []), doneCriteria: defaultDoneCriteria("Session Debug Dump") },
