@@ -1,6 +1,6 @@
 # Project Map
 
-> Generated: 2026-07-19 16:27:56
+> Generated: 2026-07-19 16:56:28
 > Generator: `scripts/export-project-map.ps1`
 
 This file contains the project architecture and a direct source-code snapshot. The snapshot is generated from the source tree and filtered by `projectmapignore`.
@@ -48,8 +48,8 @@ src/main.tsx -> src/App.tsx
 | `src/domain/taxonomy.ts` | 8301 |
 | `src/index.css` | 1592 |
 | `src/main.tsx` | 240 |
-| `src/seed/parkingBuildingSeed.ts` | 873945 |
-| `src/seed/parkingTaxonomyMigration.ts` | 27295 |
+| `src/seed/parkingBuildingSeed.ts` | 872185 |
+| `src/seed/parkingTaxonomyMigration.ts` | 31220 |
 | `src/store/featureTreeStore.ts` | 24426 |
 | `src/tests/aiExport.test.ts` | 1952 |
 | `src/tests/export.test.ts` | 2726 |
@@ -5208,7 +5208,7 @@ export function createParkingBuildingSeedTree(): FeatureNode[] {
       // 3. Authentication
       {
         id: "cat-authentication",
-        title: "Authentication & Session Management",
+        title: "Authentication",
         type: "category",
         summary: "Authentication flows to verify user identity.",
         businessRules: [
@@ -5690,41 +5690,6 @@ Invalid Token Response (401 Unauthorized):
               { id: "dc-tests-pass", content: "Automated tests for all listed cases pass.", checked: false },
               { id: "dc-no-break", content: "Existing tests are not broken.", checked: false }
             ]
-          },
-          {
-            id: "leaf-auth-forget-password",
-            title: "Forget Password",
-            type: "leaf_feature",
-            clients: ["Guest"],
-            status: "ready",
-            priority: "high",
-            tags: ["auth", "password", "reset", "security"],
-            summary: "Allows users to request a password reset link and set a new password.",
-            objective: "Implement a secure forget password flow. Users can request a reset link sent to their email. Using the secure token from the link, they can set a new password.",
-            inScope: [
-              "Endpoint to request a password reset email.",
-              "Endpoint to verify reset token and set a new password.",
-              "Secure token generation with expiration (e.g., 15 minutes)."
-            ],
-            outOfScope: [
-              "SMS based password reset."
-            ],
-            permissions: [
-              { role: "Guest", permission: "Can request reset link and reset password." }
-            ],
-            businessRules: [
-              "Reset token must expire within 15 minutes.",
-              "Reset token must be single-use.",
-              "Password reset must enforce strong password policy."
-            ],
-            endpoints: [
-              "POST /api/core/auth/forgot-password",
-              "POST /api/core/auth/reset-password"
-            ],
-            ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/auth/forgot-password"),
-            testCases: defaultApiTests("Forget Password", ["Guest"], ["POST /api/core/auth/forgot-password"]),
-            doneCriteria: defaultDoneCriteria("Forget Password")
           },
           {
             id: "leaf-auth-register",
@@ -18359,6 +18324,76 @@ CREATE TABLE revoked_access_tokens (
       uiStateEmpty: "Not applicable.",
       uiStateError: "Frontend must treat logout as idempotent: even if backend fails, clear client storage and redirect to login.",
       uiStateSuccess: "Redirect to login page and display logout confirmation message."
+    },
+    {
+      id: "leaf-auth-forget-password",
+      title: "Forget Password",
+      match: /(forget|forgot|reset)/i,
+      endpoint: /\/(forgot|reset)$/i,
+      objective: "Provide secure Forget Password and Reset Password flows. Follows strict transactional outbox patterns, lock ordering, and audit logging to ensure consistency across the PBMS ecosystem.",
+      inScope: [
+        "POST /forgot: Validate email, generate 256-bit entropy token, lock password_reset_tokens, invalidate old tokens, insert new token, and publish Notification via Outbox.",
+        "POST /reset: Lock tokens, users, and audit_logs in strict order.",
+        "Verify password history, complexity, and security stamp.",
+        "Update users.password, security_stamp, and token.used_at.",
+        "Insert into audit_logs and user_password_history.",
+        "Publish UserPasswordChanged Event via Outbox.",
+        "Cleanup worker to periodically hard-delete expired tokens."
+      ],
+      outOfScope: [],
+      permissions: [
+        { role: "Guest", permission: "Can access /forgot and /reset endpoints anonymously." }
+      ],
+      dbExistingTables: ["users", "audit_logs", "outbox_events"],
+      dbNewTablesSql: `-- Table: password_reset_tokens
+CREATE TABLE password_reset_tokens (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id),
+  token_hash VARCHAR(255) UNIQUE NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  used_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- Table: user_password_history
+CREATE TABLE user_password_history (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id),
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+);`,
+      dbRelationships: [
+        "password_reset_tokens.user_id -> users.id",
+        "user_password_history.user_id -> users.id"
+      ],
+      validationRules: [
+        { field: "email (Forgot)", rule: "EmailAddress, Required, MaxLength(255), Trim(), Lowercase", errorMessage: "VALIDATION_ERROR" },
+        { field: "token (Reset)", rule: "Required, MaxLength 512", errorMessage: "INVALID_TOKEN" },
+        { field: "newPassword (Reset)", rule: "MinLength 8, MaxLength 64, SpecialChar, Digit, Uppercase, Lowercase", errorMessage: "PASSWORD_TOO_WEAK" }
+      ],
+      securityRules: [
+        "Strict Lock Order: 1. password_reset_tokens, 2. users, 3. audit_logs, 4. outbox_events to prevent deadlocks.",
+        "Transactional Outbox Pattern: Never publish events/notifications inside DB transaction directly. Write intent to outbox_events.",
+        "Concurrency Control: Use SELECT ... FOR UPDATE on password_reset_tokens by user_id for /forgot.",
+        "Concurrency Control: Use SELECT ... FOR UPDATE on the specific token row for /reset to prevent double-processing.",
+        "Security Stamp: Generate a new SecurityStamp and save in users. Validate stamp against JWT on every request.",
+        "Cleanup Worker: Use optimized SQL (DELETE with limit) to purge tokens where expires_at < NOW()."
+      ],
+      logEvents: [
+        "Audit Metadata: correlationId, traceId, userId, actor (GUEST), ip, userAgent.",
+        "Password reset token issued.",
+        "Password successfully reset."
+      ],
+      noLogEvents: [
+        "Raw token strings.",
+        "Raw passwords or new passwords."
+      ],
+      uiPage: "/forgot-password, /reset-password",
+      uiComponents: "ForgotPasswordForm, ResetPasswordForm",
+      uiStateLoading: "Show loading spinner overlay during API calls, disable submit buttons.",
+      uiStateEmpty: "Not applicable.",
+      uiStateError: "Handle 400 (INVALID_TOKEN, PASSWORD_REUSED, PASSWORD_TOO_WEAK, USER_STATUS_INVALID), 429 RATE_LIMITED, 409 CONCURRENT_RESET, 500 INTERNAL_ERROR.",
+      uiStateSuccess: "Redirect to login upon successful reset with a confirmation toast."
     }
   ];
 

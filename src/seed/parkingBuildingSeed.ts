@@ -137,7 +137,7 @@ export function createParkingBuildingSeedTree(): FeatureNode[] {
       // 3. Authentication
       {
         id: "cat-authentication",
-        title: "Authentication & Session Management",
+        title: "Authentication",
         type: "category",
         summary: "Authentication flows to verify user identity.",
         businessRules: [
@@ -619,41 +619,6 @@ Invalid Token Response (401 Unauthorized):
               { id: "dc-tests-pass", content: "Automated tests for all listed cases pass.", checked: false },
               { id: "dc-no-break", content: "Existing tests are not broken.", checked: false }
             ]
-          },
-          {
-            id: "leaf-auth-forget-password",
-            title: "Forget Password",
-            type: "leaf_feature",
-            clients: ["Guest"],
-            status: "ready",
-            priority: "high",
-            tags: ["auth", "password", "reset", "security"],
-            summary: "Allows users to request a password reset link and set a new password.",
-            objective: "Implement a secure forget password flow. Users can request a reset link sent to their email. Using the secure token from the link, they can set a new password.",
-            inScope: [
-              "Endpoint to request a password reset email.",
-              "Endpoint to verify reset token and set a new password.",
-              "Secure token generation with expiration (e.g., 15 minutes)."
-            ],
-            outOfScope: [
-              "SMS based password reset."
-            ],
-            permissions: [
-              { role: "Guest", permission: "Can request reset link and reset password." }
-            ],
-            businessRules: [
-              "Reset token must expire within 15 minutes.",
-              "Reset token must be single-use.",
-              "Password reset must enforce strong password policy."
-            ],
-            endpoints: [
-              "POST /api/core/auth/forgot-password",
-              "POST /api/core/auth/reset-password"
-            ],
-            ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/auth/forgot-password"),
-            testCases: defaultApiTests("Forget Password", ["Guest"], ["POST /api/core/auth/forgot-password"]),
-            doneCriteria: defaultDoneCriteria("Forget Password")
           },
           {
             id: "leaf-auth-register",
