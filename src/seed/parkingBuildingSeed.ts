@@ -5785,12 +5785,232 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-pay-waived",
             title: "Waived Payment",
             type: "leaf_feature",
+            status: "ready",
+            priority: "medium",
             clients: ["Staff", "Manager"],
+            tags: ["payments", "waived", "exemption", "audit", "transaction"],
+            summary: "Handle the process of waiving parking fees for system errors or management approvals. Requires strict justification, original fee calculation (for reporting integrity), session validation, and comprehensive audit logging.",
+            objective: "Provide a controlled, auditable mechanism for authorized personnel to waive parking fees while preserving financial reporting integrity by recording the original calculated fee amount.",
+            inScope: [
+              "Waive parking session fee for system errors or management approvals.",
+              "Original fee calculation and recording (for audit/reporting) even when waiving.",
+              "Session status transition from ACTIVE to WAIVED.",
+              "Payment entity creation with status=WAIVED and amount=calculatedFee.",
+              "Strict reason validation (10-500 chars, non-empty, non-whitespace).",
+              "Role-based reason code restriction (Staff: restricted list; Manager: unrestricted).",
+              "Pessimistic locking (SELECT FOR UPDATE) to prevent concurrent waiver.",
+              "Audit log with full metadata: paymentId, requestId, correlationId, collectorId, reason, waivedAmount."
+            ],
+            outOfScope: [
+              "Exit Module / Barrier opening: handled independently by the Exit Module based on session/payment state.",
+              "Online payment cancellation: handled by leaf-pay-online and PayOS webhook.",
+              "Receipt generation: handled by a separate receipt module."
+            ],
+            permissions: [
+              { role: "Manager", permission: "Authorize waiver for any valid reason code." },
+              { role: "Staff", permission: "Authorize waiver ONLY for specific codes: SYSTEM_ERROR, FREE_EVENT, PROMOTION. Any other reason code must return 403 FORBIDDEN." }
+            ],
+            businessRules: [
+              "Payment Required Check: If payment_required == false, return 422 NO_PAYMENT_REQUIRED immediately.",
+              "Fee Integrity: If calculatedFee <= 0 (and payment_required == true), return 422 NO_PAYMENT_REQUIRED.",
+              "Financial Integrity: payments.amount = calculatedFee (NOT 0). payments.status = WAIVED. payments.method = NONE (Inspect schema; use project equivalent if NONE is not supported).",
+              "Reason Validation: Required. Trim whitespace. Length [10-500]. Non-null, non-empty, no whitespace-only strings.",
+              "Permission Logic: Manager: authorized for any valid reason. Staff: authorized ONLY for SYSTEM_ERROR, FREE_EVENT, PROMOTION codes. Return 403 for any other reason.",
+              "State Conflict: If online payment is PENDING, return 409 PAYMENT_ALREADY_PENDING.",
+              "Session Status: Reject if status is in {PAID, WAIVED, COMPLETED, CANCELLED}. Return 422 SESSION_ALREADY_COMPLETED.",
+              "Lost Card / Plate Mismatch Block: If pending resolution flags are active, return 422 LOST_CARD_PENDING or PLATE_MISMATCH_PENDING.",
+              "Concurrency: SELECT FOR UPDATE on parking_sessions immediately after loading. Re-check status after lock is acquired.",
+              "Snapshot Pricing: Use snapshot_day_price etc. if != NULL. Fallback to pricing_rules if snapshot is NULL. If both NULL, return 500.",
+              "Atomicity: Payment INSERT, parking_sessions UPDATE, audit_log INSERT must be in a single IDbContextTransaction. Full rollback on any exception.",
+              "Loose Coupling: Do NOT invoke Exit Module directly. State change on payment/session is sufficient for Exit Module to operate independently."
+            ],
+            dbExistingTables: ["parking_sessions", "payments", "audit_logs", "pricing_rules"],
+            dbNewTablesSql: "-- VERIFY before implementation:\n-- 1. CHECK if payments.method supports 'NONE'. If not, map to project equivalent (e.g., 'OTHER', 'EXEMPT').\n-- 2. CHECK if parking_sessions.status supports 'WAIVED'. If not, add via migration or map to existing enum.\n-- Example migration if needed:\n-- ALTER TABLE payments DROP CONSTRAINT ck_payments_method;\n-- ALTER TABLE payments ADD CONSTRAINT ck_payments_method CHECK (method IN ('CASH', 'NONE', 'ONLINE'));\n-- ALTER TABLE parking_sessions DROP CONSTRAINT ck_sessions_status;\n-- ALTER TABLE parking_sessions ADD CONSTRAINT ck_sessions_status CHECK (status IN ('ACTIVE', 'PAID', 'WAIVED', 'COMPLETED', 'CANCELLED'));",
+            dbRelationships: [
+              "parking_sessions: SELECT FOR UPDATE to lock row, validate ACTIVE status, read snapshot pricing fields, check lost_card/plate_mismatch flags.",
+              "payments: INSERT payment record with status WAIVED, method NONE, amount=calculatedFee, waivedBy from JWT.",
+              "audit_logs: INSERT WAIVED_PAYMENT event with paymentId, requestId, correlationId, collectorId, sessionId, waivedAmount, reason, OldStatus, NewStatus.",
+              "pricing_rules: READ-only fallback when session snapshot pricing fields are NULL."
+            ],
+            validationRules: [
+              { field: "sessionId", rule: "Required. Session must exist and status must be ACTIVE.", errorMessage: "SESSION_NOT_FOUND" },
+              { field: "reason", rule: "Required. Trimmed length must be between 10 and 500 characters. Cannot be null, empty, or whitespace-only.", errorMessage: "VALIDATION_ERROR" },
+              { field: "reason (Staff role)", rule: "Must be one of: SYSTEM_ERROR, FREE_EVENT, PROMOTION. Any other value returns 403.", errorMessage: "FORBIDDEN" }
+            ],
+            securityRules: [
+              "JWT Auth: All requests must provide valid Bearer token.",
+              "Role Enforcement: Only Staff and Manager roles are permitted.",
+              "Staff Reason Restriction: Staff may only use pre-approved reason codes. Return 403 for unauthorized reason codes.",
+              "Server-side Fee Recalculation: Never trust fee from client. Always calculate on server for audit integrity."
+            ],
+            logEvents: [
+              "Log: TraceId, SessionId, CollectorId (from JWT), OldStatus, NewStatus, PaymentId, WaivedAmount, Reason, Latency.",
+              "Audit log WAIVED_PAYMENT event must include: paymentId, requestId, correlationId, collectorId, sessionId, waivedAmount, reason."
+            ],
+            noLogEvents: [
+              "Do not log raw JWT tokens or user passwords.",
+              "Do not log full driver personal data in application logs."
+            ],
+            integrationPoints: [
+              { system: "Pricing Module", responsibility: "Providing fee calculation (even when waiving, for audit integrity). Fallback to pricing_rules if snapshot is NULL." },
+              { system: "Audit Module", responsibility: "Writing WAIVED_PAYMENT audit record atomically inside the main transaction with full correlationId metadata." },
+              { system: "Exit Module", responsibility: "Independently reads payment/session status to determine if vehicle exit is permitted. NOT called directly from this feature." }
+            ],
+            uiPage: "/staff/waived-payment or /manager/waive",
+            uiComponents: "Waive confirmation modal: session summary, calculated fee display, mandatory reason input (10-500 chars), Confirm Waive button.",
+            uiStateLoading: "Disable 'Confirm Waive' button and show spinner while POST is in flight.",
+            uiStateEmpty: "N/A",
+            uiStateError: "Display specific error from reasonCode: 'PAYMENT_ALREADY_PENDING', 'LOST_CARD_PENDING', 'SESSION_ALREADY_COMPLETED', 'NO_PAYMENT_REQUIRED', 'FORBIDDEN'.",
+            uiStateSuccess: "Show waiver success with paymentId, waivedAt, waivedBy, waivedAmount, and reason. Gate exit handled separately by Exit Module.",
+            notes: "CRITICAL: Do NOT set payments.amount = 0. Always use calculatedFee for financial reporting integrity. Do NOT invoke Exit Module directly. Verify schema supports WAIVED status and NONE method before implementation.",
+            dependencies: [],
+            risks: [],
             endpoints: ["POST /api/core/payments/waive"],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/payments/waive"),
-            testCases: defaultApiTests("Waived Payment", ["Manager"], ["POST /api/core/payments/waive"]),
-            doneCriteria: defaultDoneCriteria("Waived Payment")
+            apiContracts: [
+              {
+                id: "contract-pay-waived-post",
+                name: "POST /api/core/payments/waive",
+                content: `Method: POST\nPath: /api/core/payments/waive\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: application/json\nRequest Body:\n{\n  "sessionId": 123456789,\n  "reason": "System error caused incorrect fee calculation"\n}\n\nResponse 200 OK (Waiver Successful):\n{\n  "success": true,\n  "data": {\n    "paymentId": 987654321,\n    "waivedAt": "2026-07-19T07:30:00Z",\n    "waivedBy": "staff-uuid-001",\n    "waivedAmount": 20000,\n    "status": "WAIVED"\n  }\n}\n\nResponse 409 (Online Payment Already Pending):\n{\n  "success": false,\n  "error": {\n    "code": "PAYMENT_ALREADY_PENDING",\n    "message": "An online payment is already pending for this session.",\n    "traceId": "0HL-1234567890"\n  }\n}\n\nResponse 422 (No Payment Required):\n{\n  "success": false,\n  "error": {\n    "code": "NO_PAYMENT_REQUIRED",\n    "message": "This session does not require payment.",\n    "traceId": "0HL-1234567890"\n  }\n}\n\nResponse 403 (Staff Unauthorized Reason):\n{\n  "success": false,\n  "error": {\n    "code": "FORBIDDEN",\n    "message": "Staff is not authorized to waive with this reason code.",\n    "traceId": "0HL-1234567890"\n  }\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-waive-happy-path",
+                title: "Verify successful waiver records waivedAmount and transitions session to WAIVED",
+                type: "integration",
+                precondition: "Active session with payment_required = true. Manager JWT. Valid reason (10-500 chars).",
+                steps: [
+                  "POST /api/core/payments/waive with valid sessionId and reason."
+                ],
+                expectedResult: "HTTP 200 OK. Payment WAIVED inserted with amount=calculatedFee. parking_sessions.status=WAIVED. Audit log written with full metadata including correlationId.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-payment-required-false",
+                title: "Verify 422 when payment_required is false",
+                type: "integration",
+                precondition: "Session is ACTIVE but payment_required = false.",
+                steps: [
+                  "POST /api/core/payments/waive."
+                ],
+                expectedResult: "HTTP 422. Error code: NO_PAYMENT_REQUIRED. No DB changes.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-missing-reason",
+                title: "Verify 400 when reason is empty or missing",
+                type: "api",
+                precondition: "Valid session. Request body has empty reason string.",
+                steps: [
+                  "POST /api/core/payments/waive with reason: ''."
+                ],
+                expectedResult: "HTTP 400 VALIDATION_ERROR.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-pending-payment",
+                title: "Verify 409 when online payment is in PENDING state",
+                type: "integration",
+                precondition: "Active session with an existing PENDING online payment.",
+                steps: [
+                  "POST /api/core/payments/waive."
+                ],
+                expectedResult: "HTTP 409. Error code: PAYMENT_ALREADY_PENDING.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-lost-card-active",
+                title: "Verify 422 when lost card resolution is pending",
+                type: "integration",
+                precondition: "Session has active lost_card_pending flag.",
+                steps: [
+                  "POST /api/core/payments/waive."
+                ],
+                expectedResult: "HTTP 422. Error code: LOST_CARD_PENDING.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-snapshot-null-fallback",
+                title: "Verify successful waiver when snapshot is NULL and fallback to PricingRule",
+                type: "integration",
+                precondition: "Session snapshot_day_price = NULL. PricingRule exists. Manager JWT.",
+                steps: [
+                  "POST /api/core/payments/waive with valid reason."
+                ],
+                expectedResult: "HTTP 200 OK. Fee calculated from pricing_rules. Audit log records correct waivedAmount.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-concurrent",
+                title: "Verify concurrent waiver by 2 users: 1 success, 1 fail",
+                type: "concurrency",
+                precondition: "Two requests for same sessionId simultaneously.",
+                steps: [
+                  "Dispatch two simultaneous POST requests for the same sessionId."
+                ],
+                expectedResult: "One request: HTTP 200 WAIVED. Other request: HTTP 409 or 422 SESSION_ALREADY_COMPLETED.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-staff-forbidden-reason",
+                title: "Verify Staff cannot waive with unauthorized reason code",
+                type: "api",
+                precondition: "Authenticated as Staff. Reason code is 'MANAGER_OVERRIDE' (not in Staff allowed list).",
+                steps: [
+                  "POST /api/core/payments/waive with reason='MANAGER_OVERRIDE' using Staff JWT."
+                ],
+                expectedResult: "HTTP 403 FORBIDDEN.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-reason-whitespace-only",
+                title: "Verify 400 when reason contains only whitespace",
+                type: "api",
+                precondition: "Request body has reason = '   ' (spaces only).",
+                steps: [
+                  "POST /api/core/payments/waive with reason='   '."
+                ],
+                expectedResult: "HTTP 400 VALIDATION_ERROR.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-reason-too-long",
+                title: "Verify 400 when reason exceeds 500 characters",
+                type: "api",
+                precondition: "reason string has 501 characters.",
+                steps: [
+                  "POST /api/core/payments/waive with 501-char reason."
+                ],
+                expectedResult: "HTTP 400 VALIDATION_ERROR.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-role-access-matrix",
+                title: "Verify role access matrix: Manager passes any reason; Staff limited to approved codes",
+                type: "integration",
+                precondition: "Two accounts: Manager and Staff.",
+                steps: [
+                  "Manager: POST with reason='SPECIAL_VIP_EXEMPTION'. Expect 200.",
+                  "Staff: POST with reason='SYSTEM_ERROR'. Expect 200.",
+                  "Staff: POST with reason='SPECIAL_VIP_EXEMPTION'. Expect 403."
+                ],
+                expectedResult: "Manager succeeds for all reasons. Staff succeeds only for SYSTEM_ERROR, FREE_EVENT, PROMOTION.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-waive-session-transition", content: "Session status transition verified: ACTIVE -> WAIVED.", checked: true },
+              { id: "dc-waive-payment-created-once", content: "Payment entity created exactly once per waiver action. Duplicate prevention via locking and status re-check.", checked: true },
+              { id: "dc-waive-payment-required", content: "422 returned if payment_required == false or calculatedFee <= 0.", checked: true },
+              { id: "dc-waive-amount-not-zero", content: "payments.amount = calculatedFee. NEVER 0. Financial integrity preserved for reporting.", checked: true },
+              { id: "dc-waive-audit-complete", content: "Audit metadata complete: paymentId, requestId, correlationId, collectorId, waivedAmount, reason, OldStatus, NewStatus.", checked: true },
+              { id: "dc-waive-concurrent-prevention", content: "Concurrent waiver prevented via SELECT FOR UPDATE and re-check after lock.", checked: true },
+              { id: "dc-waive-pending-conflict", content: "Online payment conflict handled: 409 PAYMENT_ALREADY_PENDING if PENDING online payment exists.", checked: true },
+              { id: "dc-waive-rollback", content: "No partial updates after exception. Full IDbContextTransaction rollback verified.", checked: true },
+              { id: "dc-waive-reason-validation", content: "Reason trimmed, 10-500 chars, non-empty, non-whitespace. Staff restricted to approved reason codes.", checked: true },
+              { id: "dc-waive-tests", content: "All 11 test cases covering happy path, auth, concurrency, edge cases, and role matrix are defined.", checked: true }
+            ]
           },
           {
             id: "leaf-pay-reconcile",
