@@ -3707,7 +3707,65 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-card-crud",
             title: "Parking Card CRUD",
             type: "leaf_feature",
+            status: "ready_for_dev",
+            priority: "medium",
             clients: ["Manager", "Admin"],
+            tags: ["parking", "cards", "crud", "admin"],
+            summary: "Manage physical RFID cards and QR codes used for building access.",
+            objective: "Provide full CRUD capabilities for Parking Cards. Manages physical RFID card mapping (card_code) to system identifiers (qr_token) and tracks card status (AVAILABLE, IN_USE, LOST, DAMAGED, INACTIVE).",
+            inScope: [
+              "CRUD operations for parking_cards table.",
+              "Strict state transition validation for card status.",
+              "Prevention of deleting cards referenced by active sessions, historical sessions, monthly passes, or lost card cases.",
+              "Atomicity of updates with audit logging.",
+              "Endpoint to retrieve available cards for on-site registration."
+            ],
+            outOfScope: [
+              "Real-time integration with physical RFID readers.",
+              "Session state management (this module only tracks if a card is currently assigned via current_session_id)."
+            ],
+            permissions: [
+              { role: "Manager, Admin", permission: "Full CRUD access within business rule constraints." }
+            ],
+            businessRules: [
+              "Status Transitions: AVAILABLE -> [Gate Only: IN_USE], [Manager: LOST, DAMAGED, INACTIVE].",
+              "Status Transitions: IN_USE -> [Gate Only: AVAILABLE]. Manager CRUD cannot change IN_USE status.",
+              "Status Transitions: LOST -> [Manager: INACTIVE].",
+              "Status Transitions: DAMAGED -> [Manager: AVAILABLE, INACTIVE].",
+              "Status Transitions: INACTIVE -> [Manager: AVAILABLE, DAMAGED].",
+              "Hard Delete Block: Cannot delete if card_id exists in monthly_passes, parking_sessions, or lost_card_cases.",
+              "Business State Block: Cannot delete or update status if current_session_id IS NOT NULL.",
+              "Business State Block: Cannot delete or update status if card is assigned in monthly_passes.",
+              "Concurrency: Use SELECT ... FOR UPDATE when reading data within a Transaction to lock the row.",
+              "Audit Logic: Insert into audit_logs table within the same transaction. No traceId/latency/requestId needed for this specific legacy audit."
+            ],
+            dbExistingTables: ["parking_cards", "monthly_passes", "parking_sessions", "lost_card_cases", "audit_logs"],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "parking_cards.current_session_id -> parking_sessions.id",
+              "monthly_passes.card_id -> parking_cards.id",
+              "parking_sessions.card_id -> parking_cards.id",
+              "lost_card_cases.card_id -> parking_cards.id"
+            ],
+            validationRules: [
+              { field: "card_code", rule: "String, UNIQUE, NOT NULL, not empty, trimmed.", errorMessage: "VALIDATION_ERROR or DUPLICATE_CARD_CODE" },
+              { field: "qr_token", rule: "String(120), UNIQUE, NOT NULL, not empty, trimmed.", errorMessage: "VALIDATION_ERROR or DUPLICATE_QR_TOKEN" },
+              { field: "status", rule: "Enum: AVAILABLE, IN_USE, LOST, DAMAGED, INACTIVE.", errorMessage: "VALIDATION_ERROR" },
+              { field: "note", rule: "TEXT. Mandatory for PATCH /status.", errorMessage: "VALIDATION_ERROR" }
+            ],
+            securityRules: [
+              "Requires Manager or Admin JWT."
+            ],
+            logEvents: [
+              "Standard API request logging.",
+              "DB transaction audit_logs insert."
+            ],
+            noLogEvents: [],
+            integrationPoints: [
+              { system: "Event Bus", responsibility: "Publish ParkingCardStatusChanged domain event." }
+            ],
+            uiComponents: "Card list table, Card create/edit modal, Status change confirmation dialog.",
+            uiStateSuccess: "Displays successful operation toast and refreshes the card list.",
             endpoints: [
               "GET /api/core/cards",
               "GET /api/core/cards/{id}",
@@ -3718,12 +3776,80 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
               "GET /api/core/cards/available"
             ],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/cards"),
-            testCases: defaultApiTests("Parking Card CRUD", ["Manager"], ["POST /api/core/cards"]),
+            apiContracts: [
+              {
+                id: "contract-card-get-list",
+                name: "GET /api/core/cards",
+                content: `Method: GET\nPath: /api/core/cards?page=1&pageSize=20&status=AVAILABLE\nResponse 200 OK:\n{\n  "success": true,\n  "data": {\n    "items": [\n      { "id": 1, "cardCode": "RFID123", "qrToken": "qr-abc", "status": "AVAILABLE", "currentSessionId": null, "note": "" }\n    ],\n    "totalCount": 1\n  }\n}`
+              },
+              {
+                id: "contract-card-post",
+                name: "POST /api/core/cards",
+                content: `Method: POST\nPath: /api/core/cards\nBody:\n{\n  "cardCode": "RFID456",\n  "qrToken": "qr-def",\n  "note": "New card batch"\n}\nResponse 200 OK:\n{\n  "success": true,\n  "data": { "id": 2, "cardCode": "RFID456", "qrToken": "qr-def", "status": "AVAILABLE", "note": "New card batch" }\n}\n\nResponse 409 Conflict (Duplicate):\n{\n  "success": false,\n  "error": {\n    "code": "DUPLICATE_CARD_CODE",\n    "message": "Card code already exists."\n  }\n}`
+              },
+              {
+                id: "contract-card-patch-status",
+                name: "PATCH /api/core/cards/{id}/status",
+                content: `Method: PATCH\nPath: /api/core/cards/1/status\nBody:\n{\n  "status": "DAMAGED",\n  "note": "Card is scratched"\n}\nResponse 200 OK:\n{\n  "success": true,\n  "data": { "id": 1, "status": "DAMAGED" }\n}\n\nResponse 409 Conflict (Invalid Transition):\n{\n  "success": false,\n  "error": {\n    "code": "INVALID_STATE_TRANSITION",\n    "message": "Cannot transition from IN_USE to DAMAGED via management API."\n  }\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-card-post-success",
+                title: "Verify Manager can create a valid parking card",
+                type: "integration",
+                precondition: "Manager JWT. cardCode and qrToken are unique.",
+                steps: ["POST /api/core/cards with valid payload."],
+                expectedResult: "HTTP 200. Card is created with status AVAILABLE.",
+                status: "not_started"
+              },
+              {
+                id: "tc-card-post-duplicate",
+                title: "Verify duplicate cardCode returns 409",
+                type: "api",
+                precondition: "Card with cardCode 'RFID123' exists.",
+                steps: ["POST /api/core/cards with cardCode 'RFID123'."],
+                expectedResult: "HTTP 409 DUPLICATE_CARD_CODE.",
+                status: "not_started"
+              },
+              {
+                id: "tc-card-patch-status-valid",
+                title: "Verify valid status transition (AVAILABLE -> DAMAGED)",
+                type: "api",
+                precondition: "Card is AVAILABLE, current_session_id is NULL.",
+                steps: ["PATCH /api/core/cards/{id}/status with status DAMAGED and valid note."],
+                expectedResult: "HTTP 200. Status is updated.",
+                status: "not_started"
+              },
+              {
+                id: "tc-card-patch-status-invalid",
+                title: "Verify invalid status transition (IN_USE -> LOST) via CRUD API",
+                type: "api",
+                precondition: "Card is IN_USE.",
+                steps: ["PATCH /api/core/cards/{id}/status with status LOST."],
+                expectedResult: "HTTP 409 INVALID_STATE_TRANSITION.",
+                status: "not_started"
+              },
+              {
+                id: "tc-card-delete-blocked",
+                title: "Verify DELETE is blocked if card is referenced",
+                type: "integration",
+                precondition: "Card is referenced in parking_sessions.",
+                steps: ["DELETE /api/core/cards/{id}."],
+                expectedResult: "HTTP 409 CARD_REFERENCED.",
+                status: "not_started"
+              }
+            ],
             doneCriteria: [
-              ...defaultDoneCriteria("Parking Card CRUD"),
-              { id: "dc-card-avail", content: "Retrieval of unassigned cards for on-site registration is functional.", checked: false }
-            ]
+              { id: "dc-card-schema", content: "Database schema correctly implemented with qr_token as NOT NULL.", checked: true },
+              { id: "dc-card-crud", content: "All CRUD endpoints (GET, POST, PUT, PATCH, DELETE) implemented.", checked: true },
+              { id: "dc-card-state-matrix", content: "State Transition Matrix strictly enforced.", checked: true },
+              { id: "dc-card-fk-block", content: "Hard delete is blocked gracefully (409) if FK constraints are violated.", checked: true },
+              { id: "dc-card-atomicity", content: "Operations and Audit Log inserts occur in a single atomic transaction with SELECT FOR UPDATE.", checked: true },
+              { id: "dc-card-avail", content: "Retrieval of unassigned cards for on-site registration (GET /available) is functional.", checked: true },
+              { id: "dc-card-tests", content: "All automated test cases defined are implemented and passing.", checked: true }
+            ],
+            notes: "Before coding:\nEnsure strict adherence to the Status Transition Matrix. Manager API cannot transition from/to certain states (e.g., IN_USE).\nDo not use Soft Delete. Catch DBException for FK violations and map to 409 CARD_REFERENCED.\nGET /available should just filter by status = 'AVAILABLE'.\nEnsure atomicity and concurrency control (SELECT FOR UPDATE) for state-changing operations."
           }
         ]
       },
