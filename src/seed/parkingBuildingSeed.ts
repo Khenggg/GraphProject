@@ -6016,11 +6016,282 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-pay-reconcile",
             title: "Reservation Payment Reconciliation",
             type: "leaf_feature",
+            status: "ready",
+            priority: "high",
             clients: ["System"],
-            endpoints: [],
+            tags: ["payments", "reconciliation", "webhook", "cron", "reservation", "idempotency"],
+            summary: "Synchronize external payment status with internal payments and reservations records atomically. Invoked by Webhook, Cron Job, or Internal Worker.",
+            objective: "Provide a reliable, idempotent, and auditable reconciliation mechanism that maps provider payment statuses to internal state transitions for reservations and payments, preventing duplicate processing and race conditions.",
+            inScope: [
+              "Signature verification of incoming provider webhook.",
+              "Provider status mapping via ProviderStatusMapper (SUCCESS/SUCCEEDED/OK -> PAID).",
+              "Ownership validation: providerTransactionId bound to correct reservation.",
+              "Replay protection via providerEventId/webhookId deduplication.",
+              "State machine transition enforcement (State Transition Matrix).",
+              "Dual SELECT FOR UPDATE lock on payments AND reservations.",
+              "Atomic transaction: update tables + insert audit + commit + publish domain event.",
+              "Reconciliation audit log with full metadata."
+            ],
+            outOfScope: [
+              "Refund processing.",
+              "Notification dispatching (email, SMS, push).",
+              "Receipt generation.",
+              "Reservation cancellation logic.",
+              "Payment retry logic."
+            ],
+            permissions: [
+              { role: "System (Webhook)", permission: "Real-time provider callback. Validated by signature header." },
+              { role: "System (Cron Job)", permission: "Scheduled batch recovery to ensure no missed status updates." },
+              { role: "System (Internal Worker)", permission: "Message queue consumer for deadlock/transient error retries." }
+            ],
+            businessRules: [
+              "Signature Validation: Validate provider-specific signature header BEFORE any DB access. Return 401 if invalid.",
+              "Provider Status Mapping: Use dedicated ProviderStatusMapper class to map raw statuses (SUCCESS, SUCCEEDED, OK) to internal PAID enum. Log and return 422 for unknown/unmapped statuses.",
+              "Dual Lock: SELECT FOR UPDATE on BOTH payments AND reservations within the same transaction scope. Never lock only one table.",
+              "Ownership Check: providerTransactionId must be strictly bound to the reservation being updated. Return 422 MERCHANT_ACCOUNT_MISMATCH if mismatch.",
+              "Replay Protection: Check providerEventId (or webhookId) against processed events store. Return 200 (ignore) if already processed.",
+              "State Transition Enforcement: Only allow transitions defined in the State Transition Matrix. Return 422 INVALID_STATE_TRANSITION for violations.",
+              "Exact Amount Comparison: Use high-precision decimal arithmetic. No floating-point tolerance. Return 422 AMOUNT_MISMATCH on any discrepancy.",
+              "Currency Validation: Incoming currency must match internal record currency. Return 422 CURRENCY_MISMATCH if different.",
+              "Atomicity: All DB changes (payment update, reservation update, audit insert) in a single IDbContextTransaction. Full rollback on any exception.",
+              "Domain Event: Publish PaymentReconciledEvent ONLY AFTER the transaction commits successfully. Never publish inside the transaction.",
+              "No Hardcoded Strings: Use Enums for all status values. Inspect ReservationStatus and PaymentStatus project enums before implementation.",
+              "No External Notifications Inside Transaction: Do not trigger emails/SMS inside the DB transaction block."
+            ],
+            dbExistingTables: ["payments", "reservations", "audit_logs"],
+            dbNewTablesSql: "-- Verify project enums before implementation:\n-- 1. SELECT enum_range(NULL::payment_status); -- Confirm PENDING, PAID, FAILED, CANCELLED exist\n-- 2. SELECT enum_range(NULL::reservation_status); -- Confirm PENDING, CONFIRMED, EXPIRED, CANCELLED exist\n-- 3. Ensure webhook_events or processed_events table exists for replay protection:\n-- CREATE TABLE IF NOT EXISTS processed_webhook_events (\n--   id BIGSERIAL PRIMARY KEY,\n--   provider_event_id VARCHAR NOT NULL UNIQUE,\n--   processed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()\n-- );",
+            dbRelationships: [
+              "payments: SELECT FOR UPDATE to lock row and update status from PENDING to PAID/FAILED/CANCELLED.",
+              "reservations: SELECT FOR UPDATE to lock row and update status from PENDING to CONFIRMED/EXPIRED/CANCELLED.",
+              "audit_logs: INSERT reconciliation audit record with paymentId, reservationId, traceId, requestId, oldStatus, newStatus, provider, amountPaid, reconciliationResult.",
+              "processed_webhook_events: INSERT providerEventId after successful processing for replay protection."
+            ],
+            validationRules: [
+              { field: "signature header", rule: "Must match provider-specific HMAC or signature format. Reject 401 if invalid.", errorMessage: "INVALID_SIGNATURE" },
+              { field: "providerEventId", rule: "Must be unique. If already processed, return 200 OK (idempotent ignore).", errorMessage: "DUPLICATE_EVENT" },
+              { field: "amount", rule: "Must exactly match internal payment amount using decimal precision. No floating-point tolerance.", errorMessage: "AMOUNT_MISMATCH" },
+              { field: "currency", rule: "Must match internal record currency exactly.", errorMessage: "CURRENCY_MISMATCH" },
+              { field: "providerTransactionId", rule: "Must be bound to the correct reservationId/paymentId.", errorMessage: "MERCHANT_ACCOUNT_MISMATCH" },
+              { field: "status transition", rule: "Must conform to State Transition Matrix.", errorMessage: "INVALID_STATE_TRANSITION" }
+            ],
+            securityRules: [
+              "Signature Validation: Always validate provider signature before any DB access. Return 401 immediately for invalid signatures.",
+              "Role Access: Only System-level callers (Webhook, Cron, Worker) are permitted. User/Guest roles must return 403.",
+              "No Sensitive Logging: Do not log provider keys, signatures, or full webhook payloads."
+            ],
+            logEvents: [
+              "Structured log for every request: CorrelationId, TraceId, RequestId, PaymentId, ReservationId, Provider, OldStatus, NewStatus, AmountPaid, ReconciliationResult, Latency.",
+              "Audit log RECONCILIATION_COMPLETE with full metadata written inside transaction."
+            ],
+            noLogEvents: [
+              "Do not log provider API keys or signature secrets.",
+              "Do not log full raw webhook payload if it contains sensitive financial data."
+            ],
+            integrationPoints: [
+              { system: "PayOS / Payment Provider", responsibility: "Source of webhook callbacks containing payment status updates." },
+              { system: "Domain Event Bus", responsibility: "Receives PaymentReconciledEvent AFTER transaction commit. Triggers downstream processes (notifications, etc.)." },
+              { system: "Cron Job Scheduler", responsibility: "Calls this endpoint on a schedule to batch-recover any missed webhook events." },
+              { system: "Internal Message Queue Worker", responsibility: "Retries failed reconciliation attempts due to deadlocks or transient network errors." }
+            ],
+            uiPage: "N/A (System-only endpoint, no UI)",
+            uiComponents: "N/A",
+            uiStateLoading: "N/A",
+            uiStateEmpty: "N/A",
+            uiStateError: "N/A",
+            uiStateSuccess: "N/A",
+            notes: "Architectural Checklist: Verify ReservationStatus, PaymentStatus enums, and signature header names against your specific project codebase before proceeding. Never use hardcoded strings for status. Never publish domain events inside the DB transaction.",
+            dependencies: [],
+            risks: [],
+            endpoints: ["POST /api/internal/reconciliation/reservations"],
             ownerService: ".NET Core API",
-            testCases: defaultApiTests("Reservation Payment Reconciliation", ["System"], []),
-            doneCriteria: defaultDoneCriteria("Reservation Payment Reconciliation")
+            apiContracts: [
+              {
+                id: "contract-reconcile-post",
+                name: "POST /api/internal/reconciliation/reservations",
+                content: `Method: POST\nPath: /api/internal/reconciliation/reservations\nHeaders:\n  X-Provider-Signature: <hmac-signature>\n  X-Correlation-ID: <uuid>\n  Content-Type: application/json\nRequest Body:\n{\n  "providerEventId": "evt_payos_12345",\n  "providerTransactionId": "txn_payos_67890",\n  "reservationId": 123456789,\n  "paymentId": 987654321,\n  "providerStatus": "SUCCEEDED",\n  "amount": 150000,\n  "currency": "VND"\n}\n\nResponse 200 OK (Reconciled Successfully):\n{\n  "success": true,\n  "data": {\n    "paymentId": 987654321,\n    "reservationId": 123456789,\n    "newPaymentStatus": "PAID",\n    "newReservationStatus": "CONFIRMED",\n    "reconciledAt": "2026-07-19T08:10:00Z"\n  }\n}\n\nResponse 200 OK (Duplicate - Idempotent Ignore):\n{\n  "success": true,\n  "data": {\n    "message": "Event already processed.",\n    "providerEventId": "evt_payos_12345"\n  }\n}\n\nResponse 401 (Invalid Signature):\n{\n  "success": false,\n  "error": { "code": "INVALID_SIGNATURE", "message": "Webhook signature validation failed.", "traceId": "0HL-xxx" }\n}\n\nResponse 422 (Amount Mismatch):\n{\n  "success": false,\n  "error": { "code": "AMOUNT_MISMATCH", "message": "Provider amount does not match internal payment record.", "traceId": "0HL-xxx" }\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-rec-happy-path",
+                title: "Verify PENDING->PAID and Reservation CONFIRMED on successful reconciliation",
+                type: "integration",
+                precondition: "Payment PENDING, Reservation PENDING. Valid signature. providerStatus=SUCCEEDED.",
+                steps: ["POST /api/internal/reconciliation/reservations with valid payload."],
+                expectedResult: "HTTP 200. Payment status=PAID. Reservation status=CONFIRMED. Audit log written. Domain event published after commit.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rec-duplicate-webhook",
+                title: "Verify duplicate providerEventId returns 200 without reprocessing",
+                type: "integration",
+                precondition: "Same providerEventId already exists in processed_webhook_events table.",
+                steps: ["POST same payload again."],
+                expectedResult: "HTTP 200 OK. No DB state changes. Returns idempotent ignore message.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rec-invalid-signature",
+                title: "Verify invalid signature header returns 401 immediately",
+                type: "api",
+                precondition: "Request has tampered or missing X-Provider-Signature header.",
+                steps: ["POST with invalid signature."],
+                expectedResult: "HTTP 401 INVALID_SIGNATURE. No DB access performed.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rec-amount-mismatch",
+                title: "Verify amount mismatch with decimal precision returns 422",
+                type: "integration",
+                precondition: "Internal payment amount = 100.12. Provider sends 100.123.",
+                steps: ["POST with amount=100.123."],
+                expectedResult: "HTTP 422 AMOUNT_MISMATCH. Mismatch logged in audit. No state changes.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rec-currency-mismatch",
+                title: "Verify currency mismatch returns 422",
+                type: "api",
+                precondition: "Internal currency = VND. Provider sends currency = USD.",
+                steps: ["POST with currency=USD."],
+                expectedResult: "HTTP 422 CURRENCY_MISMATCH.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rec-unknown-status",
+                title: "Verify unmapped provider status returns 422",
+                type: "api",
+                precondition: "Provider sends providerStatus='PROCESSING' (not in ProviderStatusMapper).",
+                steps: ["POST with providerStatus=PROCESSING."],
+                expectedResult: "HTTP 422. Unknown status logged. No state changes.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rec-reservation-expired",
+                title: "Verify reconciliation for expired reservation returns 409",
+                type: "integration",
+                precondition: "Reservation status is already EXPIRED.",
+                steps: ["POST reconciliation for expired reservation."],
+                expectedResult: "HTTP 409 RESERVATION_EXPIRED.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rec-concurrent-webhook",
+                title: "Verify concurrent duplicate webhooks: 1 processed, others ignored",
+                type: "concurrency",
+                precondition: "Same event dispatched simultaneously from 2 sources.",
+                steps: ["Dispatch two parallel POST requests with same providerEventId."],
+                expectedResult: "One processes successfully. Other returns 200 (idempotent ignore) or 409.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rec-deadlock",
+                title: "Verify DB deadlock causes rollback and retry",
+                type: "integration",
+                precondition: "Mock DB to throw deadlock on SaveChanges.",
+                steps: ["POST valid payload."],
+                expectedResult: "Full transaction rollback. No partial state changes. Worker retries via queue.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rec-state-violation",
+                title: "Verify invalid state transition (PAID->FAILED) returns 422",
+                type: "integration",
+                precondition: "Payment already PAID.",
+                steps: ["POST with providerStatus=FAILED."],
+                expectedResult: "HTTP 422 INVALID_STATE_TRANSITION.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rec-merchant-mismatch",
+                title: "Verify merchant account mismatch returns 422",
+                type: "api",
+                precondition: "providerTransactionId belongs to a different reservation.",
+                steps: ["POST with mismatched providerTransactionId."],
+                expectedResult: "HTTP 422 MERCHANT_ACCOUNT_MISMATCH.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rec-replay-attack",
+                title: "Verify replay of processed event after 24h is rejected",
+                type: "integration",
+                precondition: "providerEventId processed 25 hours ago.",
+                steps: ["POST same providerEventId."],
+                expectedResult: "HTTP 400 or 422. Replay rejected.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rec-invalid-precision",
+                title: "Verify floating-point precision mismatch 100.123 vs 100.12 returns 422",
+                type: "api",
+                precondition: "Internal amount=100.12. Provider sends 100.123.",
+                steps: ["POST with amount=100.123."],
+                expectedResult: "HTTP 422 AMOUNT_MISMATCH. Exact decimal comparison enforced.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rec-timeout",
+                title: "Verify provider response timeout is handled gracefully",
+                type: "integration",
+                precondition: "Mock provider to not respond within timeout window.",
+                steps: ["POST triggering provider lookup that times out."],
+                expectedResult: "HTTP 422 or 504. Transaction rolled back. No partial changes.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rec-payment-not-found",
+                title: "Verify non-existent paymentId returns 404",
+                type: "api",
+                precondition: "Payment with given ID does not exist.",
+                steps: ["POST with non-existent paymentId."],
+                expectedResult: "HTTP 404 PAYMENT_NOT_FOUND.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rec-reservation-not-found",
+                title: "Verify non-existent reservationId returns 404",
+                type: "api",
+                precondition: "Reservation with given ID does not exist.",
+                steps: ["POST with non-existent reservationId."],
+                expectedResult: "HTTP 404 RESERVATION_NOT_FOUND.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rec-role-access",
+                title: "Verify User or Guest role receives 403",
+                type: "api",
+                precondition: "Caller uses a regular User JWT.",
+                steps: ["POST with User-role Bearer token."],
+                expectedResult: "HTTP 403 FORBIDDEN.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rec-provider-status-mapping",
+                title: "Verify all provider status variants map to PAID correctly",
+                type: "unit",
+                precondition: "ProviderStatusMapper is configured.",
+                steps: [
+                  "Call mapper with 'SUCCESS'. Expect PAID.",
+                  "Call mapper with 'SUCCEEDED'. Expect PAID.",
+                  "Call mapper with 'OK'. Expect PAID."
+                ],
+                expectedResult: "All three variants correctly map to internal PAID status.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-rec-signature", content: "Signature validation implemented and tested. 401 returned for invalid signatures before any DB access.", checked: true },
+              { id: "dc-rec-dual-lock", content: "SELECT FOR UPDATE applied to BOTH payments AND reservations within the same transaction scope.", checked: true },
+              { id: "dc-rec-replay-protection", content: "Replay protection via providerEventId deduplication is implemented. Duplicate returns 200 OK without reprocessing.", checked: true },
+              { id: "dc-rec-state-machine", content: "State Transition Matrix enforced. Invalid transitions return 422 INVALID_STATE_TRANSITION.", checked: true },
+              { id: "dc-rec-amount-precision", content: "Exact decimal precision comparison enforced. No floating-point tolerance.", checked: true },
+              { id: "dc-rec-provider-mapper", content: "Dedicated ProviderStatusMapper class implemented and tested for all provider status variants.", checked: true },
+              { id: "dc-rec-atomicity", content: "All DB changes committed atomically. Full rollback on any exception.", checked: true },
+              { id: "dc-rec-domain-event", content: "PaymentReconciledEvent published ONLY AFTER transaction commit. Never inside transaction.", checked: true },
+              { id: "dc-rec-audit", content: "Audit log written with full metadata: paymentId, reservationId, traceId, requestId, oldStatus, newStatus, provider, amountPaid, reconciliationResult.", checked: true },
+              { id: "dc-rec-no-hardcode", content: "No hardcoded status strings. All statuses use project Enums (ReservationStatus, PaymentStatus).", checked: true },
+              { id: "dc-rec-tests", content: "All 18 test cases covering happy path, idempotency, auth, state machine, concurrency, and edge cases are defined.", checked: true }
+            ]
           },
           {
             id: "leaf-pay-review",
