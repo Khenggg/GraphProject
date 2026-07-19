@@ -1,6 +1,6 @@
 # Project Map
 
-> Generated: 2026-07-19 15:51:50
+> Generated: 2026-07-19 15:55:40
 > Generator: `scripts/export-project-map.ps1`
 
 This file contains the project architecture and a direct source-code snapshot. The snapshot is generated from the source tree and filtered by `projectmapignore`.
@@ -9857,7 +9857,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-sess-claim",
             title: "Claim Session by QR",
             type: "leaf_feature",
-            status: "draft",
+            status: "ready",
             priority: "medium",
             clients: ["Driver"],
             tags: ["parking", "session", "qr", "claim"],
