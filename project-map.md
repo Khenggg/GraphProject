@@ -1,6 +1,6 @@
 # Project Map
 
-> Generated: 2026-07-19 16:07:56
+> Generated: 2026-07-19 16:11:06
 > Generator: `scripts/export-project-map.ps1`
 
 This file contains the project architecture and a direct source-code snapshot. The snapshot is generated from the source tree and filtered by `projectmapignore`.
@@ -48,7 +48,7 @@ src/main.tsx -> src/App.tsx
 | `src/domain/taxonomy.ts` | 8301 |
 | `src/index.css` | 1592 |
 | `src/main.tsx` | 240 |
-| `src/seed/parkingBuildingSeed.ts` | 872193 |
+| `src/seed/parkingBuildingSeed.ts` | 872185 |
 | `src/seed/parkingTaxonomyMigration.ts` | 27295 |
 | `src/store/featureTreeStore.ts` | 24426 |
 | `src/tests/aiExport.test.ts` | 1952 |
@@ -8778,7 +8778,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-card-crud",
             title: "Parking Card CRUD",
             type: "leaf_feature",
-            status: "ready_for_dev",
+            status: "ready",
             priority: "medium",
             clients: ["Manager", "Admin"],
             tags: ["parking", "cards", "crud", "admin"],
