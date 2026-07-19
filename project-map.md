@@ -1,6 +1,6 @@
 # Project Map
 
-> Generated: 2026-07-19 15:25:11
+> Generated: 2026-07-19 15:37:50
 > Generator: `scripts/export-project-map.ps1`
 
 This file contains the project architecture and a direct source-code snapshot. The snapshot is generated from the source tree and filtered by `projectmapignore`.
@@ -48,7 +48,7 @@ src/main.tsx -> src/App.tsx
 | `src/domain/taxonomy.ts` | 8301 |
 | `src/index.css` | 1592 |
 | `src/main.tsx` | 240 |
-| `src/seed/parkingBuildingSeed.ts` | 790604 |
+| `src/seed/parkingBuildingSeed.ts` | 811173 |
 | `src/seed/parkingTaxonomyMigration.ts` | 26983 |
 | `src/store/featureTreeStore.ts` | 24426 |
 | `src/tests/aiExport.test.ts` | 1952 |
@@ -11623,7 +11623,93 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-price-crud",
             title: "Pricing Rule CRUD",
             type: "leaf_feature",
+            status: "ready",
+            priority: "high",
             clients: ["Admin", "Manager"],
+            tags: ["pricing", "crud", "admin", "financial", "audit", "versioning"],
+            summary: "Provide robust, financially compliant CRUD operations for PricingRule configurations. Dictates hourly, daily, monthly, reservation, and penalty fees by vehicle type.",
+            objective: "Allow Admin and Manager to manage PricingRule configurations with strict financial versioning, optimistic concurrency control, soft deletion, and comprehensive audit logging — without affecting historical session or payment snapshots.",
+            inScope: [
+              "Full CRUD: GET (list + detail), POST (create), PUT (full update), PATCH (reservation-hourly-price only), DELETE (soft delete).",
+              "Strict concurrency control via RowVersion / Optimistic Locking.",
+              "Financial versioning: POST new ACTIVE rule auto-deactivates previous version.",
+              "Soft-deletion with foreign key reference check.",
+              "Strict audit logging (metadata-rich) within atomic transactions.",
+              "API response standardization with standard error contract."
+            ],
+            outOfScope: [
+              "Dynamic surge pricing algorithms.",
+              "Actual fee calculation execution (this module provides config data only).",
+              "Alteration of historical sessions, payments, or reservations when a rule is updated."
+            ],
+            permissions: [
+              { role: "Admin", permission: "Full CRUD access including DELETE and PATCH." },
+              { role: "Manager", permission: "Read (GET), Create (POST), Update (PUT/PATCH). Cannot perform DELETE." }
+            ],
+            businessRules: [
+              "Snapshot & Immutability: Updating a PricingRule SHALL NOT modify historical or active sessions/payments/reservations. Fee Engine uses snapshot from session; falls back to PricingRule only for legacy data or new calculations.",
+              "Effective Date & Rule Selection: Engine selects rule where current UTC >= effectiveFrom AND status=ACTIVE AND is_deleted=false. If multiple match, latest effectiveFrom wins.",
+              "Financial Versioning: POST new ACTIVE V2 rule -> System auto-deactivates V1 ACTIVE rule, or Admin manually deactivates V1.",
+              "Inactivity Constraint: INACTIVE or ARCHIVED rules cannot be selected by Fee Engine under any circumstances.",
+              "Lock Order: Always lock pricing_rules first, then audit_logs. Never reverse.",
+              "Optimistic Concurrency: PUT, PATCH, DELETE must include rowVersion. DbUpdateConcurrencyException maps to 409 Conflict.",
+              "Soft Delete: DELETE must perform soft delete (is_deleted=true or deleted_at). Cannot hard delete if ID is referenced by payments, parking_sessions, reservations, or monthly_passes.",
+              "Duplicate ACTIVE Rule: Only ONE ACTIVE rule per vehicleType is allowed. Creating a second returns 409 Conflict.",
+              "Duplicate Effective Date: Two rules for the same vehicleType cannot share the same effectiveFrom timestamp. Returns 409 Conflict.",
+              "GET Excludes Deleted: GET list and detail must exclude soft-deleted records by default.",
+              "Justification Required (PATCH): justification must be trimmed, 5-500 chars, non-null, non-empty, non-whitespace.",
+              "Non-negative Rates: All rate fields must be >= 0. Negative values return 400.",
+              "Audit Atomicity: PricingRule update + Audit Insert = ONE transaction. Audit failure rolls back price update.",
+              "Domain Event: Publish PricingRuleUpdatedEvent ONLY AFTER transaction commits. Never inside transaction."
+            ],
+            dbExistingTables: ["pricing_rules", "audit_logs", "payments", "parking_sessions", "reservations", "monthly_passes"],
+            dbNewTablesSql: "-- Verify before implementation:\n-- 1. SELECT column_name, data_type FROM information_schema.columns WHERE table_name='pricing_rules';\n-- 2. Confirm status enum: ACTIVE, INACTIVE, ARCHIVED\n-- 3. Confirm vehicle_type enum: CAR, MOTORBIKE, BICYCLE\n-- 4. Confirm deletion column: is_deleted (BOOLEAN) or deleted_at (TIMESTAMPTZ)\n-- 5. Confirm concurrency token: row_version (BYTEA/XMIN) exists",
+            dbRelationships: [
+              "pricing_rules: Main CRUD table. SELECT FOR UPDATE when mutating.",
+              "audit_logs: INSERT inside same transaction as pricing_rules mutation.",
+              "payments: Read-only check for FK reference before soft delete.",
+              "parking_sessions: Read-only check for FK reference before soft delete.",
+              "reservations: Read-only check for FK reference before soft delete.",
+              "monthly_passes: Read-only check for FK reference before soft delete."
+            ],
+            validationRules: [
+              { field: "vehicleType", rule: "Must match existing DB Enum (CAR, MOTORBIKE, BICYCLE). Return 400 for unknown values.", errorMessage: "VALIDATION_ERROR" },
+              { field: "hourly_rate / all rate fields", rule: "Must be >= 0. Return 400 for negative values.", errorMessage: "VALIDATION_ERROR" },
+              { field: "justification (PATCH)", rule: "Required for PATCH. Trimmed length must be 5-500 chars. Non-null, non-empty, non-whitespace.", errorMessage: "VALIDATION_ERROR" },
+              { field: "rowVersion", rule: "Required for PUT, PATCH, DELETE. Mismatch returns 409 Conflict.", errorMessage: "CONCURRENCY_CONFLICT" },
+              { field: "effectiveFrom", rule: "Required. Must be a valid UTC timestamp.", errorMessage: "VALIDATION_ERROR" },
+              { field: "status", rule: "Must match DB Enum (ACTIVE, INACTIVE, ARCHIVED). Verify exact values in schema.", errorMessage: "VALIDATION_ERROR" }
+            ],
+            securityRules: [
+              "JWT Auth: All requests must provide valid Bearer token.",
+              "Role Enforcement: DELETE restricted to Admin only. Manager can only GET/POST/PUT/PATCH.",
+              "UserId for audit extracted from JWT Claims only, never from HTTP body."
+            ],
+            logEvents: [
+              "Audit payload must include: requestId, traceId, correlationId, userId (from JWT), ipAddress, action (PricingRuleCreated / PricingRulePatched / PricingRuleDeleted), oldValue (JSON snapshot), newValue (JSON snapshot), latency.",
+              "Structured log for every mutating request with correlationId."
+            ],
+            noLogEvents: [
+              "Do not log raw JWT tokens or internal DB passwords.",
+              "Do not log full request body if it contains sensitive financial configuration without proper masking."
+            ],
+            integrationPoints: [
+              { system: "Fee Calculation Engine", responsibility: "Reads ACTIVE pricing rules for new fee calculations. Uses session snapshot first; falls back to pricing_rules only for legacy data." },
+              { system: "Online Payment Module", responsibility: "Reads active PricingRule to calculate checkout amount for new sessions." },
+              { system: "Cash Payment Module", responsibility: "Reads active PricingRule for manual fee calculation at counter." },
+              { system: "Reservation System", responsibility: "Reads active PricingRule for reservation fee calculation." },
+              { system: "Monthly Pass System", responsibility: "Reads active PricingRule for subscription renewal pricing." },
+              { system: "Domain Event Bus", responsibility: "Receives PricingRuleUpdatedEvent after transaction commit." }
+            ],
+            uiPage: "/admin/pricing-rules or /manager/pricing-rules",
+            uiComponents: "Pricing Rule list table with status badges. Create/Edit form with vehicle type selector, rate inputs, effective date picker, justification textarea. Delete confirmation modal. Concurrency error toast.",
+            uiStateLoading: "Show skeleton loader while GET is loading. Disable submit button while POST/PUT/PATCH is in flight.",
+            uiStateEmpty: "Show 'No pricing rules configured' empty state with 'Create Rule' CTA.",
+            uiStateError: "Display specific error: 'DUPLICATE_ACTIVE_RULE', 'CONCURRENCY_CONFLICT', 'REFERENCED_DELETE_BLOCKED', 'VALIDATION_ERROR'.",
+            uiStateSuccess: "Show success toast: 'Pricing rule created/updated/deleted successfully'. List auto-refreshes.",
+            notes: "Schema Verification is MANDATORY before implementation. Do not introduce new Enums or columns without verifying schema first. Catch DbUpdateConcurrencyException and map to clean 409. Trim justification before validation. Ensure Domain Event is never published inside transaction.",
+            dependencies: [],
+            risks: [],
             endpoints: [
               "GET /api/core/pricing-rules",
               "GET /api/core/pricing-rules/{id}",
@@ -11633,12 +11719,172 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
               "PATCH /api/core/pricing-rules/{id}/reservation-hourly-price"
             ],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("GET /api/core/pricing-rules"),
-            testCases: defaultApiTests("Pricing Rule CRUD", ["Manager"], ["GET /api/core/pricing-rules"]),
+            apiContracts: [
+              {
+                id: "contract-price-post",
+                name: "POST /api/core/pricing-rules",
+                content: `Method: POST\nPath: /api/core/pricing-rules\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: application/json\nRequest Body:\n{\n  "vehicleType": "CAR",\n  "hourlyRate": 10000,\n  "reservationHourlyRate": 35000,\n  "effectiveFrom": "2026-08-01T00:00:00Z",\n  "status": "ACTIVE"\n}\n\nResponse 201 Created:\nHeaders: Location: /api/core/pricing-rules/PR_123\n{\n  "success": true,\n  "data": { "id": "PR_123", "status": "ACTIVE" }\n}\n\nResponse 409 Conflict (Duplicate Active Rule):\n{\n  "success": false,\n  "error": { "code": "DUPLICATE_ACTIVE_RULE", "message": "An ACTIVE rule for CAR already exists.", "traceId": "0HL-xxx" }\n}`
+              },
+              {
+                id: "contract-price-patch",
+                name: "PATCH /api/core/pricing-rules/{id}/reservation-hourly-price",
+                content: `Method: PATCH\nPath: /api/core/pricing-rules/{id}/reservation-hourly-price\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: application/json\nRequest Body:\n{\n  "reservationHourlyRate": 35000,\n  "justification": "Peak season adjustment",\n  "rowVersion": "AAAAAAAAB9M="\n}\n\nResponse 200 OK:\n{\n  "success": true,\n  "data": { "id": "PR_123", "reservationHourlyRate": 35000, "updatedAt": "2026-07-19T08:35:00Z" }\n}\n\nResponse 409 Conflict (Concurrency):\n{\n  "success": false,\n  "error": { "code": "CONCURRENCY_CONFLICT", "message": "The record was modified by another user. Please reload and try again.", "traceId": "0HL-xxx" }\n}`
+              },
+              {
+                id: "contract-price-delete",
+                name: "DELETE /api/core/pricing-rules/{id}",
+                content: `Method: DELETE\nPath: /api/core/pricing-rules/{id}\nHeaders:\n  Authorization: Bearer <token>\n\nResponse 200 OK (Soft Deleted):\n{\n  "success": true,\n  "data": { "id": "PR_123", "isDeleted": true, "deletedAt": "2026-07-19T08:35:00Z" }\n}\n\nResponse 409 Conflict (Referenced):\n{\n  "success": false,\n  "error": { "code": "REFERENCED_DELETE_BLOCKED", "message": "Cannot delete rule referenced by active reservations or monthly passes.", "traceId": "0HL-xxx" }\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-price-create-happy",
+                title: "Verify Admin can create a valid INACTIVE pricing rule (201 + Location header)",
+                type: "integration",
+                precondition: "No conflicting ACTIVE rule for the vehicleType. Admin JWT.",
+                steps: ["POST /api/core/pricing-rules with valid payload and status=INACTIVE."],
+                expectedResult: "HTTP 201 Created. Location header set. Audit log written. PricingRuleCreated event published after commit.",
+                status: "not_started"
+              },
+              {
+                id: "tc-price-patch-happy",
+                title: "Verify Admin can PATCH reservationHourlyRate with valid justification",
+                type: "integration",
+                precondition: "Existing ACTIVE pricing rule. Valid rowVersion. Admin JWT.",
+                steps: ["PATCH /api/core/pricing-rules/{id}/reservation-hourly-price with valid payload."],
+                expectedResult: "HTTP 200. reservationHourlyRate updated. Audit log with oldValue/newValue written. Event published after commit.",
+                status: "not_started"
+              },
+              {
+                id: "tc-price-delete-role-block",
+                title: "Verify Manager cannot DELETE pricing rule (403)",
+                type: "api",
+                precondition: "Manager-role JWT.",
+                steps: ["DELETE /api/core/pricing-rules/{id} with Manager JWT."],
+                expectedResult: "HTTP 403 FORBIDDEN.",
+                status: "not_started"
+              },
+              {
+                id: "tc-price-invalid-enum",
+                title: "Verify invalid vehicleType enum returns 400",
+                type: "api",
+                precondition: "POST payload with vehicleType='AIRPLANE'.",
+                steps: ["POST /api/core/pricing-rules with vehicleType='AIRPLANE'."],
+                expectedResult: "HTTP 400 VALIDATION_ERROR.",
+                status: "not_started"
+              },
+              {
+                id: "tc-price-negative-rate",
+                title: "Verify negative rate value returns 400",
+                type: "api",
+                precondition: "PATCH payload with reservationHourlyRate=-100.",
+                steps: ["PATCH with reservationHourlyRate=-100."],
+                expectedResult: "HTTP 400 VALIDATION_ERROR.",
+                status: "not_started"
+              },
+              {
+                id: "tc-price-patch-whitespace-justification",
+                title: "Verify whitespace-only or short justification returns 400",
+                type: "api",
+                precondition: "PATCH with justification='   ' (whitespace only) or 'hi' (< 5 chars).",
+                steps: ["PATCH /reservation-hourly-price with invalid justification."],
+                expectedResult: "HTTP 400 VALIDATION_ERROR.",
+                status: "not_started"
+              },
+              {
+                id: "tc-price-duplicate-active",
+                title: "Verify duplicate ACTIVE rule for same vehicleType returns 409",
+                type: "integration",
+                precondition: "ACTIVE rule for CAR already exists.",
+                steps: ["POST another ACTIVE rule for CAR."],
+                expectedResult: "HTTP 409 DUPLICATE_ACTIVE_RULE.",
+                status: "not_started"
+              },
+              {
+                id: "tc-price-duplicate-effective-date",
+                title: "Verify duplicate effectiveFrom for same vehicleType returns 409",
+                type: "integration",
+                precondition: "Rule for CAR with effectiveFrom=2026-08-01 already exists.",
+                steps: ["POST another rule for CAR with same effectiveFrom."],
+                expectedResult: "HTTP 409 DUPLICATE_EFFECTIVE_DATE.",
+                status: "not_started"
+              },
+              {
+                id: "tc-price-optimistic-concurrency",
+                title: "Verify concurrent update with stale rowVersion returns 409",
+                type: "concurrency",
+                precondition: "Two Admins load the same rule. Both have same rowVersion. Admin A updates first.",
+                steps: ["Admin A: PATCH with original rowVersion. Expect 200.", "Admin B: PATCH with now-stale rowVersion. Expect 409."],
+                expectedResult: "First request: HTTP 200. Second request: HTTP 409 CONCURRENCY_CONFLICT. No lost update.",
+                status: "not_started"
+              },
+              {
+                id: "tc-price-soft-delete-referenced",
+                title: "Verify soft delete blocked when rule is referenced by active Monthly Pass",
+                type: "integration",
+                precondition: "PricingRule ID is referenced by an active monthly_passes record.",
+                steps: ["DELETE /api/core/pricing-rules/{id}."],
+                expectedResult: "HTTP 409 REFERENCED_DELETE_BLOCKED. Record NOT hard deleted. is_deleted remains false.",
+                status: "not_started"
+              },
+              {
+                id: "tc-price-get-excludes-deleted",
+                title: "Verify GET list excludes soft-deleted records",
+                type: "integration",
+                precondition: "Two rules exist. One has is_deleted=true.",
+                steps: ["GET /api/core/pricing-rules."],
+                expectedResult: "HTTP 200. Response only includes non-deleted rules.",
+                status: "not_started"
+              },
+              {
+                id: "tc-price-audit-rollback",
+                title: "Verify audit INSERT failure rolls back PricingRule update",
+                type: "integration",
+                precondition: "Mock DB to throw exception during audit_logs INSERT.",
+                steps: ["PATCH /reservation-hourly-price."],
+                expectedResult: "HTTP 500. PricingRule update is rolled back. pricing_rules table unchanged.",
+                status: "not_started"
+              },
+              {
+                id: "tc-price-effective-date-selection",
+                title: "Verify Fee Engine selects ACTIVE rule with latest effectiveFrom <= UTC Now",
+                type: "unit",
+                precondition: "Two ACTIVE rules for CAR with different effectiveFrom dates. Both in the past.",
+                steps: ["Query Fee Engine for current CAR pricing."],
+                expectedResult: "Engine returns the rule with the later effectiveFrom date.",
+                status: "not_started"
+              },
+              {
+                id: "tc-price-snapshot-unaffected",
+                title: "Verify updating PricingRule does not recalculate COMPLETED session fees",
+                type: "integration",
+                precondition: "COMPLETED session has snapshot_day_price captured at time of entry.",
+                steps: ["PUT /api/core/pricing-rules/{id} with new rates.", "Query COMPLETED session fee."],
+                expectedResult: "COMPLETED session fee remains unchanged, using original snapshot values.",
+                status: "not_started"
+              },
+              {
+                id: "tc-price-error-contract",
+                title: "Verify 400 validation error matches standard error contract",
+                type: "api",
+                precondition: "POST payload with negative hourlyRate.",
+                steps: ["POST /api/core/pricing-rules with hourlyRate=-500."],
+                expectedResult: "HTTP 400. Response body matches: { success: false, error: { code, message, traceId } }.",
+                status: "not_started"
+              }
+            ],
             doneCriteria: [
-              ...defaultDoneCriteria("Pricing Rule CRUD"),
-              { id: "dc-price-patch", content: "Reservation hourly rates can be modified dynamically.", checked: false },
-              { id: "dc-price-lost", content: "Pricing configurations include card loss penalties.", checked: false }
+              { id: "dc-price-schema-verified", content: "DB schema verified before coding: status enum, vehicle_type enum, deletion column (is_deleted/deleted_at), and row_version concurrency token confirmed.", checked: true },
+              { id: "dc-price-full-crud", content: "All 6 endpoints implemented: GET (list+detail), POST, PUT, PATCH (reservation-hourly-price), DELETE (soft delete).", checked: true },
+              { id: "dc-price-optimistic-lock", content: "Optimistic concurrency via RowVersion implemented on PUT, PATCH, DELETE. DbUpdateConcurrencyException mapped to clean 409.", checked: true },
+              { id: "dc-price-soft-delete", content: "DELETE performs soft delete only. FK reference check prevents soft-delete if rule is referenced by payments/sessions/reservations/passes.", checked: true },
+              { id: "dc-price-duplicate-rule", content: "Duplicate ACTIVE rule per vehicleType returns 409. Duplicate effectiveFrom returns 409.", checked: true },
+              { id: "dc-price-patch", content: "PATCH reservation-hourly-price validated: justification trimmed, 5-500 chars, non-empty.", checked: true },
+              { id: "dc-price-lost", content: "Pricing configurations applied correctly. Rule updates never affect existing COMPLETED session snapshots.", checked: true },
+              { id: "dc-price-audit", content: "Audit log atomically written with: requestId, traceId, correlationId, userId (JWT), ipAddress, action, oldValue, newValue, latency.", checked: true },
+              { id: "dc-price-domain-event", content: "PricingRuleUpdatedEvent published ONLY after transaction commits. Never inside transaction.", checked: true },
+              { id: "dc-price-error-contract", content: "All error responses match standard: { success: false, error: { code, message, traceId } }.", checked: true },
+              { id: "dc-price-tests", content: "All 15 test cases covering CRUD, concurrency, soft delete, audit, snapshot integrity, and error contract are defined.", checked: true }
             ]
           },
           {
