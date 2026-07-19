@@ -1,6 +1,6 @@
 # Project Map
 
-> Generated: 2026-07-19 16:11:06
+> Generated: 2026-07-19 16:21:09
 > Generator: `scripts/export-project-map.ps1`
 
 This file contains the project architecture and a direct source-code snapshot. The snapshot is generated from the source tree and filtered by `projectmapignore`.
@@ -48,7 +48,7 @@ src/main.tsx -> src/App.tsx
 | `src/domain/taxonomy.ts` | 8301 |
 | `src/index.css` | 1592 |
 | `src/main.tsx` | 240 |
-| `src/seed/parkingBuildingSeed.ts` | 872185 |
+| `src/seed/parkingBuildingSeed.ts` | 873924 |
 | `src/seed/parkingTaxonomyMigration.ts` | 27295 |
 | `src/store/featureTreeStore.ts` | 24426 |
 | `src/tests/aiExport.test.ts` | 1952 |
@@ -6138,6 +6138,41 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
               { id: "dc-reg-43", content: "Audit/application log records DRIVER_REGISTERED.", checked: false },
               { id: "dc-reg-44", content: "Automated test cases pass.", checked: false }
             ]
+          },
+          {
+            id: "leaf-auth-forget-password",
+            title: "Forget Password",
+            type: "leaf_feature",
+            clients: ["Guest"],
+            status: "ready",
+            priority: "high",
+            tags: ["auth", "password", "reset", "security"],
+            summary: "Allows users to request a password reset link and set a new password.",
+            objective: "Implement a secure forget password flow. Users can request a reset link sent to their email. Using the secure token from the link, they can set a new password.",
+            inScope: [
+              "Endpoint to request a password reset email.",
+              "Endpoint to verify reset token and set a new password.",
+              "Secure token generation with expiration (e.g., 15 minutes)."
+            ],
+            outOfScope: [
+              "SMS based password reset."
+            ],
+            permissions: [
+              { role: "Guest", permission: "Can request reset link and reset password." }
+            ],
+            businessRules: [
+              "Reset token must expire within 15 minutes.",
+              "Reset token must be single-use.",
+              "Password reset must enforce strong password policy."
+            ],
+            endpoints: [
+              "POST /api/core/auth/forgot-password",
+              "POST /api/core/auth/reset-password"
+            ],
+            ownerService: ".NET Core API",
+            apiContracts: createApiContract("POST /api/core/auth/forgot-password"),
+            testCases: defaultApiTests("Forget Password", ["Guest"], ["POST /api/core/auth/forgot-password"]),
+            doneCriteria: defaultDoneCriteria("Forget Password")
           }
         ]
       },
