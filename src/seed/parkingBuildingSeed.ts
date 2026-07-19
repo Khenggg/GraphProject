@@ -11142,7 +11142,138 @@ Response Success (201 Created):
           },
           { id: "leaf-diag-res-dump", title: "Reservation Debug Dump", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Reservation Debug Dump", ["Admin"], []), doneCriteria: defaultDoneCriteria("Reservation Debug Dump") },
           { id: "leaf-diag-sess-dump", title: "Session Debug Dump", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Session Debug Dump", ["Admin"], []), doneCriteria: defaultDoneCriteria("Session Debug Dump") },
-          { id: "leaf-diag-clear-res", title: "Clear Reservations Debug", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Clear Reservations Debug", ["Admin"], []), doneCriteria: defaultDoneCriteria("Clear Reservations Debug") },
+          {
+            id: "leaf-diag-clear-res",
+            title: "Clear Reservations Debug",
+            type: "leaf_feature",
+            clients: ["Admin"],
+            status: "ready",
+            priority: "low",
+            tags: ["developer-utility", "test-data", "debug", "clear-reservations"],
+            summary: "Provide a debugging utility for administrators to forcefully clear, reset, or permanently delete mock reservation data during testing without affecting real production transactions.",
+            objective: "Implement a secure database cleanup method exposed only in non-production environments to clear, reset, or permanently delete mock reservation data for Admins.",
+            inScope: [
+              "Allow administrators to clear, reset, or hard-delete reservation test data.",
+              "Restrict execution to non-production environments only.",
+              "Delete only records identified as test/mock data.",
+              "Record all debug operations in the audit log with critical severity.",
+              "Implement the feature following existing project architecture and security standards."
+            ],
+            outOfScope: [
+              "Deleting or modifying real production reservation records.",
+              "Deleting payment, audit, or operational data unrelated to test reservations.",
+              "External system integrations not specified in this document."
+            ],
+            permissions: [
+              { role: "Admin", permission: "Authorized to access this feature." }
+            ],
+            businessRules: [
+              "This debugging utility must only be available in non-production environments.",
+              "The API must validate the application environment (e.g., ASPNETCORE_ENVIRONMENT) and immediately return 403 Forbidden if executed in Production.",
+              "Only reservation records explicitly marked as test data or created by mock accounts may be deleted.",
+              "Every execution of this feature must be recorded in the audit log with Critical severity."
+            ],
+            dbExistingTables: [
+              "Reservation",
+              "Audit Log",
+              "Test/Mock Account"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Only records flagged as test data or created by mock accounts are eligible for deletion.",
+              "Audit logs must permanently retain execution history even after reservation records are removed."
+            ],
+            validationRules: [
+              { field: "Role", rule: "Only authenticated Admin users may execute this feature.", errorMessage: "Unauthorized access." },
+              { field: "Environment", rule: "Reject execution when the application is running in the Production environment.", errorMessage: "Forbidden in Production." },
+              { field: "Target Records", rule: "Verify targeted records are marked as test data before deletion.", errorMessage: "Cannot delete production data." }
+            ],
+            securityRules: [
+              "Validate Admin role permissions.",
+              "Prevent unauthorized access.",
+              "Block execution in Production environments.",
+              "Prevent deletion of production data.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Log request access, execution time, duration, and response code.",
+              "Log the executing administrator ID.",
+              "Log deleted record count.",
+              "Log environment name.",
+              "Log execution result.",
+              "Record every execution with Critical severity in the audit log."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, and credit card details."
+            ],
+            integrationPoints: [],
+            uiPage: "/admin/debug-utilities",
+            uiComponents: "Warning Dialog, Execute Debug Button, Result Console",
+            uiStateIdle: "Display a warning dialog before execution.",
+            uiStateLoading: "Disable action and show execution spinner.",
+            uiStateSuccess: "Display success or failure results with the number of deleted records.",
+            uiStateEmpty: "No test reservation data found.",
+            uiStateError: "Display execution failures or permission errors.",
+            endpoints: [],
+            ownerService: "System",
+            apiContracts: [],
+            testCases: [
+              {
+                id: "tc-clear-res-admin-success",
+                title: "Verify authorized client (Admin) can access \"Clear Reservations Debug\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Admin in a non-production environment",
+                steps: [
+                  "Authenticate user as Admin",
+                  "Execute the debug endpoint",
+                  "Verify only test reservation data is removed"
+                ],
+                expectedResult: "Request succeeds and only test reservation data is deleted",
+                status: "not_started"
+              },
+              {
+                id: "tc-clear-res-blocked-prod",
+                title: "Verify execution is blocked in Production",
+                type: "integration",
+                precondition: "Application is running in Production",
+                steps: [
+                  "Authenticate as Admin",
+                  "Execute the debug endpoint"
+                ],
+                expectedResult: "System returns 403 Forbidden",
+                status: "not_started"
+              },
+              {
+                id: "tc-clear-res-no-prod-deletion",
+                title: "Verify production reservation data cannot be deleted",
+                type: "integration",
+                expectedResult: "System rejects deletion of production reservation records",
+                status: "not_started"
+              },
+              {
+                id: "tc-clear-res-audit-critical",
+                title: "Verify audit log records critical execution event",
+                type: "integration",
+                expectedResult: "Audit log contains execution details with Critical severity",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-clear-res-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-clear-res-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-clear-res-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-clear-res-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-clear-res-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-clear-res-non-prod", content: "Feature is restricted to non-production environments.", checked: false },
+              { id: "dc-clear-res-env-val", content: "Environment validation is implemented.", checked: false },
+              { id: "dc-clear-res-test-only", content: "Only test/mock reservation data can be deleted.", checked: false },
+              { id: "dc-clear-res-audit-critical", content: "Audit logs record execution with Critical severity.", checked: false },
+              { id: "dc-clear-res-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-clear-res-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false },
+              { id: "dc-clear-res-edge-cases", content: "Edge cases are documented.", checked: false },
+              { id: "dc-clear-res-state-transitions", content: "Payment/session/reservation state transition is documented.", checked: false }
+            ]
+          },
           { id: "leaf-diag-migrate", title: "Migrate Database Debug", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Migrate Database Debug", ["Admin"], []), doneCriteria: defaultDoneCriteria("Migrate Database Debug") },
           { id: "leaf-diag-expire-res", title: "Expire Reservation Debug", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Expire Reservation Debug", ["Admin"], []), doneCriteria: defaultDoneCriteria("Expire Reservation Debug") },
           { id: "leaf-diag-expire-pay", title: "Expire Payment Deadline Debug", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Expire Payment Deadline Debug", ["Admin"], []), doneCriteria: defaultDoneCriteria("Expire Payment Deadline Debug") }
