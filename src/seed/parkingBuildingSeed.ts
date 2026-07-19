@@ -6297,11 +6297,246 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-pay-review",
             title: "Payment Review / Mismatch Handling",
             type: "leaf_feature",
+            status: "ready",
+            priority: "high",
             clients: ["Manager", "Admin"],
-            endpoints: [],
+            tags: ["payments", "review", "mismatch", "admin", "reconciliation", "audit"],
+            summary: "Provide a mechanism for Admins and Managers to manually intervene and resolve online payment transactions flagged as errors, anomalies, or amount mismatches arising from the automated reconciliation system.",
+            objective: "Allow authorized personnel to manually transition mismatch payments to a resolved state (PAID, FAILED, or REFUND_PENDING), with cascading updates to linked reservations or parking sessions, mandatory audit trail, and event-driven downstream notifications.",
+            inScope: [
+              "Authorization check (JWT/Role: Manager, Admin only).",
+              "Manual state updates: Force Accept (PAID), Reject (FAILED), Refund (REFUND_PENDING).",
+              "Cascading state updates for linked entities (Reservation or Parking Session).",
+              "Audit logging with mandatory justification and old/new amount tracking.",
+              "Ownership validation (payment -> reservation/session link integrity).",
+              "Replay protection (prevent resolving twice via state transition matrix).",
+              "Domain event publishing (PaymentResolvedEvent) after transaction commit."
+            ],
+            outOfScope: [
+              "Cash (CASH) or waived (WAIVED) transactions — Review flow is not applicable.",
+              "Automated reconciliation logic (handled by leaf-pay-reconcile).",
+              "Direct API calls to 3rd-party refund systems (only domain events are published)."
+            ],
+            permissions: [
+              { role: "Manager", permission: "Handle minor amount mismatches, verify supplemental cash payments at counter. Full resolve access." },
+              { role: "Admin", permission: "Handle major technical errors, force state updates, resolve customer complaints. Full resolve access." }
+            ],
+            businessRules: [
+              "Lock Order: STRICTLY lock payments first, then reservations OR parking_sessions. Never reverse this order — reversing causes Deadlocks with incoming Webhooks.",
+              "Payment Type Applicability: If payment.method == CASH or WAIVED, return 422. Review is exclusively for online payment gateways (PayOS, Momo, etc.).",
+              "Mandatory Justification: resolutionReason is required, minimum 10 characters. Silent updates are strictly forbidden.",
+              "State Transition Enforcement: Only allow transitions defined in the State Transition Matrix. Return 422 INVALID_STATE_TRANSITION for all violations.",
+              "Replay Protection: If payment is already PAID/FAILED/CANCELLED, block re-resolve and return 422. A second concurrent request after DB state changes must be blocked.",
+              "Ownership Validation: Verify payment.reservationId == reservation.id or payment.sessionId == session.id. Return 422 if link is broken or mismatched.",
+              "Cascading State Updates: PAID -> Reservation CONFIRMED / Session COMPLETED. FAILED -> Reservation CANCELLED / Session unchanged.",
+              "JWT Integrity: Extract acting UserId (resolvedBy) directly from JWT Claims (HttpContext.User). Never trust userId from HTTP body.",
+              "Atomicity: Lock payments + lock linked entity + insert audit — all in a single IDbContextTransaction. Full rollback on any exception.",
+              "Domain Event: Publish PaymentResolvedEvent ONLY AFTER transaction commits successfully. Never inside the transaction.",
+              "No Hardcoded Strings: Verify PENDING_REVIEW, REFUND_PENDING, MISMATCH, COMPLETED enums against actual DB schema before implementation.",
+              "internalNote PII: Do not log internalNote to general console if it contains PII. Attach correlationId to all logs."
+            ],
+            dbExistingTables: ["payments", "reservations", "parking_sessions", "audit_logs"],
+            dbNewTablesSql: "-- Verify before implementation:\n-- 1. SELECT enum_range(NULL::payment_status); -- Confirm MISMATCH, PENDING_REVIEW, PAID, FAILED, REFUND_PENDING exist\n-- 2. SELECT enum_range(NULL::reservation_status); -- Confirm PENDING, WAITING_PAYMENT, CONFIRMED, CANCELLED exist\n-- 3. SELECT enum_range(NULL::parking_session_status); -- Confirm ACTIVE, COMPLETED exist",
+            dbRelationships: [
+              "payments: SELECT FOR UPDATE (first lock). Update status from MISMATCH/PENDING_REVIEW to PAID/FAILED/REFUND_PENDING.",
+              "reservations: SELECT FOR UPDATE (second lock, if payment.reservationId != null). Cascade status update.",
+              "parking_sessions: SELECT FOR UPDATE (second lock, if payment.sessionId != null). Cascade status update.",
+              "audit_logs: INSERT MismatchResolved record with paymentId, action, resolvedBy, resolutionReason, oldStatus, newStatus, oldAmount, newAmount, traceId."
+            ],
+            validationRules: [
+              { field: "paymentId", rule: "Required. Payment must exist and be in MISMATCH or PENDING_REVIEW status.", errorMessage: "PAYMENT_NOT_FOUND or INVALID_STATE_TRANSITION" },
+              { field: "targetStatus", rule: "Required. Must be a valid enum value (PAID, FAILED, REFUND_PENDING). Return 400 for invalid enum.", errorMessage: "VALIDATION_ERROR" },
+              { field: "resolutionReason", rule: "Required. Minimum 10 characters. Cannot be null, empty, or whitespace-only.", errorMessage: "VALIDATION_ERROR" },
+              { field: "payment.method", rule: "Must NOT be CASH or WAIVED. Return 422 if applicable.", errorMessage: "INVALID_PAYMENT_TYPE" },
+              { field: "ownership", rule: "payment.reservationId must match reservation.id OR payment.sessionId must match session.id.", errorMessage: "OWNERSHIP_MISMATCH" }
+            ],
+            securityRules: [
+              "JWT Auth: All requests must provide valid Bearer token.",
+              "Role Enforcement: Only Manager and Admin roles permitted. Staff and Guest return 403.",
+              "JWT Claims: resolvedBy extracted from HttpContext.User claims. Never from HTTP body.",
+              "PII Protection: Do not log internalNote to general application logs."
+            ],
+            logEvents: [
+              "Structured log: correlationId, traceId, requestId, paymentId, resolvedBy, oldStatus, newStatus, oldAmount, newAmount, resolutionReason, latency.",
+              "Audit log MismatchResolved written atomically inside transaction."
+            ],
+            noLogEvents: [
+              "Do not log internalNote field to general console if it contains PII.",
+              "Do not log raw JWT tokens or signature secrets."
+            ],
+            integrationPoints: [
+              { system: "Domain Event Bus", responsibility: "Receives PaymentResolvedEvent AFTER transaction commit. Triggers: Refund Service (if REFUND_PENDING), Notification Service (email/SMS), Reporting Service (revenue metrics)." },
+              { system: "Refund Service", responsibility: "Event subscriber. Processes refund if domain event indicates FAILED/REFUND_PENDING." },
+              { system: "Notification Service", responsibility: "Event subscriber. Sends email/SMS to user about payment resolution outcome." }
+            ],
+            uiPage: "/admin/payments/review or /manager/payments/mismatch",
+            uiComponents: "Mismatch detail panel: payment summary, mismatched amount display, resolution action selector (Force Accept / Reject / Refund), mandatory reason textarea, internal note field, Confirm Resolve button.",
+            uiStateLoading: "Disable 'Confirm Resolve' button and show spinner while POST is in flight.",
+            uiStateEmpty: "N/A",
+            uiStateError: "Display specific error from reasonCode: 'INVALID_STATE_TRANSITION', 'OWNERSHIP_MISMATCH', 'INVALID_PAYMENT_TYPE', 'VALIDATION_ERROR'.",
+            uiStateSuccess: "Show resolution success with paymentId, resolvedBy, resolvedAt, newStatus, and requestId/correlationId for audit reference.",
+            notes: "CRITICAL: Lock order is mandatory — payments first, then linked entity. Reversing causes deadlocks. Domain event must ONLY be published after successful transaction commit. All Enum values must be verified against actual DB schema before coding.",
+            dependencies: [],
+            risks: [],
+            endpoints: ["POST /api/admin/payments/{paymentId}/resolve-mismatch"],
             ownerService: ".NET Core API",
-            testCases: defaultApiTests("Payment Review / Mismatch Handling", ["Manager"], []),
-            doneCriteria: defaultDoneCriteria("Payment Review / Mismatch Handling")
+            apiContracts: [
+              {
+                id: "contract-pay-review-post",
+                name: "POST /api/admin/payments/{paymentId}/resolve-mismatch",
+                content: `Method: POST\nPath: /api/admin/payments/{paymentId}/resolve-mismatch\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: application/json\nRequest Body:\n{\n  "targetStatus": "PAID",\n  "resolutionReason": "Customer paid the remaining 10,000 VND in cash at the counter.",\n  "internalNote": "Verified by camera #4"\n}\n\nResponse 200 OK (Resolution Successful):\n{\n  "success": true,\n  "data": {\n    "paymentId": "PAY_123",\n    "status": "PAID",\n    "resolvedBy": "ADMIN_01",\n    "resolvedAt": "2026-07-19T15:17:20+07:00",\n    "requestId": "req-8f7d9a",\n    "correlationId": "corr-1a2b3c"\n  }\n}\n\nResponse 422 (Invalid State Transition):\n{\n  "success": false,\n  "error": {\n    "code": "INVALID_STATE_TRANSITION",\n    "message": "Payment is already PAID and cannot be resolved again.",\n    "traceId": "0HL-xxx"\n  }\n}\n\nResponse 422 (Invalid Payment Type):\n{\n  "success": false,\n  "error": {\n    "code": "INVALID_PAYMENT_TYPE",\n    "message": "Review is only applicable to online payment transactions.",\n    "traceId": "0HL-xxx"\n  }\n}\n\nResponse 403 (Insufficient Role):\n{\n  "success": false,\n  "error": {\n    "code": "FORBIDDEN",\n    "message": "Only Manager and Admin roles may resolve payment mismatches.",\n    "traceId": "0HL-xxx"\n  }\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-rev-happy-paid-reservation",
+                title: "Verify MISMATCH->PAID cascades Reservation to CONFIRMED",
+                type: "integration",
+                precondition: "Payment in MISMATCH status, linked to active Reservation. Manager JWT.",
+                steps: ["POST /api/admin/payments/{paymentId}/resolve-mismatch with targetStatus=PAID and valid resolutionReason."],
+                expectedResult: "HTTP 200. Payment status=PAID. Reservation status=CONFIRMED. Audit log written. Domain event PaymentResolvedEvent published after commit.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rev-happy-paid-session",
+                title: "Verify MISMATCH->PAID cascades Parking Session to COMPLETED",
+                type: "integration",
+                precondition: "Payment in MISMATCH status, linked to ACTIVE parking session. Admin JWT.",
+                steps: ["POST resolve-mismatch with targetStatus=PAID."],
+                expectedResult: "HTTP 200. Payment status=PAID. Session status=COMPLETED. Audit log written.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rev-refund-pending",
+                title: "Verify Manager can transition payment to REFUND_PENDING",
+                type: "integration",
+                precondition: "Payment in PENDING_REVIEW status. Manager JWT.",
+                steps: ["POST resolve-mismatch with targetStatus=REFUND_PENDING."],
+                expectedResult: "HTTP 200. Payment status=REFUND_PENDING. Domain event triggers Refund Service.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rev-force-failed",
+                title: "Verify MISMATCH->FAILED cascades Reservation to CANCELLED",
+                type: "integration",
+                precondition: "Payment in MISMATCH, linked Reservation in WAITING_PAYMENT. Admin JWT.",
+                steps: ["POST resolve-mismatch with targetStatus=FAILED."],
+                expectedResult: "HTTP 200. Payment status=FAILED. Reservation status=CANCELLED.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rev-missing-reason",
+                title: "Verify missing resolutionReason returns 400",
+                type: "api",
+                precondition: "Valid MISMATCH payment. Request body missing resolutionReason.",
+                steps: ["POST resolve-mismatch without resolutionReason."],
+                expectedResult: "HTTP 400 VALIDATION_ERROR.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rev-invalid-target-enum",
+                title: "Verify invalid targetStatus enum returns 400",
+                type: "api",
+                precondition: "Valid MISMATCH payment. targetStatus='PROCESSING' (not a valid enum).",
+                steps: ["POST resolve-mismatch with targetStatus='PROCESSING'."],
+                expectedResult: "HTTP 400 VALIDATION_ERROR.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rev-state-violation-replay",
+                title: "Verify resolving already-PAID payment is blocked with 422",
+                type: "integration",
+                precondition: "Payment already in PAID status.",
+                steps: ["POST resolve-mismatch with targetStatus=PAID."],
+                expectedResult: "HTTP 422 INVALID_STATE_TRANSITION. Replay protection blocks second resolve.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rev-ownership-fail",
+                title: "Verify broken payment->reservation link returns 422",
+                type: "integration",
+                precondition: "Payment holds reservationId that does not match actual reservation record.",
+                steps: ["POST resolve-mismatch."],
+                expectedResult: "HTTP 422 OWNERSHIP_MISMATCH.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rev-reservation-missing",
+                title: "Verify deleted/missing reservation returns 404",
+                type: "integration",
+                precondition: "Payment references a reservationId that no longer exists.",
+                steps: ["POST resolve-mismatch."],
+                expectedResult: "HTTP 404 RESERVATION_NOT_FOUND.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rev-session-missing",
+                title: "Verify deleted/missing session returns 404",
+                type: "integration",
+                precondition: "Payment references a sessionId that no longer exists.",
+                steps: ["POST resolve-mismatch."],
+                expectedResult: "HTTP 404 SESSION_NOT_FOUND.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rev-invalid-payment-type-cash",
+                title: "Verify applying Review to CASH payment returns 422",
+                type: "api",
+                precondition: "Payment method is CASH.",
+                steps: ["POST resolve-mismatch on a CASH payment."],
+                expectedResult: "HTTP 422 INVALID_PAYMENT_TYPE.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rev-role-access",
+                title: "Verify Staff or Guest role is rejected with 403",
+                type: "api",
+                precondition: "Caller uses Staff-role JWT.",
+                steps: ["POST resolve-mismatch with Staff JWT."],
+                expectedResult: "HTTP 403 FORBIDDEN.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rev-concurrent-409",
+                title: "Verify two Admins resolving simultaneously: 1 success, 1 conflict",
+                type: "concurrency",
+                precondition: "Two Admin sessions trigger resolve for same paymentId simultaneously.",
+                steps: ["Dispatch two simultaneous POST requests for same paymentId."],
+                expectedResult: "One: HTTP 200 PAID. Other: HTTP 409 Conflict or 422 INVALID_STATE_TRANSITION.",
+                status: "not_started"
+              },
+              {
+                id: "tc-rev-audit-integrity",
+                title: "Verify audit log captures oldAmount, newAmount, and resolvedBy from JWT",
+                type: "integration",
+                precondition: "Payment MISMATCH with amount=90000 resolved to PAID with final amount=100000.",
+                steps: ["POST resolve-mismatch. Query audit_logs after commit."],
+                expectedResult: "Audit record shows oldAmount=90000, newAmount=100000, resolvedBy=JWT userId (NOT from body).",
+                status: "not_started"
+              },
+              {
+                id: "tc-rev-domain-event-after-commit",
+                title: "Verify PaymentResolvedEvent is published ONLY after successful DB commit",
+                type: "integration",
+                precondition: "Mock event bus to track publish timing.",
+                steps: ["POST resolve-mismatch. Verify event bus receives event only after DB transaction commits."],
+                expectedResult: "Event published exactly once, strictly after DB commit. If DB rolls back, no event is published.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-rev-lock-order", content: "Lock order enforced: payments locked first, then reservations OR parking_sessions. No deadlock possible with incoming webhooks.", checked: true },
+              { id: "dc-rev-state-machine", content: "State Transition Matrix enforced for all entities. Invalid transitions return 422. Replay protection blocks double-resolve.", checked: true },
+              { id: "dc-rev-payment-type-check", content: "CASH and WAIVED payments rejected with 422 INVALID_PAYMENT_TYPE.", checked: true },
+              { id: "dc-rev-mandatory-reason", content: "resolutionReason validated: required, minimum 10 chars, non-empty, non-whitespace.", checked: true },
+              { id: "dc-rev-jwt-integrity", content: "resolvedBy extracted strictly from JWT Claims (HttpContext.User), never from HTTP body.", checked: true },
+              { id: "dc-rev-cascade", content: "Cascading updates implemented: PAID triggers CONFIRMED/COMPLETED; FAILED triggers CANCELLED for linked entities.", checked: true },
+              { id: "dc-rev-atomicity", content: "All DB changes (payment + linked entity + audit) in single IDbContextTransaction. Full rollback on exception.", checked: true },
+              { id: "dc-rev-domain-event", content: "PaymentResolvedEvent published ONLY after transaction commits. Never inside transaction.", checked: true },
+              { id: "dc-rev-audit", content: "Audit log records: paymentId, action, resolvedBy, resolutionReason, oldStatus, newStatus, oldAmount, newAmount, traceId.", checked: true },
+              { id: "dc-rev-enum-verified", content: "All Enum values (PENDING_REVIEW, REFUND_PENDING, MISMATCH, COMPLETED) verified against actual DB schema before implementation.", checked: true },
+              { id: "dc-rev-tests", content: "All 15 test cases covering happy paths, auth, state machine, cascade, concurrency, audit, and event publishing are defined.", checked: true }
+            ]
           }
         ]
       },
