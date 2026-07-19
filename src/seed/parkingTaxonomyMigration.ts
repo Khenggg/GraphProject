@@ -364,6 +364,105 @@ CREATE TABLE revoked_access_tokens (
       uiStateEmpty: "Not applicable.",
       uiStateError: "Frontend must treat logout as idempotent: even if backend fails, clear client storage and redirect to login.",
       uiStateSuccess: "Redirect to login page and display logout confirmation message."
+    },
+    {
+      id: "leaf-auth-forget-password",
+      title: "Forget Password",
+      match: /(forget|forgot|reset)/i,
+      endpoint: /\/(forgot-password|reset-password)$/i,
+      objective: "Provide secure Forget Password and Reset Password flows. Follows strict transactional outbox patterns, lock ordering, and audit logging to ensure consistency across the PBMS ecosystem.",
+      inScope: [
+        "POST /forgot: Validate email, generate 256-bit entropy token, lock password_reset_tokens, invalidate old tokens, insert new token, and publish Notification via Outbox.",
+        "POST /reset: Lock tokens, users, and audit_logs in strict order.",
+        "Verify password history (last 5 passwords), complexity, and security stamp.",
+        "Update users.password, security_stamp, and token.used_at.",
+        "Revoke Sessions: Invalidate Access Tokens, Refresh Tokens, Device Sessions, SignalR Connections, and 'Remember Me' cookies.",
+        "Insert into audit_logs and user_password_history.",
+        "Publish PasswordResetRequested / PasswordResetCompleted Events via Outbox.",
+        "Cleanup worker to periodically hard-delete expired tokens (Batch 1000, every 10 mins)."
+      ],
+      outOfScope: [],
+      permissions: [
+        { role: "Guest", permission: "Can access /forgot (4 req/15m) and /reset (20 req/1h) endpoints anonymously." }
+      ],
+      dbExistingTables: ["users", "audit_logs", "outbox_events"],
+      dbNewTablesSql: `-- Table: password_reset_tokens
+CREATE TABLE password_reset_tokens (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id),
+  token_hash VARCHAR(255) UNIQUE NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  used_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- Table: user_password_history
+CREATE TABLE user_password_history (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id),
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+
+-- Indexes for Performance
+CREATE UNIQUE INDEX ux_password_reset_token_hash ON password_reset_tokens(token_hash);
+CREATE INDEX ix_password_reset_user ON password_reset_tokens(user_id) WHERE used_at IS NULL;
+CREATE INDEX ix_password_reset_expiry ON password_reset_tokens(expires_at);`,
+      dbRelationships: [
+        "password_reset_tokens.user_id -> users.id",
+        "user_password_history.user_id -> users.id"
+      ],
+      validationRules: [
+        { field: "email (Forgot)", rule: "EmailAddress, Required, MaxLength(255), Trim(), Lowercase", errorMessage: "VALIDATION_ERROR" },
+        { field: "token (Reset)", rule: "Required, MaxLength 512", errorMessage: "INVALID_TOKEN" },
+        { field: "newPassword (Reset)", rule: "MinLength 8, MaxLength 64, SpecialChar, Digit, Uppercase, Lowercase", errorMessage: "PASSWORD_TOO_WEAK" }
+      ],
+      securityRules: [
+        "Strict Lock Order: 1. password_reset_tokens (SELECT FOR UPDATE), 2. users (SELECT FOR UPDATE), 3. audit_logs (INSERT), 4. outbox_events (INSERT) to prevent deadlocks.",
+        "Transactional Outbox Pattern: Never publish events/notifications inside DB transaction directly. Write intent to outbox_events.",
+        "Token Lifecycle: Validity 15 minutes, Clock Skew 2 minutes. State Machine: Issued -> Sent -> Verified -> Used -> Expired -> Deleted.",
+        "Password History Policy: Remember last 5 passwords. Reject identical to current or found in history (hash comparison).",
+        "Security Stamp: Generate a new SecurityStamp and save in users upon reset. Validate stamp against JWT on every request.",
+        "No Logic Leak: Ensure INTERNAL_ERROR masks underlying SqlException details.",
+        "Cleanup Worker SQL: DELETE FROM password_reset_tokens WHERE id IN (SELECT id FROM password_reset_tokens WHERE expires_at < NOW() ORDER BY expires_at ASC LIMIT 1000);"
+      ],
+      logEvents: [
+        "Audit Metadata: correlationId, traceId, userId, actor (GUEST), ip, userAgent.",
+        "PASSWORD_RESET_SUCCESS",
+        "PASSWORD_RESET_FAILED"
+      ],
+      noLogEvents: [
+        "Raw token strings.",
+        "Raw passwords or new passwords."
+      ],
+      uiPage: "/forgot-password, /reset-password",
+      uiComponents: "ForgotPasswordForm, ResetPasswordForm",
+      uiStateLoading: "Show loading spinner overlay during API calls, disable submit buttons.",
+      uiStateEmpty: "Not applicable.",
+      uiStateError: "Handle 400 (VALIDATION_ERROR, INVALID_TOKEN, PASSWORD_TOO_WEAK, PASSWORD_REUSED, USER_STATUS_INVALID), 429 RATE_LIMITED, 409 CONCURRENT_RESET, 500 INTERNAL_ERROR.",
+      uiStateSuccess: "Display success message: 'If the account exists, reset instructions have been sent.' / 'Password has been reset successfully.'",
+      apiContracts: [
+        {
+          id: "contract-auth-forgot",
+          name: "POST /api/auth/forgot-password",
+          content: "Method: POST\\nPath: /api/auth/forgot-password\\nBody:\\n{\\n  \\\"email\\\": \\\"user@example.com\\\"\\n}\\nResponse 200 OK:\\n{\\n  \\\"success\\\": true,\\n  \\\"message\\\": \\\"If the account exists, reset instructions have been sent.\\\"\\n}"
+        },
+        {
+          id: "contract-auth-reset",
+          name: "POST /api/auth/reset-password",
+          content: "Method: POST\\nPath: /api/auth/reset-password\\nBody:\\n{\\n  \\\"token\\\": \\\"raw_token_string\\\",\\n  \\\"newPassword\\\": \\\"SecurePassword123!\\\",\\n  \\\"confirmPassword\\\": \\\"SecurePassword123!\\\"\\n}\\nResponse 200 OK:\\n{\\n  \\\"success\\\": true,\\n  \\\"message\\\": \\\"Password has been reset successfully.\\\"\\n}"
+        }
+      ],
+      testCases: [
+        { id: "tc-auth-forgot-valid", title: "Verify valid email sends reset link", type: "integration", precondition: "User exists", steps: ["POST /forgot"], expectedResult: "HTTP 200", status: "not_started" },
+        { id: "tc-auth-reset-valid", title: "Verify valid token resets password", type: "integration", precondition: "Token exists", steps: ["POST /reset"], expectedResult: "HTTP 200", status: "not_started" }
+      ],
+      doneCriteria: [
+        { id: "dc-auth-forgot-impl", content: "Forgot password endpoint implemented", checked: false },
+        { id: "dc-auth-reset-impl", content: "Reset password endpoint implemented", checked: false },
+        { id: "dc-auth-reset-lock", content: "Strict lock order implemented", checked: false },
+        { id: "dc-auth-reset-outbox", content: "Outbox events published", checked: false }
+      ]
     }
   ];
 
@@ -397,9 +496,9 @@ CREATE TABLE revoked_access_tokens (
     child.uiStateError = definition.uiStateError;
     child.uiStateSuccess = definition.uiStateSuccess;
 
-    child.apiContracts = node.apiContracts.filter(item => definition.match.test(`${item.id} ${item.name}`));
-    child.testCases = node.testCases.filter(item => definition.match.test(`${item.id} ${item.title}`));
-    child.doneCriteria = node.doneCriteria.filter(item => definition.match.test(`${item.id} ${item.content}`));
+    child.apiContracts = (definition as any).apiContracts || node.apiContracts.filter(item => definition.match.test(`${item.id} ${item.name}`));
+    child.testCases = (definition as any).testCases || node.testCases.filter(item => definition.match.test(`${item.id} ${item.title}`));
+    child.doneCriteria = (definition as any).doneCriteria || node.doneCriteria.filter(item => definition.match.test(`${item.id} ${item.content}`));
     return child;
   });
 
