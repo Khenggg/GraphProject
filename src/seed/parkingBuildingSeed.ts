@@ -4641,12 +4641,213 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-pay-online",
             title: "Online Exit Fee Payment",
             type: "leaf_feature",
-            clients: ["Staff", "Driver"],
+            status: "ready",
+            priority: "critical",
+            clients: ["Manager", "Staff", "Driver"],
+            tags: ["payments", "payos", "online", "exit-fee", "transaction"],
+            summary: "This feature initiates online parking fee payment transactions via the PayOS gateway. The fee calculation algorithm prioritizes the use of Snapshot Pricing (saved at the time of Entry).",
+            objective: "The system applies row-level locking (Pessimistic Locking on parking_sessions) combined with a Two-step Transaction to integrate safely with PayOS, generating an accurate 64-bit OrderCode, ensuring transaction uniqueness (PENDING), and data integrity.",
+            inScope: [
+              "Initiate PayOS payment link creation for parking exit fee.",
+              "Snapshot Pricing priority with fallback to PricingRule table.",
+              "Two-step DB transaction: Tx1 inserts PENDING payment, Tx2 updates with PayOS response.",
+              "Pessimistic locking via SELECT FOR UPDATE on parking_sessions.",
+              "Idempotent handling: same sessionId within 15 minutes returns existing PENDING checkout URL.",
+              "64-bit OrderCode generation.",
+              "Audit log recording."
+            ],
+            outOfScope: [
+              "Receipts: The receipts table must NOT be written to in this feature.",
+              "Webhook / Exit Process: PayOS callback handling and gate opening logic are in another module.",
+              "Auto-retry: Do not auto-retry POST to PayOS to avoid duplicate orders."
+            ],
+            permissions: [
+              { role: "Driver", permission: "Initiate payment for own parking session. Requires ownership check: parking_sessions.driver_id must match JWT userId." },
+              { role: "Staff", permission: "Initiate payment on behalf of any session." },
+              { role: "Manager", permission: "Initiate payment on behalf of any session." }
+            ],
+            businessRules: [
+              "Payment Required Check: If payment_required == false on session, return 422 NO_PAYMENT_REQUIRED immediately.",
+              "Session Status: Session must be ACTIVE. Reject Completed/Cancelled sessions with 404/422.",
+              "Driver Ownership (IDOR): If role is Driver, parking_sessions.driver_id must join driver_profiles.user_id matching JWT userId. Return 403 UNAUTHORIZED_SESSION_ACCESS if mismatch.",
+              "Snapshot Pricing: Must use snapshot_day_price etc. if != NULL. Only fallback to pricing_rules table if Snapshot is NULL (Legacy Data).",
+              "Single PENDING Payment: Partial unique index on (session_id) WHERE status = 'PENDING'. If PENDING exists with valid checkout_url, return it idempotently.",
+              "Two-step Transaction: Tx1 inserts PENDING payment and COMMITS before calling PayOS. NEVER call PayOS Gateway inside an EF Core Transaction Block.",
+              "OrderCode: Must be a 64-bit integer. Never use GUID/UUID as PayOS OrderCode.",
+              "Gateway Failure: If PayOS fails, execute Tx2 to UPDATE payment status to FAILED. Do not rollback the PaymentId.",
+              "Idempotency Window: Same sessionId within 15 minutes returns the exact same checkout_url."
+            ],
+            dbExistingTables: ["parking_sessions", "driver_profiles", "parking_cards"],
+            dbNewTablesSql: `-- Schema updates required in 03_indexes_constraints.sql:
+-- 1. ALTER TABLE payments DROP CONSTRAINT ck_payments_method;
+--    ALTER TABLE payments ADD CONSTRAINT ck_payments_method CHECK (method IN ('CASH', 'NONE', 'ONLINE'));
+-- 2. ALTER TABLE payments DROP CONSTRAINT ck_payments_status;
+--    ALTER TABLE payments ADD CONSTRAINT ck_payments_status CHECK (status IN ('PENDING', 'PAID', 'FAILED', 'CANCELLED', 'WAIVED', 'NOT_REQUIRED', 'EXPIRED'));
+-- 3. ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider VARCHAR;
+--    ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider_transaction_id BIGINT;
+--    ALTER TABLE payments ADD COLUMN IF NOT EXISTS checkout_url TEXT;
+--    ALTER TABLE payments ADD COLUMN IF NOT EXISTS qr_code TEXT;
+--    ALTER TABLE payments ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+-- 4. CREATE UNIQUE INDEX IF NOT EXISTS idx_single_pending_payment ON payments (session_id) WHERE status = 'PENDING';`,
+            dbRelationships: [
+              "parking_sessions: Read to validate session status and payment_required flag. SELECT FOR UPDATE locks the row.",
+              "driver_profiles: Read to verify driver ownership (driver_profiles.user_id == JWT userId).",
+              "payments: Write (INSERT PENDING in Tx1, UPDATE with PayOS response in Tx2).",
+              "audit_logs: Write to record Payment Request Created event."
+            ],
+            validationRules: [
+              { field: "sessionId", rule: "Required. Session must exist and be ACTIVE.", errorMessage: "SESSION_NOT_FOUND" },
+              { field: "returnUrl", rule: "Required. Valid URL format.", errorMessage: "VALIDATION_ERROR" },
+              { field: "cancelUrl", rule: "Required. Valid URL format.", errorMessage: "VALIDATION_ERROR" },
+              { field: "payment_required", rule: "Session flag must be true. If false, abort immediately.", errorMessage: "NO_PAYMENT_REQUIRED" }
+            ],
+            securityRules: [
+              "JWT Auth: All requests must provide valid Bearer token.",
+              "IDOR Prevention: Driver role must match parking_sessions.driver_id via driver_profiles. Return 403 if mismatch.",
+              "Mass Assignment: Never bind HTTP request directly to EF Core entity."
+            ],
+            logEvents: [
+              "Log all events with: RequestId, CorrelationId, TraceId, SessionId, PaymentId, OrderCode, Latency (ms), Gateway Result.",
+              "Audit log must record 'Payment Request Created' with old/new payment status."
+            ],
+            noLogEvents: [
+              "Do not log full PayOS response body containing sensitive financial data.",
+              "Never log JWT payloads or user passwords."
+            ],
+            integrationPoints: [
+              { system: "PayOS Gateway", responsibility: "Generating checkout URL and QR code via POST /v2/payment-requests. Called OUTSIDE EF Core transaction." },
+              { system: "Pricing Module", responsibility: "Providing fallback PricingRule if Snapshot is NULL (Legacy Data)." }
+            ],
+            uiPage: "/driver/payment or /staff/exit-payment",
+            uiComponents: "Payment confirmation modal showing fee amount and new valid_to. QR code display. Redirect to PayOS checkout URL. Loading state while processing.",
+            uiStateLoading: "Disable 'Proceed to Payment' button and show spinner while POST is in flight.",
+            uiStateEmpty: "N/A",
+            uiStateError: "Show specific error message from reasonCode: 'PAYOS_TIMEOUT', 'NO_PAYMENT_REQUIRED', 'UNAUTHORIZED_SESSION_ACCESS'.",
+            uiStateSuccess: "Display checkout URL and QR code. Redirect user to PayOS payment page.",
+            notes: "CRITICAL: NEVER call PayOS Gateway inside an EF Core Transaction Block. Two-step commit pattern is mandatory. OrderCode must be 64-bit integer only.",
+            dependencies: [],
+            risks: [],
             endpoints: ["POST /api/core/payments/online/exit-fee"],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/payments/online/exit-fee"),
-            testCases: defaultApiTests("Online Exit Fee Payment", ["Driver"], ["POST /api/core/payments/online/exit-fee"]),
-            doneCriteria: defaultDoneCriteria("Online Exit Fee Payment")
+            apiContracts: [
+              {
+                id: "contract-pay-online-post",
+                name: "POST /api/core/payments/online/exit-fee",
+                content: `Method: POST\nPath: /api/core/payments/online/exit-fee\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: application/json\nRequest Body:\n{\n  "sessionId": 123456789,\n  "returnUrl": "https://app.parking.vn/payment/success",\n  "cancelUrl": "https://app.parking.vn/payment/cancel"\n}\n\nResponse 200 OK (New PENDING Payment Created):\n{\n  "success": true,\n  "data": {\n    "paymentId": 987654321,\n    "sessionId": 123456789,\n    "amount": 15000,\n    "status": "PENDING",\n    "checkoutUrl": "https://pay.payos.vn/web/...",\n    "qrCode": "00020101021226...",\n    "expiresAt": "2026-07-19T13:32:00Z"\n  }\n}\n\nResponse 422 Unprocessable Entity (No Payment Required):\n{\n  "success": false,\n  "error": {\n    "code": "NO_PAYMENT_REQUIRED",\n    "message": "This session does not require payment.",\n    "traceId": "0HL-1234567890"\n  }\n}\n\nResponse 504 Gateway Timeout:\n{\n  "success": false,\n  "error": {\n    "code": "PAYOS_TIMEOUT",\n    "message": "The payment gateway did not respond.",\n    "traceId": "0HL-1234567890"\n  }\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-payo-happy-path",
+                title: "Verify successful payment initiation returns checkout URL and QR code",
+                type: "integration",
+                precondition: "Active session with payment_required = true. Valid JWT with matching Driver ownership.",
+                steps: [
+                  "POST /api/core/payments/online/exit-fee with valid sessionId, returnUrl, cancelUrl."
+                ],
+                expectedResult: "HTTP 200 OK. Tx1 inserts PENDING payment to DB. PayOS returns checkoutUrl. Tx2 updates payment. Response includes checkoutUrl, qrCode, and expiresAt.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payo-idempotent-return",
+                title: "Verify second request within idempotency window returns same checkout URL",
+                type: "integration",
+                precondition: "A PENDING payment already exists for the session created within 15 minutes.",
+                steps: [
+                  "POST /api/core/payments/online/exit-fee with same sessionId again."
+                ],
+                expectedResult: "HTTP 200 OK. No new DB record created. Response returns existing checkout_url and paymentId.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payo-no-payment-required",
+                title: "Verify session with payment_required=false is rejected",
+                type: "integration",
+                precondition: "Session is ACTIVE but payment_required = false.",
+                steps: [
+                  "POST /api/core/payments/online/exit-fee."
+                ],
+                expectedResult: "HTTP 422. Error code: NO_PAYMENT_REQUIRED.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payo-session-not-found",
+                title: "Verify request for unknown sessionId returns 404",
+                type: "api",
+                precondition: "Session with provided ID does not exist.",
+                steps: [
+                  "POST /api/core/payments/online/exit-fee with non-existent sessionId."
+                ],
+                expectedResult: "HTTP 404. Error code: SESSION_NOT_FOUND.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payo-idor-driver",
+                title: "Verify Driver cannot initiate payment for another Driver's session",
+                type: "api",
+                precondition: "Authenticated Driver. Session belongs to a different driver.",
+                steps: [
+                  "POST /api/core/payments/online/exit-fee with another driver's sessionId."
+                ],
+                expectedResult: "HTTP 403. Error code: UNAUTHORIZED_SESSION_ACCESS.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payo-snapshot-pricing",
+                title: "Verify fee is calculated from Snapshot Pricing when snapshot fields are not null",
+                type: "integration",
+                precondition: "Session has snapshot_day_price != NULL.",
+                steps: [
+                  "POST /api/core/payments/online/exit-fee."
+                ],
+                expectedResult: "HTTP 200 OK. Fee computed from snapshot fields, NOT from pricing_rules table.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payo-fallback-pricing",
+                title: "Verify fee falls back to PricingRule when all snapshot fields are NULL",
+                type: "integration",
+                precondition: "Session has snapshot_day_price = NULL (legacy data).",
+                steps: [
+                  "POST /api/core/payments/online/exit-fee."
+                ],
+                expectedResult: "HTTP 200 OK. Fee computed from pricing_rules table.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payo-gateway-timeout",
+                title: "Verify gateway timeout triggers Tx2 FAILED update and returns 504",
+                type: "integration",
+                precondition: "Mock PayOS to return timeout after Tx1 commits.",
+                steps: [
+                  "POST /api/core/payments/online/exit-fee."
+                ],
+                expectedResult: "HTTP 504. PENDING payment is updated to FAILED in DB (Tx2). Payment ID is retained.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payo-concurrent-requests",
+                title: "Verify concurrent requests for same session are safely serialized by SELECT FOR UPDATE",
+                type: "concurrency",
+                precondition: "Two concurrent requests for the same sessionId at the exact same time.",
+                steps: [
+                  "Dispatch two simultaneous POST requests for the same sessionId."
+                ],
+                expectedResult: "One request creates PENDING. Second request detects existing PENDING and returns it idempotently. No duplicate PENDING payments created.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-payo-schema", content: "Schema updated in 03_indexes_constraints.sql: new columns, updated enums, and partial unique index on payments.", checked: true },
+              { id: "dc-payo-two-step-tx", content: "Two-step commit is active: Tx1 inserts PENDING before PayOS call; Tx2 updates on result. PayOS is NEVER called inside EF Core transaction.", checked: true },
+              { id: "dc-payo-locking", content: "Pessimistic row lock SELECT FOR UPDATE on parking_sessions is implemented.", checked: true },
+              { id: "dc-payo-ordercode", content: "OrderCode uses 64-bit integer only. UUID is strictly forbidden.", checked: true },
+              { id: "dc-payo-snapshot", content: "Snapshot Pricing priority is implemented. Fallback to pricing_rules only when snapshot is NULL.", checked: true },
+              { id: "dc-payo-idor", content: "IDOR check for Driver ownership against driver_profiles.user_id is enforced.", checked: true },
+              { id: "dc-payo-idempotent", content: "Idempotency: same sessionId within 15 minutes returns identical checkout_url without creating duplicate payment.", checked: true },
+              { id: "dc-payo-no-receipt", content: "Receipt table is NOT written to in this feature.", checked: true },
+              { id: "dc-payo-tests", content: "All 9 test cases covering happy, unhappy, concurrency, and edge cases are defined.", checked: true }
+            ]
           },
           {
             id: "leaf-pay-cash",
