@@ -4820,6 +4820,88 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Lost Card Claim Management",
             type: "leaf_feature",
             clients: ["Staff", "Manager"],
+            status: "draft",
+            priority: "high",
+            tags: ["lost-card", "incidents", "claim-management"],
+            summary: "Provide a complete workflow for staff to record and process lost parking card claims. The feature supports collecting customer information, uploading proof of vehicle ownership, calculating lost card penalties, and issuing a temporary or replacement ticket that allows the customer to exit the parking building safely.",
+            objective: "Implement transactional APIs and secure document management flows in .NET Core API to process lost parking card claims, blacklist cards, calculate penalties, and issue replacement tickets.",
+            inScope: [
+              "Record a lost parking card claim.",
+              "Capture customer and vehicle information.",
+              "Upload and manage supporting documents.",
+              "Calculate the lost card penalty fee.",
+              "Issue a temporary or replacement parking ticket.",
+              "Blacklist the lost parking card immediately after confirmation."
+            ],
+            outOfScope: [
+              "Integration with external identity verification services.",
+              "Payment gateway implementation.",
+              "Physical RFID card printing."
+            ],
+            permissions: [
+              { role: "Staff", permission: "Authorized to create, update, and process lost card claims." },
+              { role: "Manager", permission: "Authorized to review, supervise, and process lost card claims." }
+            ],
+            businessRules: [
+              "Lost card claims must include mandatory photo evidence of the vehicle registration and the driver's personal identification before processing.",
+              "A standardized lost card penalty fee must be applied according to the parking building's policy before the vehicle is allowed to exit.",
+              "Once a lost card claim is confirmed, the original parking card must immediately be marked as Blacklisted or Invalid to prevent fraudulent reuse.",
+              "Supporting documents must be stored securely and linked to the lost card claim."
+            ],
+            dbExistingTables: [
+              "lost_card_cases",
+              "parking_cards",
+              "users",
+              "attachments"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Each lost card case may contain multiple supporting documents.",
+              "Supporting documents are associated with one lost card case.",
+              "Lost parking cards are linked to their original parking card records.",
+              "Card status must be updated immediately after a lost card claim is approved."
+            ],
+            validationRules: [
+              { field: "vehicleRegistrationImage", rule: "Required", errorMessage: "Vehicle registration image is required." },
+              { field: "driverIdentificationImage", rule: "Required", errorMessage: "Driver identification image is required." },
+              { field: "Uploaded File Type", rule: "Must be a supported image format", errorMessage: "Unsupported file format." },
+              { field: "Uploaded File Size", rule: "Must not exceed configured size", errorMessage: "File size exceeds the allowed limit." }
+            ],
+            securityRules: [
+              "Validate role permissions.",
+              "Prevent unauthorized access.",
+              "Store uploaded documents securely.",
+              "Prevent direct public access to uploaded files.",
+              "Immediately blacklist lost cards after successful processing.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Lost card claim creation.",
+              "Document upload and deletion.",
+              "Lost card approval.",
+              "Lost card penalty calculation.",
+              "Parking card blacklist operation.",
+              "Temporary/replacement ticket issuance."
+            ],
+            noLogEvents: [
+              "Passwords.",
+              "Access tokens.",
+              "Refresh tokens.",
+              "Credit card details.",
+              "Personal identification document images."
+            ],
+            integrationPoints: [
+              { system: "Secure File Storage Service", responsibility: "Handle secure document uploads." },
+              { system: "Parking Card Management module", responsibility: "Update card status." },
+              { system: "Ticket Management module", responsibility: "Issue temporary or replacement tickets." }
+            ],
+            uiPage: "/staff/lost-cards",
+            uiComponents: "Lost Card Claim Form, File Upload Dropzone, Penalty Calculator Display, Replacement Ticket Action Panel",
+            uiStateIdle: "Display lost card claim information and uploaded documents.",
+            uiStateLoading: "Display upload progress while files are being uploaded.",
+            uiStateSuccess: "Display confirmation after successful processing.",
+            uiStateEmpty: "Prompt staff to upload required supporting documents.",
+            uiStateError: "Display validation errors or upload failures.",
             endpoints: [
               "POST /api/core/lost-cards/{caseId}/documents",
               "POST /api/core/lost-cards/{caseId}/documents/batch",
@@ -4827,11 +4909,81 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
               "DELETE /api/core/lost-cards/{caseId}/documents/{documentId}"
             ],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/lost-cards/{caseId}/documents"),
-            testCases: defaultApiTests("Lost Card Claim Management", ["Staff"], ["GET /api/core/lost-cards/{caseId}/documents"]),
+            apiContracts: [
+              {
+                id: "contract-post-lost-cards-documents",
+                name: "POST /api/core/lost-cards/{caseId}/documents",
+                content: "Method: POST\nPath: /api/core/lost-cards/{caseId}/documents\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: multipart/form-data\nRequest:\n  Files:\n    - vehicleRegistrationImage\n    - driverIdentificationImage\nResponse:\n  status: 200 OK\n  data:\n  {\n    \"success\": true,\n    \"message\": \"Documents uploaded successfully.\"\n  }"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-lost-card-staff-success",
+                title: "Verify authorized client (Staff) can access \"Lost Card Claim Management\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Staff",
+                steps: [
+                  "Authenticate user as Staff.",
+                  "Invoke endpoint: GET /api/core/lost-cards/{caseId}/documents.",
+                  "Check response code is 200 OK."
+                ],
+                expectedResult: "Request succeeds and returns the associated documents.",
+                status: "not_started"
+              },
+              {
+                id: "tc-lost-card-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing \"Lost Card Claim Management\"",
+                type: "api",
+                precondition: "User is anonymous or lacks required role.",
+                steps: [
+                  "Attempt to invoke endpoint without authorization."
+                ],
+                expectedResult: "Returns 401 Unauthorized or 403 Forbidden.",
+                status: "not_started"
+              },
+              {
+                id: "tc-lost-card-mandatory-docs",
+                title: "Verify mandatory supporting documents are required",
+                type: "integration",
+                expectedResult: "Processing is rejected when either the driver's ID or vehicle registration image is missing.",
+                status: "not_started"
+              },
+              {
+                id: "tc-lost-card-blacklist",
+                title: "Verify lost card is blacklisted after claim approval",
+                type: "integration",
+                expectedResult: "Parking card status changes to Blacklisted or Invalid immediately after approval.",
+                status: "not_started"
+              },
+              {
+                id: "tc-lost-card-penalty-calc",
+                title: "Verify standardized penalty fee is calculated",
+                type: "integration",
+                expectedResult: "System calculates the correct penalty according to the configured policy before allowing exit.",
+                status: "not_started"
+              },
+              {
+                id: "tc-lost-card-replacement-ticket",
+                title: "Verify replacement ticket can be issued",
+                type: "integration",
+                expectedResult: "System successfully issues a temporary or replacement parking ticket after claim completion.",
+                status: "not_started"
+              }
+            ],
             doneCriteria: [
-              ...defaultDoneCriteria("Lost Card Claim Management"),
-              { id: "dc-lost-docs", content: "Lost card documentation and replacement fee details are managed securely.", checked: false }
+              { id: "dc-lost-card-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-lost-card-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-lost-card-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-lost-card-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-lost-card-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-lost-card-upload", content: "Secure document upload is implemented.", checked: false },
+              { id: "dc-lost-card-validate-docs", content: "Mandatory supporting documents are validated.", checked: false },
+              { id: "dc-lost-card-blacklist-action", content: "Lost parking cards are immediately blacklisted after approval.", checked: false },
+              { id: "dc-lost-card-penalty-calc", content: "Standardized lost card penalties are calculated correctly.", checked: false },
+              { id: "dc-lost-card-replacement-issue", content: "Temporary or replacement tickets can be issued.", checked: false },
+              { id: "dc-lost-card-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-lost-card-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false },
+              { id: "dc-lost-card-secure-fee", content: "Lost card documentation and replacement fee details are managed securely.", checked: false }
             ]
           },
           {
@@ -4839,10 +4991,171 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Plate Mismatch Case",
             type: "leaf_feature",
             clients: ["Staff"],
-            endpoints: [],
+            status: "draft",
+            priority: "high",
+            tags: ["lost-card", "incidents", "plate-mismatch"],
+            summary: "Handle scenarios where the Automatic License Plate Recognition (ALPR) system detects a mismatch between the license plate captured at vehicle exit and the plate recorded during vehicle entry for the same parking card. The feature enables staff to manually compare entry and exit camera snapshots, verify the incident, and approve or reject the vehicle exit while maintaining a complete audit trail.",
+            objective: "Implement transactional verification APIs in .NET Core API that support displaying mismatch cases, viewing snapshots side-by-side, verification decision processing, and permanent exception report logging.",
+            inScope: [
+              "Detect plate mismatch incidents generated by the ALPR system.",
+              "Display entry and exit vehicle snapshots for manual comparison.",
+              "Allow staff to approve or reject the vehicle exit.",
+              "Record verification reason and staff information.",
+              "Generate audit records for every manual verification.",
+              "Automatically create an incident record for manager reporting after approval."
+            ],
+            outOfScope: [
+              "Improvements to the ALPR recognition algorithm.",
+              "Integration with external government vehicle databases."
+            ],
+            permissions: [
+              { role: "Staff", permission: "Authorized to review, verify, approve, or reject plate mismatch cases." }
+            ],
+            businessRules: [
+              "Staff must manually verify entry and exit vehicle snapshots before approving a plate mismatch case.",
+              "Staff must provide a written reason or select a predefined reason (such as 'Muddy Plate', 'ALPR Misread') when approving a mismatch.",
+              "Every manual verification must permanently record the staff ID, verification timestamp, decision, and reason.",
+              "Every approved plate mismatch must automatically generate an incident entry for the Manager's daily exception report."
+            ],
+            dbExistingTables: [
+              "parking_sessions",
+              "parking_cards",
+              "entry_exit_images",
+              "users",
+              "incident_cases"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Each plate mismatch case belongs to one parking session.",
+              "Entry and exit camera images are linked to the corresponding parking session.",
+              "Manual verification records are associated with the resolving staff member.",
+              "Approved incidents are included in the manager's daily incident report."
+            ],
+            validationRules: [
+              { field: "reason", rule: "Required when approving a mismatch", errorMessage: "Approval reason is required." },
+              { field: "caseId", rule: "Must exist", errorMessage: "Plate mismatch case does not exist." },
+              { field: "decision", rule: "Must be Approve or Reject", errorMessage: "Invalid verification decision." }
+            ],
+            securityRules: [
+              "Validate role permissions.",
+              "Prevent unauthorized access.",
+              "Only authorized staff may approve or reject mismatch cases.",
+              "Store verification logs securely for auditing.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Plate mismatch detection.",
+              "Staff opens a mismatch case.",
+              "Manual verification performed.",
+              "Approval or rejection decision.",
+              "Verification reason.",
+              "Staff ID and timestamp.",
+              "Automatic creation of manager incident report entry."
+            ],
+            noLogEvents: [
+              "Passwords.",
+              "Access tokens.",
+              "Refresh tokens.",
+              "Credit card details."
+            ],
+            integrationPoints: [
+              { system: "ALPR Recognition Service", responsibility: "Feed plate mismatch detection events." },
+              { system: "Camera Image Storage Service", responsibility: "Retrieve and store entry and exit snapshots." },
+              { system: "Manager Daily Exception Report module", responsibility: "Include approved mismatch cases." }
+            ],
+            uiPage: "/staff/mismatches",
+            uiComponents: "Mismatch Incidents Table, Snapshot Comparison Tool, Decision Control Dialog, Verification Form",
+            uiStateIdle: "Display detected mismatch cases awaiting review.",
+            uiStateLoading: "Show loading indicator while retrieving images.",
+            uiStateSuccess: "Display confirmation after approval or rejection.",
+            uiStateEmpty: "Display 'No plate mismatch cases found.'",
+            uiStateError: "Display validation or processing errors.",
+            endpoints: [
+              "GET /api/core/incidents/plate-mismatches",
+              "GET /api/core/incidents/plate-mismatches/{caseId}",
+              "POST /api/core/incidents/plate-mismatches/{caseId}/approve",
+              "POST /api/core/incidents/plate-mismatches/{caseId}/reject"
+            ],
             ownerService: ".NET Core API",
-            testCases: defaultApiTests("Plate Mismatch Case", ["Staff"], []),
-            doneCriteria: defaultDoneCriteria("Plate Mismatch Case")
+            apiContracts: [
+              {
+                id: "contract-post-mismatches-approve",
+                name: "POST /api/core/incidents/plate-mismatches/{caseId}/approve",
+                content: "Method: POST\nPath: /api/core/incidents/plate-mismatches/{caseId}/approve\nHeaders:\n  Authorization: Bearer <token>\nRequest:\n{\n  \"reason\": \"ALPR Misread\"\n}\nResponse:\n  status: 200 OK\n{\n  \"success\": true,\n  \"message\": \"Plate mismatch case approved successfully.\"\n}"
+              },
+              {
+                id: "contract-post-mismatches-reject",
+                name: "POST /api/core/incidents/plate-mismatches/{caseId}/reject",
+                content: "Method: POST\nPath: /api/core/incidents/plate-mismatches/{caseId}/reject\nHeaders:\n  Authorization: Bearer <token>\nRequest:\n{\n  \"reason\": \"Vehicle information does not match.\"\n}\nResponse:\n  status: 200 OK\n{\n  \"success\": true,\n  \"message\": \"Plate mismatch case rejected successfully.\"\n}"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-mismatch-staff-success",
+                title: "Verify authorized client (Staff) can access \"Plate Mismatch Case\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Staff.",
+                steps: [
+                  "Authenticate user as Staff.",
+                  "Retrieve a plate mismatch case."
+                ],
+                expectedResult: "Request succeeds and returns the case details.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mismatch-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing \"Plate Mismatch Case\"",
+                type: "api",
+                precondition: "User is anonymous or lacks required role.",
+                steps: [
+                  "Attempt to access the feature without authorization."
+                ],
+                expectedResult: "Returns 401 Unauthorized or 403 Forbidden.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mismatch-reason-required",
+                title: "Verify approval requires a reason",
+                type: "integration",
+                expectedResult: "System rejects approval when no reason is provided.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mismatch-audit-log",
+                title: "Verify manual verification is permanently logged",
+                type: "integration",
+                expectedResult: "Audit log contains staff ID, timestamp, decision, and reason.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mismatch-manager-report",
+                title: "Verify approved mismatch is included in manager report",
+                type: "integration",
+                expectedResult: "Approved case automatically appears in the manager's daily exception report.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mismatch-snapshot-display",
+                title: "Verify entry and exit snapshots are displayed correctly",
+                type: "ui",
+                expectedResult: "Staff can compare entry and exit images side-by-side before making a decision.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-mismatch-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-mismatch-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-mismatch-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-mismatch-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-mismatch-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-mismatch-side-by-side", content: "Staff can compare entry and exit snapshots side-by-side.", checked: false },
+              { id: "dc-mismatch-reason-check", content: "Approval requires a reason.", checked: false },
+              { id: "dc-mismatch-audit", content: "Manual verification events are permanently audited.", checked: false },
+              { id: "dc-mismatch-staff-record", content: "Staff ID, timestamp, and decision are recorded.", checked: false },
+              { id: "dc-mismatch-manager-sync", content: "Approved mismatches automatically appear in the manager's daily incident report.", checked: false },
+              { id: "dc-mismatch-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-mismatch-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false }
+            ]
           },
           {
             id: "leaf-inc-override",
