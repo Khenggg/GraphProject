@@ -5162,11 +5162,191 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Manual Staff Override",
             type: "leaf_feature",
             clients: ["Staff", "Manager"],
-            endpoints: [],
+            status: "draft",
+            priority: "medium",
+            tags: ["lost-card", "incidents", "manual-override"],
+            summary: "Provide a fail-safe mechanism that allows authorized Staff or Managers to manually open a barrier gate and manually record vehicle entry or exit events when critical system failures, sensor malfunctions, or completely unreadable parking cards prevent the normal parking workflow from operating.",
+            objective: "Implement transaction-safe manual override APIs in .NET Core API that support opening barriers, manual entry/exit registration, operator auditing, Manager approval workflow integration, and secure hardware controller commands.",
+            inScope: [
+              "Manually open the barrier gate.",
+              "Manually record vehicle entry events.",
+              "Manually record vehicle exit events.",
+              "Record complete audit information for every override operation.",
+              "Support Manager review workflow for Staff overrides.",
+              "Secure communication with the local hardware controller / IoT gateway."
+            ],
+            outOfScope: [
+              "Automatic gate operation.",
+              "Normal ALPR or RFID-based parking workflow.",
+              "External hardware maintenance."
+            ],
+            permissions: [
+              { role: "Staff", permission: "Authorized to perform manual overrides. Actions require Manager review within 24 hours." },
+              { role: "Manager", permission: "Authorized to perform manual overrides. Actions are automatically approved but fully audited." }
+            ],
+            businessRules: [
+              "Manual override operations bypass the normal parking workflow only in exceptional situations.",
+              "Staff manual overrides must be flagged for mandatory Manager review within 24 hours.",
+              "Manager manual overrides are automatically approved but remain fully auditable.",
+              "Every manual override must permanently record the exact timestamp, gate ID, operator ID, action type, and execution result.",
+              "Manual override audit records must be immutable and cannot be modified after creation."
+            ],
+            dbExistingTables: [
+              "parking_sessions",
+              "gates",
+              "users",
+              "audit_logs",
+              "incident_cases"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Every manual override belongs to one gate.",
+              "Every manual override is linked to the authenticated Staff or Manager.",
+              "Manual overrides create immutable audit log records.",
+              "Staff overrides generate pending Manager review records."
+            ],
+            validationRules: [
+              { field: "gateId", rule: "Required and must exist", errorMessage: "Gate does not exist." },
+              { field: "reason", rule: "Required", errorMessage: "Override reason is required." },
+              { field: "licensePlate", rule: "Required for manual entry/exit", errorMessage: "License plate is required." }
+            ],
+            securityRules: [
+              "Validate role permissions.",
+              "Prevent unauthorized access.",
+              "Secure communication with the local hardware controller / IoT gateway.",
+              "Only Staff and Managers may perform manual overrides.",
+              "Audit records must be immutable.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Barrier manually opened.",
+              "Manual vehicle entry.",
+              "Manual vehicle exit.",
+              "Override reason.",
+              "Executing Staff/Manager ID.",
+              "Gate ID.",
+              "Exact execution timestamp.",
+              "Manager review result.",
+              "Hardware communication result."
+            ],
+            noLogEvents: [
+              "Passwords.",
+              "Access tokens.",
+              "Refresh tokens.",
+              "Credit card details."
+            ],
+            integrationPoints: [
+              { system: "Local Hardware Controller", responsibility: "Receive barrier open signals." },
+              { system: "IoT Gateway", responsibility: "Relay barrier control actions." },
+              { system: "Gate Controller Service", responsibility: "Execute barrier state overrides." },
+              { system: "Audit Log Export module", responsibility: "Expose manual overrides history." },
+              { system: "Manager Review module", responsibility: "Track pending approvals for Staff overrides." }
+            ],
+            uiPage: "/staff/overrides",
+            uiComponents: "Manual Override Control Dashboard, Gate Selector, Reason Textarea, Confirmation Dialog, Process Progress Spinner",
+            uiStateIdle: "Display manual override controls.",
+            uiStateLoading: "Display progress while sending commands to the gate controller.",
+            uiStateSuccess: "Display confirmation after successful override.",
+            uiStateEmpty: "No override history available.",
+            uiStateError: "Display hardware communication or validation errors.",
+            endpoints: [
+              "POST /api/core/manual-overrides/barrier/open",
+              "POST /api/core/manual-overrides/entry",
+              "POST /api/core/manual-overrides/exit",
+              "GET /api/core/manual-overrides/{overrideId}"
+            ],
             ownerService: ".NET Core API",
-            testCases: defaultApiTests("Manual Staff Override", ["Staff"], []),
-            doneCriteria: defaultDoneCriteria("Manual Staff Override")
-          }
+            apiContracts: [
+              {
+                id: "contract-post-manual-overrides-barrier-open",
+                name: "POST /api/core/manual-overrides/barrier/open",
+                content: "Method: POST\nPath: /api/core/manual-overrides/barrier/open\nHeaders:\n  Authorization: Bearer <token>\nRequest:\n{\n  \"gateId\": \"gate-01\",\n  \"reason\": \"RFID reader failure\"\n}\nResponse:\n  status: 200 OK\n{\n  \"success\": true,\n  \"message\": \"Barrier opened successfully.\",\n  \"data\": {\n    \"overrideId\": \"ovr-001\",\n    \"status\": \"Completed\"\n  }\n}"
+              },
+              {
+                id: "contract-post-manual-overrides-entry",
+                name: "POST /api/core/manual-overrides/entry",
+                content: "Method: POST\nPath: /api/core/manual-overrides/entry\nRequest:\n{\n  \"gateId\": \"gate-01\",\n  \"licensePlate\": \"51A-12345\",\n  \"reason\": \"Card unreadable\"\n}"
+              },
+              {
+                id: "contract-post-manual-overrides-exit",
+                name: "POST /api/core/manual-overrides/exit",
+                content: "Method: POST\nPath: /api/core/manual-overrides/exit\nRequest:\n{\n  \"gateId\": \"gate-02\",\n  \"licensePlate\": \"51A-12345\",\n  \"reason\": \"System offline\"\n}"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-override-staff-success",
+                title: "Verify authorized client (Staff) can access \"Manual Staff Override\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Staff.",
+                steps: [
+                  "Authenticate as Staff.",
+                  "Submit a manual barrier open request."
+                ],
+                expectedResult: "Override request succeeds and audit record is created.",
+                status: "not_started"
+              },
+              {
+                id: "tc-override-manager-success",
+                title: "Verify authorized client (Manager) can access \"Manual Staff Override\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Manager.",
+                steps: [
+                  "Authenticate as Manager.",
+                  "Submit a manual barrier open request."
+                ],
+                expectedResult: "Override succeeds and is automatically approved.",
+                status: "not_started"
+              },
+              {
+                id: "tc-override-unauthorized",
+                title: "Verify unauthorized role is rejected",
+                type: "api",
+                precondition: "User lacks permission.",
+                steps: [
+                  "Attempt to execute a manual override."
+                ],
+                expectedResult: "Returns 401 Unauthorized or 403 Forbidden.",
+                status: "not_started"
+              },
+              {
+                id: "tc-override-staff-review",
+                title: "Verify Staff override requires Manager review",
+                type: "integration",
+                expectedResult: "Override is flagged for Manager review within 24 hours.",
+                status: "not_started"
+              },
+              {
+                id: "tc-override-immutable-audit",
+                title: "Verify immutable audit log is created",
+                type: "integration",
+                expectedResult: "Timestamp, gate ID, operator ID, reason, and result are permanently stored.",
+                status: "not_started"
+              },
+              {
+                id: "tc-override-hardware-signal",
+                title: "Verify hardware controller receives override command",
+                type: "integration",
+                expectedResult: "Gate controller successfully receives and executes the open command.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-override-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-override-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-override-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-override-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-override-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-override-barrier-control", content: "Manual barrier control is implemented.", checked: false },
+              { id: "dc-override-entry-exit-logging", content: "Manual entry and exit logging is implemented.", checked: false },
+              { id: "dc-override-hardware-integration", content: "Secure integration with the hardware controller is implemented.", checked: false },
+              { id: "dc-override-staff-review", content: "Staff overrides require Manager review within 24 hours.", checked: false },
+              { id: "dc-override-manager-auto", content: "Manager overrides are automatically approved.", checked: false },
+              { id: "dc-override-immutable-audit", content: "Immutable audit logs record timestamp, gate ID, operator ID, action, and reason.", checked: false },
+              { id: "dc-override-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-override-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false }
+            ]
+          },
         ]
       },
 
