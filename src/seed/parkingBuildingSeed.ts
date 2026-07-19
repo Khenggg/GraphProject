@@ -11417,7 +11417,150 @@ Response Success (201 Created):
               { id: "dc-db-migrate-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false }
             ]
           },
-          { id: "leaf-diag-expire-res", title: "Expire Reservation Debug", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Expire Reservation Debug", ["Admin"], []), doneCriteria: defaultDoneCriteria("Expire Reservation Debug") },
+          {
+            id: "leaf-diag-expire-res",
+            title: "Expire Reservation Debug",
+            type: "leaf_feature",
+            clients: ["Admin"],
+            status: "ready",
+            priority: "low",
+            tags: ["developer-utility", "test-data", "debug", "expire-reservation"],
+            summary: "Provide a developer utility that instantly forces an active reservation into an Expired state, allowing QA engineers and developers to verify timeout mechanisms, scheduled jobs, and automatic reservation expiration logic without waiting for real time to elapse.",
+            objective: "Force a reservation into the Expired state by artificially updating reservation endTime and invoking the background scan worker immediately in non-production environments.",
+            inScope: [
+              "Force a reservation into the Expired state.",
+              "Artificially update the reservation endTime.",
+              "Immediately trigger the background worker responsible for processing expired reservations.",
+              "Allow testing of timeout and expiration workflows.",
+              "Follow existing project architecture and security standards."
+            ],
+            outOfScope: [
+              "Expiring production reservations.",
+              "Modifying reservations outside supported states.",
+              "Bypassing business validation outside debugging scenarios.",
+              "External system integrations not specified in this document."
+            ],
+            permissions: [
+              { role: "Admin", permission: "Authorized to access this feature." }
+            ],
+            businessRules: [
+              "This debugging utility must only execute in non-production environments.",
+              "The endpoint artificially updates the reservation endTime and immediately invokes the background worker responsible for scanning expired reservations.",
+              "Only reservations currently in Confirmed or Active status are eligible for forced expiration.",
+              "Reservation expiration must follow the same business workflow used by the automatic expiration scheduler.",
+              "Every execution must be recorded in the audit log."
+            ],
+            dbExistingTables: [
+              "Reservation",
+              "Reservation Status",
+              "Audit Log"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Only reservations in Confirmed or Active status can transition to Expired.",
+              "Forced expiration must preserve reservation history.",
+              "Audit logs must remain immutable after execution."
+            ],
+            validationRules: [
+              { field: "Role", rule: "Only authenticated Admin users may execute this feature.", errorMessage: "Unauthorized access." },
+              { field: "Environment", rule: "Reject execution in the Production environment.", errorMessage: "Forbidden in Production." },
+              { field: "Reservation ID", rule: "Validate the reservation exists.", errorMessage: "Reservation not found." },
+              { field: "Reservation Status", rule: "Validate the reservation is currently in Confirmed or Active state. Reject already expired, cancelled, or completed reservations.", errorMessage: "Reservation status is not eligible for forced expiration." }
+            ],
+            securityRules: [
+              "Validate Admin role permissions.",
+              "Prevent unauthorized access.",
+              "Restrict execution to non-production environments.",
+              "Prevent accidental modification of production reservations.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Log request access, execution time, duration, and response code.",
+              "Log administrator ID.",
+              "Log reservation ID.",
+              "Log original reservation status.",
+              "Log updated reservation status.",
+              "Log background worker execution result.",
+              "Log environment name.",
+              "Record execution in the audit log."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, and credit card details."
+            ],
+            integrationPoints: [
+              { system: "Reservation service", responsibility: "Updates endTime and database states." },
+              { system: "Background Worker / Cron Job", responsibility: "Scans expired reservations and frees related resources." },
+              { system: "Audit logging subsystem", responsibility: "Logs execution metadata." }
+            ],
+            uiPage: "/admin/debug-utilities",
+            uiComponents: "Forced Expiration Dialog, Reservation Status Dashboard, Execution Trigger Button",
+            uiStateIdle: "Display a confirmation dialog before forcing expiration.",
+            uiStateLoading: "Disable action and show execution spinner.",
+            uiStateSuccess: "Display execution result. Show reservation status before and after execution.",
+            uiStateEmpty: "No active reservations eligible for expiration found.",
+            uiStateError: "Display execution failures or permission errors.",
+            endpoints: [],
+            ownerService: "System",
+            apiContracts: [],
+            testCases: [
+              {
+                id: "tc-expire-res-success",
+                title: "Verify authorized client (Admin) can execute \"Expire Reservation Debug\" successfully",
+                type: "api",
+                precondition: "Client is authenticated as Admin in a non-production environment and reservation status is Confirmed or Active",
+                steps: [
+                  "Authenticate user as Admin",
+                  "Execute the expire reservation utility",
+                  "Verify reservation status changes to Expired"
+                ],
+                expectedResult: "Reservation is immediately marked as Expired and background worker executes successfully",
+                status: "not_started"
+              },
+              {
+                id: "tc-expire-res-blocked-prod",
+                title: "Verify execution is blocked in Production",
+                type: "integration",
+                precondition: "Application is running in Production",
+                steps: [
+                  "Authenticate as Admin",
+                  "Execute the expire reservation utility"
+                ],
+                expectedResult: "System returns 403 Forbidden",
+                status: "not_started"
+              },
+              {
+                id: "tc-expire-res-invalid-state",
+                title: "Verify invalid reservation states cannot be expired",
+                type: "integration",
+                expectedResult: "Cancelled, Completed, or Expired reservations are rejected",
+                status: "not_started"
+              },
+              {
+                id: "tc-expire-res-trigger-worker",
+                title: "Verify background worker is triggered after forced expiration",
+                type: "integration",
+                expectedResult: "Expiration processing executes successfully and related resources are released according to business rules",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-expire-res-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-expire-res-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-expire-res-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-expire-res-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-expire-res-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-expire-res-non-prod", content: "Feature is restricted to non-production environments.", checked: false },
+              { id: "dc-expire-res-env-val", content: "Runtime environment validation is implemented.", checked: false },
+              { id: "dc-expire-res-status-check", content: "Only Confirmed or Active reservations can be expired.", checked: false },
+              { id: "dc-expire-res-time-update", content: "Reservation endTime is updated correctly.", checked: false },
+              { id: "dc-expire-res-worker-trigger", content: "Background worker is invoked immediately after execution.", checked: false },
+              { id: "dc-expire-res-audit-log", content: "Audit logs record every execution.", checked: false },
+              { id: "dc-expire-res-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-expire-res-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false },
+              { id: "dc-expire-res-edge-cases", content: "Edge cases are documented.", checked: false },
+              { id: "dc-expire-res-state-transitions", content: "Payment/session/reservation state transition is documented.", checked: false }
+            ]
+          },
           { id: "leaf-diag-expire-pay", title: "Expire Payment Deadline Debug", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Expire Payment Deadline Debug", ["Admin"], []), doneCriteria: defaultDoneCriteria("Expire Payment Deadline Debug") }
         ]
       }
