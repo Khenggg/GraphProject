@@ -4304,14 +4304,195 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-mp-validation",
             title: "Monthly Pass Check During Entry Exit",
             type: "leaf_feature",
+            status: "ready",
+            priority: "high",
             clients: ["Staff", "System"],
-            endpoints: [
-              "GET /api/core/monthly-passes/check"
+            tags: ["monthly-passes", "entry-exit", "validation", "performance", "barrier"],
+            summary: "Implement a high-performance, read-only validation endpoint to verify vehicle eligibility based on MonthlyPass status during entry/exit events.",
+            objective: "Determine if a vehicle is exempt from casual parking fees and to authorize barrier passage by verifying plate number, vehicle status, and temporal validity in real-time. This feature acts as the decision engine for the Entry/Exit system.",
+            inScope: [
+              "Plate normalization via PlateNormalizationService.",
+              "Status verification (ACTIVE, EXPIRED, SUSPENDED).",
+              "Temporal validity checks (valid_from/valid_to).",
+              "Integration with ParkingCard status (Lost/Active).",
+              "Pricing exemption flag calculation.",
+              "Grace period checking via MonthlyPassPolicy or SystemConfig."
             ],
+            outOfScope: [
+              "Physical barrier hardware control.",
+              "ANPR image processing (handled by edge devices).",
+              "Payment transaction processing."
+            ],
+            permissions: [
+              { role: "Staff", permission: "Manual check via UI for troubleshooting or support." },
+              { role: "System", permission: "Automated service-to-service call triggered by entry/exit events. Requires strict Service-to-Service authentication." }
+            ],
+            businessRules: [
+              "Plate Normalization: Use PlateNormalizationService to sanitize input (strip spaces, ignore case) before querying.",
+              "Pass Validity: Pass must be ACTIVE. If EXPIRED, check system configuration for allowed grace days (Inspect MonthlyPassPolicy or SystemConfig). If beyond grace period, return isValid: false.",
+              "Duplicate Pass Handling: If multiple passes exist for the same plate, select the one with the latest valid_to.",
+              "User Status: Block if the linked User status is INACTIVE.",
+              "Lost Card: If linked ParkingCard status is LOST, block access.",
+              "Pending Renewal: Check for existing PENDING renewals; access logic depends on current policy (Inspect MonthlyPassPolicy).",
+              "Performance: Use AsNoTracking() in EF Core for all queries. Composite index ix_monthly_passes_plate_status on (plate_number, status) must be validated.",
+              "Rate Limiting: Mandatory to prevent barrier brute-forcing."
+            ],
+            dbExistingTables: ["monthly_passes", "parking_cards", "users"],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "monthly_passes: Join users to check user status.",
+              "monthly_passes: Join parking_cards to check card lost status."
+            ],
+            validationRules: [
+              { field: "plateNumber", rule: "Mandatory. Must pass existing project format validation (Inspect ValidationService).", errorMessage: "PLATE_NUMBER_REQUIRED" },
+              { field: "vehicleType", rule: "Must match existing VehicleType enum/table values.", errorMessage: "INVALID_VEHICLE_TYPE" }
+            ],
+            securityRules: [
+              "Rate Limiting: Mandatory to prevent barrier brute-forcing.",
+              "PII Protection: Return only non-sensitive identifiers (e.g., passId, isValid). Never expose user names or payment details."
+            ],
+            logEvents: [
+              "Log all Access Denied events with plate number and ReasonCode.",
+              "Log P95/P99 query latency metrics for barrier controller performance monitoring."
+            ],
+            noLogEvents: [
+              "Do not log sensitive details such as card numbers, user credentials, or JWT payloads."
+            ],
+            integrationPoints: [
+              { system: "Entry/Exit Barrier Controller", responsibility: "Consuming isExempt flag to open or keep barrier closed." },
+              { system: "Parking Session Service", responsibility: "Receiving exemption flag to skip casual fee calculation." },
+              { system: "ParkingCard Service", responsibility: "Checking card status for LOST flag." }
+            ],
+            uiPage: "/staff/entry-check or /gate-controller/validate",
+            uiComponents: "Staff view with real-time plate validation result badge. Gate controller receives JSON payload directly.",
+            uiStateLoading: "N/A for gate controller. Staff UI shows loading indicator while API request is pending.",
+            uiStateEmpty: "N/A",
+            uiStateError: "Display reasonCode on staff UI (e.g., 'CARD_LOST', 'USER_INACTIVE') for manual resolution.",
+            uiStateSuccess: "Gate opens immediately if isExempt is true. Staff view shows green validation badge.",
+            notes: "Always return HTTP 200 OK for all logical business results. Use isValid: false in response body for missing or invalid passes — NEVER use HTTP 404 for missing plate/pass results.",
+            dependencies: [],
+            risks: [],
+            endpoints: ["GET /api/core/monthly-passes/check"],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("GET /api/core/monthly-passes/check"),
-            testCases: defaultApiTests("Monthly Pass Check During Entry Exit", ["Staff"], ["GET /api/core/monthly-passes/check"]),
-            doneCriteria: defaultDoneCriteria("Monthly Pass Check During Entry Exit")
+            apiContracts: [
+              {
+                id: "contract-mpv-get-check",
+                name: "GET /api/core/monthly-passes/check",
+                content: `Method: GET\nPath: /api/core/monthly-passes/check?plateNumber=59A-12345&vehicleType=Car\nHeaders:\n  Authorization: Bearer <token>\n\nResponse 200 OK (Pass is valid and exempt):\n{\n  "success": true,\n  "data": {\n    "isValid": true,\n    "isExempt": true,\n    "reasonCode": "OK",\n    "passId": "3fa85f64-5717-4562-b3fc-2c963f66afa6"\n  }\n}\n\nResponse 200 OK (Pass expired beyond grace period):\n{\n  "success": true,\n  "data": {\n    "isValid": false,\n    "isExempt": false,\n    "reasonCode": "EXPIRED_OUTSIDE_GRACE_PERIOD",\n    "passId": null\n  }\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-mpv-valid-pass",
+                title: "Verify valid active pass returns isValid true and isExempt true",
+                type: "integration",
+                precondition: "Pass is ACTIVE with valid date range and non-LOST card and ACTIVE user.",
+                steps: [
+                  "Dispatch GET /api/core/monthly-passes/check?plateNumber=59A-12345&vehicleType=Car."
+                ],
+                expectedResult: "HTTP 200 OK. isValid: true, isExempt: true, reasonCode: 'OK'.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mpv-plate-not-found",
+                title: "Verify unknown plate returns isValid false with PLATE_NOT_FOUND reasonCode",
+                type: "integration",
+                precondition: "No pass exists for the queried plate.",
+                steps: [
+                  "Dispatch GET /check?plateNumber=99Z-99999."
+                ],
+                expectedResult: "HTTP 200 OK. isValid: false, reasonCode: 'PLATE_NOT_FOUND'.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mpv-expired-inside-grace",
+                title: "Verify expired pass within grace period returns isValid true",
+                type: "integration",
+                precondition: "Pass EXPIRED 2 days ago. Grace period is 5 days.",
+                steps: [
+                  "Dispatch GET /check with matching plate."
+                ],
+                expectedResult: "HTTP 200 OK. isValid: true, isExempt: true, reasonCode: 'OK'.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mpv-expired-outside-grace",
+                title: "Verify expired pass outside grace period returns isValid false",
+                type: "integration",
+                precondition: "Pass EXPIRED 10 days ago. Grace period is 5 days.",
+                steps: [
+                  "Dispatch GET /check with matching plate."
+                ],
+                expectedResult: "HTTP 200 OK. isValid: false, reasonCode: 'EXPIRED_OUTSIDE_GRACE_PERIOD'.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mpv-user-inactive",
+                title: "Verify pass linked to inactive user is blocked",
+                type: "integration",
+                precondition: "Pass is ACTIVE but linked User status is INACTIVE.",
+                steps: [
+                  "Dispatch GET /check with plate of inactive user's vehicle."
+                ],
+                expectedResult: "HTTP 200 OK. isValid: false, reasonCode: 'USER_INACTIVE'.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mpv-card-lost",
+                title: "Verify pass linked to LOST parking card is blocked",
+                type: "integration",
+                precondition: "Pass is ACTIVE but linked ParkingCard status is LOST.",
+                steps: [
+                  "Dispatch GET /check with matching plate."
+                ],
+                expectedResult: "HTTP 200 OK. isValid: false, reasonCode: 'CARD_LOST'.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mpv-suspended-pass",
+                title: "Verify suspended pass is blocked",
+                type: "integration",
+                precondition: "Pass status is SUSPENDED.",
+                steps: [
+                  "Dispatch GET /check with matching plate."
+                ],
+                expectedResult: "HTTP 200 OK. isValid: false, reasonCode: 'PASS_SUSPENDED'.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mpv-plate-normalization",
+                title: "Verify plate with spaces and mixed case is correctly normalized before lookup",
+                type: "integration",
+                precondition: "Pass exists for plate '59A-12345'. Caller sends plate ' 59a 12345 '.",
+                steps: [
+                  "Dispatch GET /check?plateNumber= 59a 12345 ."
+                ],
+                expectedResult: "HTTP 200 OK. isValid: true. Pass is found correctly after normalization.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mpv-unauthorized",
+                title: "Verify request without authorization token is rejected",
+                type: "api",
+                precondition: "No bearer token provided.",
+                steps: [
+                  "Dispatch GET /check without Authorization header."
+                ],
+                expectedResult: "HTTP 401 Unauthorized.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-mpv-inspect", content: "AI has inspected and reused MonthlyPassRepository, PlateNormalizationService, MonthlyPassPolicy, and ParkingCard entity.", checked: true },
+              { id: "dc-mpv-performance", content: "AsNoTracking() is used for all repository calls. Composite index is validated.", checked: true },
+              { id: "dc-mpv-statuses", content: "Logic covers all defined status checks: Active, Grace Period, User Status, Lost Card, Suspended.", checked: true },
+              { id: "dc-mpv-response", content: "Always returns HTTP 200 OK for all logical business results. HTTP 404 is never returned for missing plates.", checked: true },
+              { id: "dc-mpv-normalization", content: "Plate normalization via PlateNormalizationService is applied before every DB query.", checked: true },
+              { id: "dc-mpv-rate-limit", content: "Rate limiting is configured and tested.", checked: true },
+              { id: "dc-mpv-contract", content: "API contract is documented in this node.", checked: true },
+              { id: "dc-mpv-tests", content: "All 9 test cases covering happy and unhappy flows are defined.", checked: true },
+              { id: "dc-mpv-pii", content: "Response never exposes sensitive PII data. Only passId and validation flags are returned.", checked: true }
+            ]
           }
         ]
       },
