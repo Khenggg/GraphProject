@@ -38,6 +38,7 @@ export type SeedNodeInput = {
   integrationPoints?: { system: string; responsibility: string }[];
   uiPage?: string;
   uiComponents?: string;
+  uiStateIdle?: string;
   uiStateLoading?: string;
   uiStateEmpty?: string;
   uiStateError?: string;
@@ -82,6 +83,7 @@ export function createSeedNode(input: SeedNodeInput, parentId: string | null, or
     integrationPoints: input.integrationPoints,
     uiPage: input.uiPage,
     uiComponents: input.uiComponents,
+    uiStateIdle: input.uiStateIdle,
     uiStateLoading: input.uiStateLoading,
     uiStateEmpty: input.uiStateEmpty,
     uiStateError: input.uiStateError,

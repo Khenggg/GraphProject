@@ -1,6 +1,6 @@
 # Project Map
 
-> Generated: 2026-07-19 08:00:56
+> Generated: 2026-07-19 14:34:44
 > Generator: `scripts/export-project-map.ps1`
 
 This file contains the project architecture and a direct source-code snapshot. The snapshot is generated from the source tree and filtered by `projectmapignore`.
@@ -40,15 +40,15 @@ src/main.tsx -> src/App.tsx
 | `src/components/tree/TreeToolbar.tsx` | 4865 |
 | `src/db/dexieDb.ts` | 539 |
 | `src/domain/export.utils.ts` | 16501 |
-| `src/domain/featureNode.types.ts` | 2732 |
-| `src/domain/featureNodeFactory.ts` | 3840 |
+| `src/domain/featureNode.types.ts` | 2780 |
+| `src/domain/featureNodeFactory.ts` | 3902 |
 | `src/domain/inheritance.utils.ts` | 3637 |
 | `src/domain/localization.ts` | 12043 |
 | `src/domain/projectBackup.ts` | 6002 |
 | `src/domain/taxonomy.ts` | 8301 |
 | `src/index.css` | 1592 |
 | `src/main.tsx` | 240 |
-| `src/seed/parkingBuildingSeed.ts` | 638235 |
+| `src/seed/parkingBuildingSeed.ts` | 750830 |
 | `src/seed/parkingTaxonomyMigration.ts` | 26983 |
 | `src/store/featureTreeStore.ts` | 24426 |
 | `src/tests/aiExport.test.ts` | 1952 |
@@ -4094,7 +4094,7 @@ export interface ContractField {
 export interface TestCase {
   id: string;
   title: string;
-  type: "unit" | "integration" | "api" | "e2e" | "manual";
+  type: "unit" | "integration" | "api" | "e2e" | "manual" | "concurrency" | "ui";
   precondition?: string;
   steps?: string[];
   expectedResult: string;
@@ -4154,6 +4154,7 @@ export interface FeatureNode {
   integrationPoints?: { system: string; responsibility: string }[];
   uiPage?: string;
   uiComponents?: string;
+  uiStateIdle?: string;
   uiStateLoading?: string;
   uiStateEmpty?: string;
   uiStateError?: string;
@@ -4218,6 +4219,7 @@ export type SeedNodeInput = {
   integrationPoints?: { system: string; responsibility: string }[];
   uiPage?: string;
   uiComponents?: string;
+  uiStateIdle?: string;
   uiStateLoading?: string;
   uiStateEmpty?: string;
   uiStateError?: string;
@@ -4262,6 +4264,7 @@ export function createSeedNode(input: SeedNodeInput, parentId: string | null, or
     integrationPoints: input.integrationPoints,
     uiPage: input.uiPage,
     uiComponents: input.uiComponents,
+    uiStateIdle: input.uiStateIdle,
     uiStateLoading: input.uiStateLoading,
     uiStateEmpty: input.uiStateEmpty,
     uiStateError: input.uiStateError,
@@ -7466,7 +7469,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Vehicle Type Management",
             type: "leaf_feature",
             clients: ["Admin", "Manager"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["vehicle", "configuration"],
             summary: "Provide a comprehensive management tool for all types of vehicles (cars, motorbikes, electric vehicles, etc.) permitted to enter and exit the parking building. Ensure accurate vehicle categorization to support fare configuration, gate traffic control, and optimal parking slot allocation.\n\nThis feature allows administrative roles to perform CRUD (Create, Read, Update, Delete) operations on vehicle types. Each vehicle type includes attributes such as vehicle type name, description, and operational status. The system utilizes this master directory for validation when drivers register their vehicles or when vehicles pass through the gate recognition system.",
@@ -7675,7 +7678,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Floor Management",
             type: "leaf_feature",
             clients: ["Manager", "Admin"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["floor", "structure"],
             summary: "Manage the physical levels/floors within the parking structure, establishing the foundational layout for spatial organization and capacity tracking.\n\nThis feature allows Managers and Admins to configure floor details (e.g., Floor Name/Number, Max Capacity, Vehicle Type Restrictions). It serves as the top-level container in the parking inventory hierarchy.",
@@ -7862,7 +7865,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Area Management",
             type: "leaf_feature",
             clients: ["Manager", "Admin"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["area", "structure"],
             summary: "Divide each floor into distinct zones or sections (e.g., Zone A, VIP Area, Electric Vehicle Charging Zone) to optimize traffic flow and permit specialized parking rules.\n\nThis feature enables Managers and Admins to partition parking floors into manageable operational areas. Each area belongs to a parent floor and may inherit or define its own operational properties such as total parking slots and allowed vehicle categories.",
@@ -8043,7 +8046,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Slot Management",
             type: "leaf_feature",
             clients: ["Manager", "Admin"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["slot", "structure"],
             summary: "Define and manage individual physical parking slots within an area, enabling precise inventory tracking and state management.\n\nThis feature manages the lowest level of the parking structure hierarchy: individual parking slots. Each slot contains a unique slot identifier, slot type (Standard, Compact, EV, Disabled), operational status, and is associated with a parent parking area. Slots can also be linked to physical sensors or status flags for future integration with the parking monitoring system.",
@@ -8240,7 +8243,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Gate Read Model",
             type: "leaf_feature",
             clients: ["Staff", "Manager", "Admin"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["gate", "structure", "read-model"],
             summary: "Provide a highly optimized, read-only data model representing gate statuses and recent barrier events to ensure smooth monitoring at entry/exit points.\n\nThis feature materializes and serves real-time entry and exit gate data for Staff, Managers, and Admins. It enables monitoring dashboards to retrieve gate hardware availability, operational status, and recent gate event history without impacting the transactional database.",
@@ -8412,7 +8415,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Public Available Slots",
             type: "leaf_feature",
             clients: ["Guest", "Driver"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["available-slots", "structure", "public"],
             summary: "Expose real-time, aggregated parking availability data to public users to help them decide whether to navigate to the building.\n\nThis feature provides a high-concurrency, public-facing read model that displays the number of available parking slots by floor and area. Drivers and guests can quickly view overall parking availability before arriving at the parking building without accessing transactional data.",
@@ -8582,7 +8585,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Location / Slot Suggestion",
             type: "leaf_feature",
             clients: ["Staff", "Manager", "Driver"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["suggestion", "slots", "structure"],
             summary: "Provide intelligent allocation recommendations to drivers or staff to minimize cruising time inside the structure.\n\nThis feature analyzes the current parking occupancy and recommends the optimal parking location—including floor, area, or individual slot—based on parking structure layout, vehicle type, slot availability, and driver preferences. The recommendation service helps reduce searching time and improves traffic flow inside the parking building.",
@@ -8809,28 +8812,325 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Available Reservation Locations",
             type: "leaf_feature",
             clients: ["Driver"],
+            status: "ready",
+            priority: "high",
+            tags: ["reservation", "booking", "available-locations"],
+            summary: "Query and display a list of available parking locations/slots that allow advanced booking. The system must filter results based on the estimated arrival time, driver's vehicle type, and real-time actual capacity.",
+            objective: "Implement high-performance read APIs in the .NET Core API to retrieve available reservation locations based on estimated arrival time, vehicle type compatibility, and actual real-time capacity calculations.",
+            inScope: [
+              "Query and display available parking locations that support advanced booking.",
+              "Filter available locations based on the driver's estimated arrival time.",
+              "Filter available locations based on the driver's registered vehicle type.",
+              "Calculate projected availability using current reservations and currently parked vehicles.",
+              "Return only parking locations that are available for reservation."
+            ],
+            outOfScope: [
+              "Reservation creation.",
+              "Reservation payment.",
+              "External system integrations not specified in this document."
+            ],
+            permissions: [
+              { role: "Driver", permission: "Authorized to access this feature." }
+            ],
+            businessRules: [
+              "Only display parking locations suitable for the driver's registered vehicle type.",
+              "Do not display areas undergoing maintenance.",
+              "Do not display parking locations that are fully booked during the requested time frame.",
+              "Projected availability must be calculated based on both existing reservations and currently parked vehicles."
+            ],
+            dbExistingTables: [
+              "parking_locations",
+              "parking_slots",
+              "reservations",
+              "parking_sessions",
+              "vehicles",
+              "vehicle_types"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Availability must be calculated from existing reservations and active parking sessions.",
+              "Parking location must support the driver's registered vehicle type."
+            ],
+            validationRules: [
+              { field: "estimatedArrivalTime", rule: "Required, must be greater than current UTC time (in the future)", errorMessage: "Estimated arrival time must be in the future." },
+              { field: "vehicleTypeId", rule: "Must exist if provided", errorMessage: "Invalid vehicle type." }
+            ],
+            securityRules: [
+              "Validate role permissions.",
+              "Prevent unauthorized access.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Log request access, inputs, duration, and response code.",
+              "Log reservation location search requests."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, and credit card details."
+            ],
+            integrationPoints: [],
+            uiPage: "/driver/reservations",
+            uiComponents: "Available Locations List, Date Time Picker, Vehicle Type Dropdown",
+            uiStateLoading: "Show loading skeleton while fetching available locations.",
+            uiStateEmpty: "Show 'No available reservation locations found for the selected time.'",
+            uiStateError: "Display error notification with reason.",
+            uiStateSuccess: "Display list of available reservation locations.",
             endpoints: ["GET /api/core/reservations/available-locations"],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("GET /api/core/reservations/available-locations"),
-            testCases: defaultApiTests("Available Reservation Locations", ["Driver"], ["GET /api/core/reservations/available-locations"]),
-            doneCriteria: defaultDoneCriteria("Available Reservation Locations")
+            apiContracts: [
+              {
+                id: "contract-get-reservations-available-locations",
+                name: "GET /api/core/reservations/available-locations",
+                content: "Method: GET\nPath: /api/core/reservations/available-locations\nHeaders:\n  Authorization: Bearer <token>\nQuery Parameters:\n  estimatedArrivalTime: datetime (required)\n  vehicleTypeId: integer (optional)\nResponse:\n  status: 200 OK\n  data:\n  {\n    \"success\": true,\n    \"data\": [\n      {\n        \"locationId\": \"loc-001\",\n        \"locationName\": \"Basement B1\",\n        \"vehicleTypeId\": 1,\n        \"availableSlots\": 25,\n        \"supportsReservation\": true\n      }\n    ]\n  }"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-res-avail-driver-success",
+                title: "Verify authorized client (Driver) can access \"Available Reservation Locations\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Driver",
+                steps: [
+                  "Authenticate user as Driver",
+                  "Invoke endpoint: GET /api/core/reservations/available-locations",
+                  "Check response code is 200/201 OK"
+                ],
+                expectedResult: "Request succeeds and returns correct payload",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-avail-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing \"Available Reservation Locations\"",
+                type: "api",
+                precondition: "User is anonymous or lacks required role",
+                steps: [
+                  "Attempt to invoke endpoint: GET /api/core/reservations/available-locations without token/role",
+                  "Check response status code is 401 Unauthorized or 403 Forbidden"
+                ],
+                expectedResult: "Request is blocked and returns clear error response",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-avail-exclude-maintenance",
+                title: "Verify maintenance areas are not returned",
+                type: "integration",
+                expectedResult: "Areas under maintenance are excluded from the response.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-avail-exclude-fully-booked",
+                title: "Verify fully booked locations are not returned",
+                type: "integration",
+                expectedResult: "Fully booked locations during the requested time frame are excluded.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-avail-compatible-vehicle",
+                title: "Verify only compatible vehicle type locations are returned",
+                type: "integration",
+                expectedResult: "Returned locations are compatible with the driver's registered vehicle type.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-res-avail-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-res-avail-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-res-avail-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-res-avail-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-res-avail-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-res-avail-vehicle-filter", content: "Available locations are filtered by driver's vehicle type.", checked: false },
+              { id: "dc-res-avail-maintenance", content: "Maintenance areas are excluded.", checked: false },
+              { id: "dc-res-avail-fully-booked", content: "Fully booked locations are excluded.", checked: false },
+              { id: "dc-res-avail-projected", content: "Projected availability is calculated using current reservations and currently parked vehicles.", checked: false },
+              { id: "dc-res-avail-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-res-avail-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false },
+              { id: "dc-res-avail-edge-cases", content: "Edge cases are documented.", checked: false },
+              { id: "dc-res-avail-state-transitions", content: "Payment/session/reservation state transition is documented.", checked: false }
+            ]
           },
           {
             id: "leaf-res-create",
             title: "Create Reservation",
             type: "leaf_feature",
             clients: ["Driver"],
+            status: "ready",
+            priority: "must_have",
+            tags: ["reservation", "booking", "create-reservation"],
+            summary: "Allow drivers to create a new reservation request. This process includes selecting a parking location, specifying reservation start/end times, confirming vehicle details, and processing the reservation payment.",
+            objective: "Implement transaction-safe reservation creation APIs in .NET Core API that validate slot availability, lock slots temporarily, initialize payment via PayOS, and handle status updates.",
+            inScope: [
+              "Allow drivers to create a new parking reservation.",
+              "Select an available parking location.",
+              "Specify reservation start time and end time.",
+              "Confirm the vehicle/license plate associated with the reservation.",
+              "Calculate the reservation amount.",
+              "Temporarily lock the selected slot while waiting for payment.",
+              "Process reservation payment.",
+              "Confirm reservation after successful payment.",
+              "Retrieve reservation payment status."
+            ],
+            outOfScope: [
+              "Reservation modification after creation.",
+              "Reservation cancellation.",
+              "External system integrations not specified in this document."
+            ],
+            permissions: [
+              { role: "Driver", permission: "Authorized to access this feature." }
+            ],
+            businessRules: [
+              "A reservation must be associated with a driver, vehicle/plate, vehicle type, selected parking location, reservation time, payment status, and booking amount.",
+              "Reservation payment status must be trackable.",
+              "Unpaid or expired reservations must not permanently lock slots.",
+              "Reservation entry check must validate reservation code, gate, payment status, time validity, and whether the reservation has already been used.",
+              "Booking amount must be consistent with configured reservation hourly price and selected duration.",
+              "A reservation must be tied to a specific vehicle/license plate.",
+              "The selected parking slot must be temporarily locked for approximately 5–10 minutes while waiting for payment completion.",
+              "The reservation is only confirmed when the payment status is updated to Paid.",
+              "Expired unpaid reservations must automatically release the temporarily locked slot."
+            ],
+            dbExistingTables: [
+              "reservations",
+              "reservation_payments",
+              "parking_locations",
+              "parking_slots",
+              "vehicles",
+              "vehicle_types"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Every reservation must reference one driver.",
+              "Every reservation must reference one vehicle/license plate.",
+              "Every reservation must reference one parking location.",
+              "Payment status determines whether the reservation becomes confirmed.",
+              "Temporary slot lock expires automatically if payment is not completed."
+            ],
+            validationRules: [
+              { field: "locationId", rule: "Required", errorMessage: "Parking location is required." },
+              { field: "vehicleId", rule: "Required", errorMessage: "Vehicle is required." },
+              { field: "licensePlate", rule: "Required", errorMessage: "License plate is required." },
+              { field: "startTime", rule: "Required", errorMessage: "Start time is required." },
+              { field: "endTime", rule: "Required, must be later than startTime", errorMessage: "End time must be greater than start time." }
+            ],
+            securityRules: [
+              "Validate role permissions.",
+              "Prevent unauthorized access.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Log request access, inputs, duration, and response code.",
+              "Log reservation creation.",
+              "Log temporary slot lock creation.",
+              "Log payment confirmation callback.",
+              "Log automatic reservation expiration."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, and credit card details."
+            ],
+            integrationPoints: [
+              { system: "Payment module (PayOS Webhook)", responsibility: "Verify and confirm payment status." }
+            ],
+            uiPage: "/driver/reservations/create",
+            uiComponents: "Reservation Form, Location Selector, Time Picker, Vehicle selector, Payment redirection link, QR code popup",
+            uiStateIdle: "Display reservation form with available locations.",
+            uiStateLoading: "Disable inputs while creating reservation or waiting for payment initialization.",
+            uiStateSuccess: "Redirect the driver to the payment page or display payment QR/link.",
+            uiStateError: "Display validation or payment initialization errors.",
+            uiStateEmpty: "Display message when no reservable slots are available.",
             endpoints: [
               "POST /api/core/reservations",
               "GET /api/core/reservations/{id}/payment-status"
             ],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/reservations"),
-            testCases: defaultApiTests("Create Reservation", ["Driver"], ["POST /api/core/reservations"]),
+            apiContracts: [
+              {
+                id: "contract-post-reservations",
+                name: "POST /api/core/reservations",
+                content: "Method: POST\nPath: /api/core/reservations\nHeaders:\n  Authorization: Bearer <token>\nRequest Body:\n{\n  \"locationId\": \"loc-001\",\n  \"slotId\": \"slot-101\",\n  \"vehicleId\": \"veh-001\",\n  \"licensePlate\": \"51A-12345\",\n  \"startTime\": \"2026-07-20T08:00:00Z\",\n  \"endTime\": \"2026-07-20T12:00:00Z\"\n}\nResponse:\n  status: 200 OK\n  data:\n  {\n    \"success\": true,\n    \"data\": {\n      \"reservationId\": \"res-001\",\n      \"paymentStatus\": \"Pending\",\n      \"paymentUrl\": \"<payment_url>\",\n      \"expiresAt\": \"2026-07-20T07:10:00Z\"\n    }\n  }"
+              },
+              {
+                id: "contract-get-reservations-payment-status",
+                name: "GET /api/core/reservations/{id}/payment-status",
+                content: "Method: GET\nPath: /api/core/reservations/{id}/payment-status\nHeaders:\n  Authorization: Bearer <token>\nResponse:\n  status: 200 OK\n  data:\n  {\n    \"success\": true,\n    \"data\": {\n      \"reservationId\": \"res-001\",\n      \"paymentStatus\": \"Paid\"\n    }\n  }"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-res-create-driver-success",
+                title: "Verify authorized client (Driver) can access \"Create Reservation\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Driver",
+                steps: [
+                  "Authenticate user as Driver",
+                  "Invoke endpoint: POST /api/core/reservations",
+                  "Check response code is 200/201 OK"
+                ],
+                expectedResult: "Request succeeds and returns correct payload",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-create-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing \"Create Reservation\"",
+                type: "api",
+                precondition: "User is anonymous or lacks required role",
+                steps: [
+                  "Attempt to invoke endpoint: POST /api/core/reservations without token/role",
+                  "Check response status code is 401 Unauthorized or 403 Forbidden"
+                ],
+                expectedResult: "Request is blocked and returns clear error response",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-create-vehicle-associated",
+                title: "Verify reservation is associated with a specific vehicle",
+                type: "integration",
+                expectedResult: "Reservation cannot be created without a valid vehicle/license plate.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-create-temporary-lock",
+                title: "Verify temporary slot lock is created",
+                type: "integration",
+                expectedResult: "Selected slot is locked for 5–10 minutes while waiting for payment.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-create-confirm-after-payment",
+                title: "Verify reservation is confirmed after successful payment",
+                type: "integration",
+                expectedResult: "Reservation status becomes Confirmed and payment status becomes Paid.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-create-unpaid-expiry",
+                title: "Verify unpaid reservation expires automatically",
+                type: "integration",
+                expectedResult: "Temporary slot lock is released after timeout when payment is not completed.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-create-expired-token-rejected",
+                title: "Verify request with expired reservation or session token is rejected",
+                type: "integration",
+                expectedResult: "System returns validation error stating resource has expired.",
+                status: "not_started"
+              }
+            ],
             doneCriteria: [
-              ...defaultDoneCriteria("Create Reservation"),
-              { id: "dc-res-pay-status", content: "Payment verification integration is functional.", checked: false },
-              { id: "dc-res-expire", content: "Automatic expiration release of unpaid bookings is functional.", checked: false }
+              { id: "dc-res-create-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-res-create-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-res-create-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-res-create-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-res-create-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-res-create-vehicle-associated", content: "Reservation is associated with a specific vehicle/license plate.", checked: false },
+              { id: "dc-res-create-temp-lock", content: "Temporary slot lock mechanism is implemented.", checked: false },
+              { id: "dc-res-create-confirm-paid", content: "Reservation is confirmed only after payment status becomes Paid.", checked: false },
+              { id: "dc-res-create-payment-verification", content: "Payment verification integration is functional.", checked: false },
+              { id: "dc-res-create-expiration-release", content: "Automatic expiration releases unpaid slot locks.", checked: false },
+              { id: "dc-res-create-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-res-create-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false },
+              { id: "dc-res-create-ui-states", content: "UI states are documented: idle, loading, success, empty, error.", checked: false },
+              { id: "dc-res-create-ui-validation", content: "Validation and error display behavior are documented.", checked: false },
+              { id: "dc-res-create-edge-cases", content: "Edge cases are documented.", checked: false },
+              { id: "dc-res-create-state-transitions", content: "Payment/session/reservation state transition is documented.", checked: false }
             ]
           },
           {
@@ -8838,37 +9138,483 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             title: "Extend Reservation",
             type: "leaf_feature",
             clients: ["Driver"],
+            status: "ready",
+            priority: "medium",
+            tags: ["reservation", "booking", "extend-reservation"],
+            summary: "Support drivers in extending the duration of an ongoing reservation. The system automatically recalculates the additional fee based on the extended reservation time before confirming the extension.",
+            objective: "Implement transaction-safe reservation extension APIs in .NET Core API that validate extension eligibility, conflict-free scheduling, recalculate fee based on current pricing, and update reservation timings.",
+            inScope: [
+              "Allow drivers to extend an active reservation.",
+              "Validate that the reservation is still eligible for extension.",
+              "Check slot availability for the requested extended period.",
+              "Detect scheduling conflicts with existing reservations.",
+              "Recalculate the additional fee based on the extended duration.",
+              "Update the reservation end time after successful extension."
+            ],
+            outOfScope: [
+              "Creating a new reservation.",
+              "Reservation cancellation.",
+              "External system integrations not specified in this document."
+            ],
+            permissions: [
+              { role: "Driver", permission: "Authorized to access this feature." }
+            ],
+            businessRules: [
+              "Extension is only allowed when the reservation is still in a valid state (not yet expired).",
+              "The system must check whether the current parking slot has another reservation immediately after the original reservation period before allowing an extension.",
+              "The extension fee must be calculated according to the current hourly reservation pricing.",
+              "Reservation extension must not create overlapping reservations for the same parking slot."
+            ],
+            dbExistingTables: [
+              "reservations",
+              "reservation_payments",
+              "parking_slots",
+              "parking_locations",
+              "pricing_policies"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Reservation extension updates the existing reservation.",
+              "Additional fee is calculated using the active hourly pricing policy.",
+              "Slot availability must be checked before updating the reservation end time."
+            ],
+            validationRules: [
+              { field: "id", rule: "Must exist", errorMessage: "Reservation does not exist." },
+              { field: "newEndTime", rule: "Required, must be greater than current reservation end time", errorMessage: "New end time must be later than the current reservation end time." },
+              { field: "Reservation Status", rule: "Must be active", errorMessage: "Reservation is no longer eligible for extension." }
+            ],
+            securityRules: [
+              "Validate role permissions.",
+              "Prevent unauthorized access.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Log request access, inputs, duration, and response code.",
+              "Log reservation extension requests.",
+              "Log additional fee calculations.",
+              "Log reservation extension success or failure."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, and credit card details."
+            ],
+            integrationPoints: [],
+            uiPage: "/driver/reservations/extend",
+            uiComponents: "Reservation Detail Viewer, Extension Configurator, Time Selector, Cost Estimator, Submit Button",
+            uiStateIdle: "Display the current reservation information and extension option.",
+            uiStateLoading: "Disable the confirmation button while processing the extension request.",
+            uiStateSuccess: "Display the updated reservation end time and additional fee.",
+            uiStateError: "Display validation errors or scheduling conflict messages.",
             endpoints: ["POST /api/core/reservations/{id}/extend"],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/reservations/{id}/extend"),
-            testCases: defaultApiTests("Extend Reservation", ["Driver"], ["POST /api/core/reservations/{id}/extend"]),
-            doneCriteria: defaultDoneCriteria("Extend Reservation")
+            apiContracts: [
+              {
+                id: "contract-post-reservations-extend",
+                name: "POST /api/core/reservations/{id}/extend",
+                content: "Method: POST\nPath: /api/core/reservations/{id}/extend\nHeaders:\n  Authorization: Bearer <token>\nRequest Body:\n{\n  \"newEndTime\": \"2026-07-20T15:00:00Z\"\n}\nResponse:\n  status: 200 OK\n  data:\n  {\n    \"success\": true,\n    \"data\": {\n      \"reservationId\": \"res-001\",\n      \"previousEndTime\": \"2026-07-20T13:00:00Z\",\n      \"newEndTime\": \"2026-07-20T15:00:00Z\",\n      \"additionalFee\": 50000\n    }\n  }"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-res-extend-driver-success",
+                title: "Verify authorized client (Driver) can access \"Extend Reservation\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Driver",
+                steps: [
+                  "Authenticate user as Driver",
+                  "Invoke endpoint: POST /api/core/reservations/{id}/extend",
+                  "Check response code is 200/201 OK"
+                ],
+                expectedResult: "Request succeeds and returns correct payload",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-extend-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing \"Extend Reservation\"",
+                type: "api",
+                precondition: "User is anonymous or lacks required role",
+                steps: [
+                  "Attempt to invoke endpoint: POST /api/core/reservations/{id}/extend without token/role",
+                  "Check response status code is 401 Unauthorized or 403 Forbidden"
+                ],
+                expectedResult: "Request is blocked and returns clear error response",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-extend-expired-rejected",
+                title: "Verify expired reservation cannot be extended",
+                type: "integration",
+                expectedResult: "System rejects the extension request for expired reservations.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-extend-conflict-rejected",
+                title: "Verify extension is rejected when slot has a conflicting reservation",
+                type: "integration",
+                expectedResult: "System detects the scheduling conflict and rejects the extension.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-extend-fee-correct",
+                title: "Verify additional fee is calculated correctly",
+                type: "integration",
+                expectedResult: "Additional fee matches the current hourly pricing policy.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-extend-success-updates-end-time",
+                title: "Verify successful reservation extension updates reservation end time",
+                type: "integration",
+                expectedResult: "Reservation end time is updated and extension details are returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-extend-expired-token-rejected",
+                title: "Verify request with expired reservation or session token is rejected",
+                type: "integration",
+                expectedResult: "System returns validation error stating resource has expired.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-res-extend-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-res-extend-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-res-extend-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-res-extend-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-res-extend-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-res-extend-valid-only", content: "Reservation can only be extended while it is still valid.", checked: false },
+              { id: "dc-res-extend-conflict", content: "Slot conflict validation is implemented.", checked: false },
+              { id: "dc-res-extend-fee-calc", content: "Additional fee is calculated using the current hourly pricing.", checked: false },
+              { id: "dc-res-extend-updates-end", content: "Reservation end time is updated successfully after validation.", checked: false },
+              { id: "dc-res-extend-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-res-extend-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false },
+              { id: "dc-res-extend-edge-cases", content: "Edge cases are documented.", checked: false },
+              { id: "dc-res-extend-state-transitions", content: "Payment/session/reservation state transition is documented.", checked: false }
+            ]
           },
           {
             id: "leaf-res-cancel",
             title: "Cancel Reservation",
             type: "leaf_feature",
             clients: ["Driver"],
+            status: "ready",
+            priority: "high",
+            tags: ["reservation", "booking", "cancel-reservation"],
+            summary: "Allow drivers to cancel an existing reservation. The system immediately releases the reserved parking slot and initiates the refund process if the reservation satisfies the configured refund policy.",
+            objective: "Implement transaction-safe reservation cancellation APIs in .NET Core API that validate cancellation eligibility, release slot immediately, trigger refund calculation based on refund policy, and log details.",
+            inScope: [
+              "Allow drivers to cancel an existing reservation.",
+              "Validate whether the reservation is eligible for cancellation.",
+              "Release the reserved parking slot immediately after successful cancellation.",
+              "Calculate refund amount according to the cancellation policy.",
+              "Trigger the refund process when applicable.",
+              "Record the cancellation reason when provided.",
+              "Update parking capacity immediately after cancellation."
+            ],
+            outOfScope: [
+              "Reservation modification.",
+              "Manual refund processing.",
+              "External system integrations not specified in this document."
+            ],
+            permissions: [
+              { role: "Driver", permission: "Authorized to access this feature." }
+            ],
+            businessRules: [
+              "Reservations cancelled at least X minutes (e.g., 30 minutes) before the reservation start time receive a full refund.",
+              "Last-minute cancellations are subject to the configured cancellation fee.",
+              "Parking slots from cancelled reservations must immediately transition back to the available state.",
+              "Parking capacity must be updated immediately after a successful cancellation.",
+              "The cancellation reason should be recorded when provided."
+            ],
+            dbExistingTables: [
+              "reservations",
+              "reservation_payments",
+              "parking_slots",
+              "parking_locations",
+              "payments",
+              "refunds"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Reservation status changes to Cancelled after successful cancellation.",
+              "Reserved parking slot immediately changes to Available.",
+              "Refund amount is determined according to the configured cancellation policy.",
+              "Parking capacity must be updated immediately after cancellation."
+            ],
+            validationRules: [
+              { field: "id", rule: "Must exist", errorMessage: "Reservation does not exist." },
+              { field: "Reservation Status", rule: "Must be active", errorMessage: "Reservation cannot be cancelled." },
+              { field: "reason", rule: "Optional, maximum 500 characters", errorMessage: "Cancellation reason is too long." }
+            ],
+            securityRules: [
+              "Validate role permissions.",
+              "Prevent unauthorized access.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Log request access, inputs, duration, and response code.",
+              "Log reservation cancellation.",
+              "Log cancellation reason when provided.",
+              "Log refund processing.",
+              "Log parking capacity update."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, and credit card details."
+            ],
+            integrationPoints: [
+              { system: "Internal parking management API", responsibility: "Update parking capacity immediately after successful cancellation." },
+              { system: "Refund workflow", responsibility: "Trigger refund processing according to configured refund policy." }
+            ],
+            uiPage: "/driver/reservations",
+            uiComponents: "Reservation Detail Viewer, Cancel Confirmation Dialog, Reason Input Area, Cancellation Success Screen",
+            uiStateIdle: "Display reservation details with a Cancel Reservation button.",
+            uiStateLoading: "Disable actions while cancellation is being processed.",
+            uiStateSuccess: "Display cancellation confirmation and refund information.",
+            uiStateError: "Display validation errors or cancellation failure messages.",
             endpoints: ["POST /api/core/reservations/{id}/cancel"],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/reservations/{id}/cancel"),
-            testCases: defaultApiTests("Cancel Reservation", ["Driver"], ["POST /api/core/reservations/{id}/cancel"]),
-            doneCriteria: defaultDoneCriteria("Cancel Reservation")
+            apiContracts: [
+              {
+                id: "contract-post-reservations-cancel",
+                name: "POST /api/core/reservations/{id}/cancel",
+                content: "Method: POST\nPath: /api/core/reservations/{id}/cancel\nHeaders:\n  Authorization: Bearer <token>\nRequest Body:\n{\n  \"reason\": \"Changed travel plan\"\n}\nResponse:\n  status: 200 OK\n  data:\n  {\n    \"success\": true,\n    \"data\": {\n      \"reservationId\": \"res-001\",\n      \"status\": \"Cancelled\",\n      \"refundStatus\": \"Processing\",\n      \"refundAmount\": 100000\n    }\n  }"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-res-cancel-driver-success",
+                title: "Verify authorized client (Driver) can access \"Cancel Reservation\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Driver",
+                steps: [
+                  "Authenticate user as Driver",
+                  "Invoke endpoint: POST /api/core/reservations/{id}/cancel",
+                  "Check response code is 200/201 OK"
+                ],
+                expectedResult: "Request succeeds and returns correct payload",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-cancel-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing \"Cancel Reservation\"",
+                type: "api",
+                precondition: "User is anonymous or lacks required role",
+                steps: [
+                  "Attempt to invoke endpoint: POST /api/core/reservations/{id}/cancel without token/role",
+                  "Check response status code is 401 Unauthorized or 403 Forbidden"
+                ],
+                expectedResult: "Request is blocked and returns clear error response",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-cancel-full-refund",
+                title: "Verify full refund is applied for early cancellation",
+                type: "integration",
+                expectedResult: "Reservation cancelled before the configured time threshold receives a 100% refund.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-cancel-late-fee",
+                title: "Verify cancellation fee is applied for late cancellation",
+                type: "integration",
+                expectedResult: "System deducts the configured cancellation fee before processing the refund.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-cancel-releases-slot",
+                title: "Verify cancelled reservation immediately releases parking slot",
+                type: "integration",
+                expectedResult: "Parking slot status changes to Available and parking capacity is updated.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-cancel-reason-recorded",
+                title: "Verify cancellation reason is recorded",
+                type: "integration",
+                expectedResult: "Cancellation reason is successfully stored in the system log or database.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-cancel-expired-token-rejected",
+                title: "Verify request with expired reservation or session token is rejected",
+                type: "integration",
+                expectedResult: "System returns validation error stating resource has expired.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-res-cancel-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-res-cancel-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-res-cancel-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-res-cancel-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-res-cancel-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-res-cancel-driver-action", content: "Reservation can be cancelled by the driver.", checked: false },
+              { id: "dc-res-cancel-policy-refund", content: "Refund amount follows the configured cancellation policy.", checked: false },
+              { id: "dc-res-cancel-late-fee", content: "Late cancellation fee is applied correctly.", checked: false },
+              { id: "dc-res-cancel-slot-release", content: "Cancelled parking slots immediately become available.", checked: false },
+              { id: "dc-res-cancel-capacity-update", content: "Parking capacity is updated after cancellation.", checked: false },
+              { id: "dc-res-cancel-refund-workflow", content: "Refund process is triggered when applicable.", checked: false },
+              { id: "dc-res-cancel-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-res-cancel-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false },
+              { id: "dc-res-cancel-edge-cases", content: "Edge cases are documented.", checked: false },
+              { id: "dc-res-cancel-state-transitions", content: "Payment/session/reservation state transition is documented.", checked: false }
+            ]
           },
           {
             id: "leaf-res-driver-history",
             title: "Driver Reservation History",
             type: "leaf_feature",
             clients: ["Driver"],
+            status: "ready",
+            priority: "low",
+            tags: ["reservation", "booking", "driver-reservation-history"],
+            summary: "Provide an interface for drivers to review their complete reservation history, including reservation details, statuses (Completed, Cancelled, Expired, etc.), and corresponding payment information.",
+            objective: "Implement high-performance read-only query APIs in Spring Boot Support API to fetch active reservations and paginated reservation history with date filters for the authenticated driver.",
+            inScope: [
+              "Retrieve the driver's active reservations.",
+              "Retrieve the driver's reservation history.",
+              "Display reservation status and payment information.",
+              "Support pagination for reservation history.",
+              "Support filtering reservation history by time range.",
+              "Return reservation records belonging only to the authenticated driver."
+            ],
+            outOfScope: [
+              "Reservation creation or modification.",
+              "Reservation cancellation.",
+              "External system integrations not specified in this document."
+            ],
+            permissions: [
+              { role: "Driver", permission: "Authorized to access this feature." }
+            ],
+            businessRules: [
+              "Drivers are only permitted to query and view the reservation history belonging to their own account.",
+              "Reservation history must support pagination.",
+              "Reservation history must support filtering by time range.",
+              "Historical reservation records include completed, cancelled, expired, and other supported reservation statuses."
+            ],
+            dbExistingTables: [
+              "reservations",
+              "reservation_payments",
+              "payments",
+              "parking_locations",
+              "vehicles"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Reservation history is queried based on the authenticated driver's account.",
+              "Payment information is retrieved from the associated reservation payment records.",
+              "Historical data includes reservation status and payment status."
+            ],
+            validationRules: [
+              { field: "page", rule: "Must be greater than 0", errorMessage: "Invalid page number." },
+              { field: "size", rule: "Must be greater than 0", errorMessage: "Invalid page size." },
+              { field: "fromDate", rule: "Must be earlier than or equal to toDate", errorMessage: "Invalid date range." },
+              { field: "toDate", rule: "Must be later than or equal to fromDate", errorMessage: "Invalid date range." }
+            ],
+            securityRules: [
+              "Validate role permissions.",
+              "Prevent unauthorized access.",
+              "Drivers may only access their own reservation history.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Log request access, inputs, duration, and response code.",
+              "Log reservation history queries.",
+              "Log pagination and filter parameters."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, and credit card details."
+            ],
+            integrationPoints: [],
+            uiPage: "/driver/reservations/history",
+            uiComponents: "Reservation History Table, Active Reservations Cards, Date Range Filters, Pagination Controls, Payment Detail Modal",
+            uiStateIdle: "Display reservation history list.",
+            uiStateLoading: "Display loading indicator while retrieving history.",
+            uiStateSuccess: "Display reservation history with payment information.",
+            uiStateEmpty: "Display message when no reservation history exists.",
+            uiStateError: "Display validation or system error messages.",
             endpoints: [
               "GET /api/support/reservations/me/active",
               "GET /api/support/reservations/me/history"
             ],
             ownerService: "Spring Boot Support API",
-            apiContracts: createApiContract("GET /api/support/reservations/me/history"),
-            testCases: defaultApiTests("Driver Reservation History", ["Driver"], ["GET /api/support/reservations/me/history"]),
-            doneCriteria: defaultDoneCriteria("Driver Reservation History")
-          }
+            apiContracts: [
+              {
+                id: "contract-get-reservations-me-history",
+                name: "GET /api/support/reservations/me/history",
+                content: "Method: GET\nPath: /api/support/reservations/me/history\nHeaders:\n  Authorization: Bearer <token>\nQuery Parameters:\n  page: integer (optional)\n  size: integer (optional)\n  fromDate: datetime (optional)\n  toDate: datetime (optional)\nResponse:\n  status: 200 OK\n  data:\n  {\n    \"success\": true,\n    \"data\": {\n      \"items\": [\n        {\n          \"reservationId\": \"res-001\",\n          \"status\": \"Completed\",\n          \"paymentStatus\": \"Paid\",\n          \"bookingAmount\": 120000,\n          \"reservationTime\": \"2026-07-20T08:00:00Z\"\n        }\n      ],\n      \"page\": 1,\n      \"size\": 10,\n      \"totalItems\": 50\n    }\n  }"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-res-history-driver-success",
+                title: "Verify authorized client (Driver) can access \"Driver Reservation History\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Driver",
+                steps: [
+                  "Authenticate user as Driver",
+                  "Invoke endpoint: GET /api/support/reservations/me/history",
+                  "Check response code is 200/201 OK"
+                ],
+                expectedResult: "Request succeeds and returns correct payload",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-history-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing \"Driver Reservation History\"",
+                type: "api",
+                precondition: "User is anonymous or lacks required role",
+                steps: [
+                  "Attempt to invoke endpoint: GET /api/support/reservations/me/history without token/role",
+                  "Check response status code is 401 Unauthorized or 403 Forbidden"
+                ],
+                expectedResult: "Request is blocked and returns clear error response",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-history-own-only",
+                title: "Verify drivers can only view their own reservation history",
+                type: "integration",
+                expectedResult: "System returns only reservation records belonging to the authenticated driver.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-history-pagination",
+                title: "Verify pagination works correctly",
+                type: "integration",
+                expectedResult: "Reservation history is returned according to the requested page and page size.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-history-time-filter",
+                title: "Verify time filter returns correct reservation history",
+                type: "integration",
+                expectedResult: "Only reservation records within the specified date range are returned.",
+                status: "not_started"
+              },
+              {
+                id: "tc-res-history-expired-token-rejected",
+                title: "Verify request with expired reservation or session token is rejected",
+                type: "integration",
+                expectedResult: "System returns validation error stating resource has expired.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-res-history-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-res-history-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-res-history-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-res-history-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-res-history-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-res-history-own-only", content: "Drivers can only access their own reservation history.", checked: false },
+              { id: "dc-res-history-details", content: "Reservation history includes reservation status and payment information.", checked: false },
+              { id: "dc-res-history-pagination", content: "Pagination is implemented.", checked: false },
+              { id: "dc-res-history-time-filter", content: "Time range filtering is implemented.", checked: false },
+              { id: "dc-res-history-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-res-history-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false },
+              { id: "dc-res-history-edge-cases", content: "Edge cases are documented.", checked: false },
+              { id: "dc-res-history-state-transitions", content: "Payment/session/reservation state transition is documented.", checked: false }
+            ]
+          },
         ]
       },
 
@@ -9703,34 +10449,633 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-pay-online",
             title: "Online Exit Fee Payment",
             type: "leaf_feature",
-            clients: ["Staff", "Driver"],
+            status: "ready",
+            priority: "must_have",
+            clients: ["Manager", "Staff", "Driver"],
+            tags: ["payments", "payos", "online", "exit-fee", "transaction"],
+            summary: "This feature initiates online parking fee payment transactions via the PayOS gateway. The fee calculation algorithm prioritizes the use of Snapshot Pricing (saved at the time of Entry).",
+            objective: "The system applies row-level locking (Pessimistic Locking on parking_sessions) combined with a Two-step Transaction to integrate safely with PayOS, generating an accurate 64-bit OrderCode, ensuring transaction uniqueness (PENDING), and data integrity.",
+            inScope: [
+              "Initiate PayOS payment link creation for parking exit fee.",
+              "Snapshot Pricing priority with fallback to PricingRule table.",
+              "Two-step DB transaction: Tx1 inserts PENDING payment, Tx2 updates with PayOS response.",
+              "Pessimistic locking via SELECT FOR UPDATE on parking_sessions.",
+              "Idempotent handling: same sessionId within 15 minutes returns existing PENDING checkout URL.",
+              "64-bit OrderCode generation.",
+              "Audit log recording."
+            ],
+            outOfScope: [
+              "Receipts: The receipts table must NOT be written to in this feature.",
+              "Webhook / Exit Process: PayOS callback handling and gate opening logic are in another module.",
+              "Auto-retry: Do not auto-retry POST to PayOS to avoid duplicate orders."
+            ],
+            permissions: [
+              { role: "Driver", permission: "Initiate payment for own parking session. Requires ownership check: parking_sessions.driver_id must match JWT userId." },
+              { role: "Staff", permission: "Initiate payment on behalf of any session." },
+              { role: "Manager", permission: "Initiate payment on behalf of any session." }
+            ],
+            businessRules: [
+              "Payment Required Check: If payment_required == false on session, return 422 NO_PAYMENT_REQUIRED immediately.",
+              "Session Status: Session must be ACTIVE. Reject Completed/Cancelled sessions with 404/422.",
+              "Driver Ownership (IDOR): If role is Driver, parking_sessions.driver_id must join driver_profiles.user_id matching JWT userId. Return 403 UNAUTHORIZED_SESSION_ACCESS if mismatch.",
+              "Snapshot Pricing: Must use snapshot_day_price etc. if != NULL. Only fallback to pricing_rules table if Snapshot is NULL (Legacy Data).",
+              "Single PENDING Payment: Partial unique index on (session_id) WHERE status = 'PENDING'. If PENDING exists with valid checkout_url, return it idempotently.",
+              "Two-step Transaction: Tx1 inserts PENDING payment and COMMITS before calling PayOS. NEVER call PayOS Gateway inside an EF Core Transaction Block.",
+              "OrderCode: Must be a 64-bit integer. Never use GUID/UUID as PayOS OrderCode.",
+              "Gateway Failure: If PayOS fails, execute Tx2 to UPDATE payment status to FAILED. Do not rollback the PaymentId.",
+              "Idempotency Window: Same sessionId within 15 minutes returns the exact same checkout_url."
+            ],
+            dbExistingTables: ["parking_sessions", "driver_profiles", "parking_cards"],
+            dbNewTablesSql: `-- Schema updates required in 03_indexes_constraints.sql:
+-- 1. ALTER TABLE payments DROP CONSTRAINT ck_payments_method;
+--    ALTER TABLE payments ADD CONSTRAINT ck_payments_method CHECK (method IN ('CASH', 'NONE', 'ONLINE'));
+-- 2. ALTER TABLE payments DROP CONSTRAINT ck_payments_status;
+--    ALTER TABLE payments ADD CONSTRAINT ck_payments_status CHECK (status IN ('PENDING', 'PAID', 'FAILED', 'CANCELLED', 'WAIVED', 'NOT_REQUIRED', 'EXPIRED'));
+-- 3. ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider VARCHAR;
+--    ALTER TABLE payments ADD COLUMN IF NOT EXISTS provider_transaction_id BIGINT;
+--    ALTER TABLE payments ADD COLUMN IF NOT EXISTS checkout_url TEXT;
+--    ALTER TABLE payments ADD COLUMN IF NOT EXISTS qr_code TEXT;
+--    ALTER TABLE payments ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+-- 4. CREATE UNIQUE INDEX IF NOT EXISTS idx_single_pending_payment ON payments (session_id) WHERE status = 'PENDING';`,
+            dbRelationships: [
+              "parking_sessions: Read to validate session status and payment_required flag. SELECT FOR UPDATE locks the row.",
+              "driver_profiles: Read to verify driver ownership (driver_profiles.user_id == JWT userId).",
+              "payments: Write (INSERT PENDING in Tx1, UPDATE with PayOS response in Tx2).",
+              "audit_logs: Write to record Payment Request Created event."
+            ],
+            validationRules: [
+              { field: "sessionId", rule: "Required. Session must exist and be ACTIVE.", errorMessage: "SESSION_NOT_FOUND" },
+              { field: "returnUrl", rule: "Required. Valid URL format.", errorMessage: "VALIDATION_ERROR" },
+              { field: "cancelUrl", rule: "Required. Valid URL format.", errorMessage: "VALIDATION_ERROR" },
+              { field: "payment_required", rule: "Session flag must be true. If false, abort immediately.", errorMessage: "NO_PAYMENT_REQUIRED" }
+            ],
+            securityRules: [
+              "JWT Auth: All requests must provide valid Bearer token.",
+              "IDOR Prevention: Driver role must match parking_sessions.driver_id via driver_profiles. Return 403 if mismatch.",
+              "Mass Assignment: Never bind HTTP request directly to EF Core entity."
+            ],
+            logEvents: [
+              "Log all events with: RequestId, CorrelationId, TraceId, SessionId, PaymentId, OrderCode, Latency (ms), Gateway Result.",
+              "Audit log must record 'Payment Request Created' with old/new payment status."
+            ],
+            noLogEvents: [
+              "Do not log full PayOS response body containing sensitive financial data.",
+              "Never log JWT payloads or user passwords."
+            ],
+            integrationPoints: [
+              { system: "PayOS Gateway", responsibility: "Generating checkout URL and QR code via POST /v2/payment-requests. Called OUTSIDE EF Core transaction." },
+              { system: "Pricing Module", responsibility: "Providing fallback PricingRule if Snapshot is NULL (Legacy Data)." }
+            ],
+            uiPage: "/driver/payment or /staff/exit-payment",
+            uiComponents: "Payment confirmation modal showing fee amount and new valid_to. QR code display. Redirect to PayOS checkout URL. Loading state while processing.",
+            uiStateLoading: "Disable 'Proceed to Payment' button and show spinner while POST is in flight.",
+            uiStateEmpty: "N/A",
+            uiStateError: "Show specific error message from reasonCode: 'PAYOS_TIMEOUT', 'NO_PAYMENT_REQUIRED', 'UNAUTHORIZED_SESSION_ACCESS'.",
+            uiStateSuccess: "Display checkout URL and QR code. Redirect user to PayOS payment page.",
+            notes: "CRITICAL: NEVER call PayOS Gateway inside an EF Core Transaction Block. Two-step commit pattern is mandatory. OrderCode must be 64-bit integer only.",
+            dependencies: [],
+            risks: [],
             endpoints: ["POST /api/core/payments/online/exit-fee"],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/payments/online/exit-fee"),
-            testCases: defaultApiTests("Online Exit Fee Payment", ["Driver"], ["POST /api/core/payments/online/exit-fee"]),
-            doneCriteria: defaultDoneCriteria("Online Exit Fee Payment")
+            apiContracts: [
+              {
+                id: "contract-pay-online-post",
+                name: "POST /api/core/payments/online/exit-fee",
+                content: `Method: POST\nPath: /api/core/payments/online/exit-fee\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: application/json\nRequest Body:\n{\n  "sessionId": 123456789,\n  "returnUrl": "https://app.parking.vn/payment/success",\n  "cancelUrl": "https://app.parking.vn/payment/cancel"\n}\n\nResponse 200 OK (New PENDING Payment Created):\n{\n  "success": true,\n  "data": {\n    "paymentId": 987654321,\n    "sessionId": 123456789,\n    "amount": 15000,\n    "status": "PENDING",\n    "checkoutUrl": "https://pay.payos.vn/web/...",\n    "qrCode": "00020101021226...",\n    "expiresAt": "2026-07-19T13:32:00Z"\n  }\n}\n\nResponse 422 Unprocessable Entity (No Payment Required):\n{\n  "success": false,\n  "error": {\n    "code": "NO_PAYMENT_REQUIRED",\n    "message": "This session does not require payment.",\n    "traceId": "0HL-1234567890"\n  }\n}\n\nResponse 504 Gateway Timeout:\n{\n  "success": false,\n  "error": {\n    "code": "PAYOS_TIMEOUT",\n    "message": "The payment gateway did not respond.",\n    "traceId": "0HL-1234567890"\n  }\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-payo-happy-path",
+                title: "Verify successful payment initiation returns checkout URL and QR code",
+                type: "integration",
+                precondition: "Active session with payment_required = true. Valid JWT with matching Driver ownership.",
+                steps: [
+                  "POST /api/core/payments/online/exit-fee with valid sessionId, returnUrl, cancelUrl."
+                ],
+                expectedResult: "HTTP 200 OK. Tx1 inserts PENDING payment to DB. PayOS returns checkoutUrl. Tx2 updates payment. Response includes checkoutUrl, qrCode, and expiresAt.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payo-idempotent-return",
+                title: "Verify second request within idempotency window returns same checkout URL",
+                type: "integration",
+                precondition: "A PENDING payment already exists for the session created within 15 minutes.",
+                steps: [
+                  "POST /api/core/payments/online/exit-fee with same sessionId again."
+                ],
+                expectedResult: "HTTP 200 OK. No new DB record created. Response returns existing checkout_url and paymentId.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payo-no-payment-required",
+                title: "Verify session with payment_required=false is rejected",
+                type: "integration",
+                precondition: "Session is ACTIVE but payment_required = false.",
+                steps: [
+                  "POST /api/core/payments/online/exit-fee."
+                ],
+                expectedResult: "HTTP 422. Error code: NO_PAYMENT_REQUIRED.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payo-session-not-found",
+                title: "Verify request for unknown sessionId returns 404",
+                type: "api",
+                precondition: "Session with provided ID does not exist.",
+                steps: [
+                  "POST /api/core/payments/online/exit-fee with non-existent sessionId."
+                ],
+                expectedResult: "HTTP 404. Error code: SESSION_NOT_FOUND.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payo-idor-driver",
+                title: "Verify Driver cannot initiate payment for another Driver's session",
+                type: "api",
+                precondition: "Authenticated Driver. Session belongs to a different driver.",
+                steps: [
+                  "POST /api/core/payments/online/exit-fee with another driver's sessionId."
+                ],
+                expectedResult: "HTTP 403. Error code: UNAUTHORIZED_SESSION_ACCESS.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payo-snapshot-pricing",
+                title: "Verify fee is calculated from Snapshot Pricing when snapshot fields are not null",
+                type: "integration",
+                precondition: "Session has snapshot_day_price != NULL.",
+                steps: [
+                  "POST /api/core/payments/online/exit-fee."
+                ],
+                expectedResult: "HTTP 200 OK. Fee computed from snapshot fields, NOT from pricing_rules table.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payo-fallback-pricing",
+                title: "Verify fee falls back to PricingRule when all snapshot fields are NULL",
+                type: "integration",
+                precondition: "Session has snapshot_day_price = NULL (legacy data).",
+                steps: [
+                  "POST /api/core/payments/online/exit-fee."
+                ],
+                expectedResult: "HTTP 200 OK. Fee computed from pricing_rules table.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payo-gateway-timeout",
+                title: "Verify gateway timeout triggers Tx2 FAILED update and returns 504",
+                type: "integration",
+                precondition: "Mock PayOS to return timeout after Tx1 commits.",
+                steps: [
+                  "POST /api/core/payments/online/exit-fee."
+                ],
+                expectedResult: "HTTP 504. PENDING payment is updated to FAILED in DB (Tx2). Payment ID is retained.",
+                status: "not_started"
+              },
+              {
+                id: "tc-payo-concurrent-requests",
+                title: "Verify concurrent requests for same session are safely serialized by SELECT FOR UPDATE",
+                type: "concurrency",
+                precondition: "Two concurrent requests for the same sessionId at the exact same time.",
+                steps: [
+                  "Dispatch two simultaneous POST requests for the same sessionId."
+                ],
+                expectedResult: "One request creates PENDING. Second request detects existing PENDING and returns it idempotently. No duplicate PENDING payments created.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-payo-schema", content: "Schema updated in 03_indexes_constraints.sql: new columns, updated enums, and partial unique index on payments.", checked: true },
+              { id: "dc-payo-two-step-tx", content: "Two-step commit is active: Tx1 inserts PENDING before PayOS call; Tx2 updates on result. PayOS is NEVER called inside EF Core transaction.", checked: true },
+              { id: "dc-payo-locking", content: "Pessimistic row lock SELECT FOR UPDATE on parking_sessions is implemented.", checked: true },
+              { id: "dc-payo-ordercode", content: "OrderCode uses 64-bit integer only. UUID is strictly forbidden.", checked: true },
+              { id: "dc-payo-snapshot", content: "Snapshot Pricing priority is implemented. Fallback to pricing_rules only when snapshot is NULL.", checked: true },
+              { id: "dc-payo-idor", content: "IDOR check for Driver ownership against driver_profiles.user_id is enforced.", checked: true },
+              { id: "dc-payo-idempotent", content: "Idempotency: same sessionId within 15 minutes returns identical checkout_url without creating duplicate payment.", checked: true },
+              { id: "dc-payo-no-receipt", content: "Receipt table is NOT written to in this feature.", checked: true },
+              { id: "dc-payo-tests", content: "All 9 test cases covering happy, unhappy, concurrency, and edge cases are defined.", checked: true }
+            ]
           },
           {
             id: "leaf-pay-cash",
             title: "Cash Payment",
             type: "leaf_feature",
+            status: "ready",
+            priority: "medium",
             clients: ["Staff", "Manager"],
+            tags: ["payments", "cash", "exit-fee", "transaction", "audit"],
+            summary: "Handle parking fee payment transactions via cash (at the counter). Requires staff authorization, session status validation, fee calculation based on Snapshot Pricing (with fallback), updating session status to PAID, and audit logging for reconciliation.",
+            objective: "Provide a reliable, atomic cash collection flow for staff that ensures data integrity via DB-level locking, prevents double-payment, and produces a complete audit trail for financial reconciliation.",
+            inScope: [
+              "Cash payment flow for parking session exit fee.",
+              "Snapshot Pricing priority with fallback to PricingRule table.",
+              "Amount received validation against calculated fee.",
+              "Single atomic DB Transaction: INSERT payment + UPDATE session status + WRITE audit log.",
+              "Pessimistic locking (SELECT FOR UPDATE) on parking_sessions to prevent concurrent double-payment.",
+              "Audit log recording with CASH_COLLECTION event."
+            ],
+            outOfScope: [
+              "Barrier/Gate opening: this is the Exit Module's responsibility.",
+              "Online payment via PayOS: handled by leaf-pay-online.",
+              "Receipt generation: handled by a separate receipt module.",
+              "Auto-retry on business logic errors (Amount Mismatch, Session Already Paid)."
+            ],
+            permissions: [
+              { role: "Staff", permission: "Collect cash payment on behalf of driver at counter." },
+              { role: "Manager", permission: "Collect cash payment and override edge cases where permitted." }
+            ],
+            businessRules: [
+              "Authorization: Only Staff and Manager roles are permitted. Driver access must return 403 FORBIDDEN.",
+              "Session Status: parking_sessions.status MUST be ACTIVE. Return 422 SESSION_ALREADY_COMPLETED if PAID or CANCELLED.",
+              "Concurrency Control: SELECT FOR UPDATE on parking_sessions at start of transaction. After lock is acquired, re-check status. If already PAID, return 409 SESSION_ALREADY_COMPLETED.",
+              "Payment Required Check: If payment_required == false or fee == 0, return 422 NO_PAYMENT_REQUIRED.",
+              "Snapshot Pricing: Must use snapshot_day_price etc. if != NULL. Fallback to pricing_rules table if Snapshot is NULL. If both are NULL, return 500 INTERNAL_SERVER_ERROR.",
+              "Amount Validation (Server-side): NEVER trust amount from client. Always recalculate fee on server. If amountReceived != calculatedFee, return 422 AMOUNT_MISMATCH.",
+              "Atomicity: Payment INSERT, parking_sessions UPDATE, and audit_logs INSERT must be in a single IDbContextTransaction. Rollback all on any exception.",
+              "Idempotency: If session is already PAID, do not create a new payment record. Return 409.",
+              "Collector ID: Retrieve staff ID from UserContext (JWT), never from request body."
+            ],
+            dbExistingTables: ["parking_sessions", "payments", "audit_logs", "pricing_rules", "driver_profiles"],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "parking_sessions: SELECT FOR UPDATE to lock row, validate ACTIVE status, read snapshot pricing fields.",
+              "payments: INSERT new payment record with status PAID, method CASH, collector_id from JWT.",
+              "audit_logs: INSERT CASH_COLLECTION event with TraceId, SessionId, CollectorId, OldStatus, NewStatus, Amount.",
+              "pricing_rules: READ-only fallback when session snapshot pricing fields are NULL."
+            ],
+            validationRules: [
+              { field: "sessionId", rule: "Required. Session must exist and status must be ACTIVE.", errorMessage: "SESSION_NOT_FOUND" },
+              { field: "amountReceived", rule: "Required. Must be a positive decimal. Validated server-side against calculated fee.", errorMessage: "AMOUNT_MISMATCH" },
+              { field: "notes", rule: "Optional. Max length 500 characters.", errorMessage: "VALIDATION_ERROR" }
+            ],
+            securityRules: [
+              "JWT Auth: All requests must provide valid Bearer token.",
+              "Role Enforcement: Only Staff and Manager. Return 403 FORBIDDEN for any other role.",
+              "Server-side Recalculation: Amount must be recalculated on server. Never trust client-provided fee amount."
+            ],
+            logEvents: [
+              "Must log: TraceId, SessionId, CollectorId, OldStatus, NewStatus, Amount, Latency.",
+              "Audit log CASH_COLLECTION event written atomically inside the main transaction."
+            ],
+            noLogEvents: [
+              "Do not log raw JWT tokens or user passwords.",
+              "Do not log full driver personal data in application logs."
+            ],
+            integrationPoints: [
+              { system: "Pricing Module", responsibility: "Providing fallback PricingRule when session snapshot is NULL." },
+              { system: "Audit Module", responsibility: "Writing CASH_COLLECTION record inside the same DB transaction." }
+            ],
+            uiPage: "/staff/cash-payment",
+            uiComponents: "Cash collection modal showing: calculated fee, amount received input, notes field, Confirm button. Shows payment receipt summary on success.",
+            uiStateLoading: "Disable 'Confirm Payment' button and show spinner while POST is in flight.",
+            uiStateEmpty: "N/A",
+            uiStateError: "Display specific error from reasonCode: 'AMOUNT_MISMATCH', 'SESSION_ALREADY_COMPLETED', 'NO_PAYMENT_REQUIRED'.",
+            uiStateSuccess: "Show payment success confirmation with paymentId, paidAt, collectorId, and amount. Trigger gate opening via Exit Module.",
+            notes: "DO NOT trigger barrier/gate opening in this flow. All DB changes (payment, session status, audit log) must be committed in a single atomic transaction. Retry only for transient DB errors (Deadlock), never for business logic errors.",
+            dependencies: [],
+            risks: [],
             endpoints: ["POST /api/core/payments/cash"],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/payments/cash"),
-            testCases: defaultApiTests("Cash Payment", ["Staff"], ["POST /api/core/payments/cash"]),
-            doneCriteria: defaultDoneCriteria("Cash Payment")
+            apiContracts: [
+              {
+                id: "contract-pay-cash-post",
+                name: "POST /api/core/payments/cash",
+                content: `Method: POST\nPath: /api/core/payments/cash\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: application/json\nRequest Body:\n{\n  "sessionId": 123456789,\n  "amountReceived": 20000,\n  "notes": "Cash collected at counter 1"\n}\n\nResponse 200 OK (Payment Successful):\n{\n  "success": true,\n  "data": {\n    "paymentId": 987654321,\n    "paidAt": "2026-07-19T06:57:00Z",\n    "collectorId": "staff-uuid-001",\n    "status": "PAID"\n  }\n}\n\nResponse 422 (Amount Mismatch):\n{\n  "success": false,\n  "error": {\n    "code": "AMOUNT_MISMATCH",\n    "message": "Received amount does not match calculated fee.",\n    "traceId": "0HL-1234567890"\n  }\n}\n\nResponse 409 (Concurrent Request):\n{\n  "success": false,\n  "error": {\n    "code": "CONCURRENT_REQUEST",\n    "message": "A transaction for this session is already in progress.",\n    "traceId": "0HL-1234567890"\n  }\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-cash-happy-path",
+                title: "Verify successful cash payment updates session to PAID",
+                type: "integration",
+                precondition: "Active session with payment_required = true. Staff JWT. amountReceived == calculatedFee.",
+                steps: [
+                  "POST /api/core/payments/cash with valid sessionId and correct amountReceived."
+                ],
+                expectedResult: "HTTP 200 OK. Payment record PAID inserted. parking_sessions.status updated to PAID. Audit log CASH_COLLECTION written. Returns paymentId, paidAt, collectorId.",
+                status: "not_started"
+              },
+              {
+                id: "tc-cash-amount-mismatch",
+                title: "Verify amount mismatch is rejected with 422",
+                type: "integration",
+                precondition: "Calculated fee is 20000. amountReceived = 15000.",
+                steps: [
+                  "POST /api/core/payments/cash with amountReceived = 15000."
+                ],
+                expectedResult: "HTTP 422. Error code: AMOUNT_MISMATCH. No DB changes.",
+                status: "not_started"
+              },
+              {
+                id: "tc-cash-unauthorized-driver",
+                title: "Verify Driver role is rejected with 403",
+                type: "api",
+                precondition: "Authenticated as Driver role.",
+                steps: [
+                  "POST /api/core/payments/cash with Driver JWT."
+                ],
+                expectedResult: "HTTP 403 FORBIDDEN.",
+                status: "not_started"
+              },
+              {
+                id: "tc-cash-concurrent",
+                title: "Verify concurrent collection by 2 staff on same session: 1 success, 1 conflict",
+                type: "concurrency",
+                precondition: "Two staff submit payment for same sessionId simultaneously.",
+                steps: [
+                  "Dispatch two simultaneous POST requests for the same sessionId from different staff accounts."
+                ],
+                expectedResult: "One request: HTTP 200 PAID. Other request: HTTP 409 CONCURRENT_REQUEST or 422 SESSION_ALREADY_COMPLETED.",
+                status: "not_started"
+              },
+              {
+                id: "tc-cash-snapshot-null-fallback",
+                title: "Verify fee fallback to PricingRule when snapshot is NULL",
+                type: "integration",
+                precondition: "Session snapshot_day_price = NULL. PricingRule exists.",
+                steps: [
+                  "POST /api/core/payments/cash with correct amountReceived matching PricingRule calculation."
+                ],
+                expectedResult: "HTTP 200 OK. Fee correctly calculated from pricing_rules table.",
+                status: "not_started"
+              },
+              {
+                id: "tc-cash-session-already-paid",
+                title: "Verify payment for already-paid session returns 422",
+                type: "integration",
+                precondition: "Session status is already PAID or CANCELLED.",
+                steps: [
+                  "POST /api/core/payments/cash."
+                ],
+                expectedResult: "HTTP 422. Error code: SESSION_ALREADY_COMPLETED.",
+                status: "not_started"
+              },
+              {
+                id: "tc-cash-deadlock-rollback",
+                title: "Verify DB exception causes full transaction rollback",
+                type: "integration",
+                precondition: "Mock DB to throw deadlock exception during SaveChanges.",
+                steps: [
+                  "POST /api/core/payments/cash."
+                ],
+                expectedResult: "HTTP 500 INTERNAL_SERVER_ERROR. No partial DB changes. Payments, parking_sessions, audit_logs are all unchanged.",
+                status: "not_started"
+              },
+              {
+                id: "tc-cash-invalid-input",
+                title: "Verify missing amountReceived returns 400",
+                type: "api",
+                precondition: "Request body missing amountReceived field.",
+                steps: [
+                  "POST /api/core/payments/cash with body { sessionId: 123 }."
+                ],
+                expectedResult: "HTTP 400 VALIDATION_ERROR.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-cash-atomicity", content: "All DB changes (Payment INSERT, Session UPDATE, Audit log INSERT) are committed in a single IDbContextTransaction. Full rollback on any exception.", checked: true },
+              { id: "dc-cash-locking", content: "SELECT FOR UPDATE on parking_sessions is applied at the start of the transaction.", checked: true },
+              { id: "dc-cash-snapshot", content: "Snapshot Pricing priority implemented. Fallback to pricing_rules when snapshot is NULL. Returns 500 if both are NULL.", checked: true },
+              { id: "dc-cash-amount-server", content: "Fee is always recalculated on server-side. Client-provided amount is treated as amountReceived only, never as the fee.", checked: true },
+              { id: "dc-cash-audit", content: "CASH_COLLECTION audit log is written atomically inside the main transaction.", checked: true },
+              { id: "dc-cash-no-duplicate", content: "Idempotency: duplicate payment impossible due to DB locking and session status re-check after lock.", checked: true },
+              { id: "dc-cash-authz", content: "Authorization enforced: only Staff and Manager roles permitted. Driver returns 403.", checked: true },
+              { id: "dc-cash-contract", content: "API contract matches HTTP Status Matrix (200, 400, 401, 403, 404, 409, 422, 500).", checked: true },
+              { id: "dc-cash-tests", content: "All 8 test cases covering happy path, mismatch, auth, concurrency, fallback, deadlock, and invalid input are defined.", checked: true }
+            ]
           },
           {
             id: "leaf-pay-waived",
             title: "Waived Payment",
             type: "leaf_feature",
+            status: "ready",
+            priority: "medium",
             clients: ["Staff", "Manager"],
+            tags: ["payments", "waived", "exemption", "audit", "transaction"],
+            summary: "Handle the process of waiving parking fees for system errors or management approvals. Requires strict justification, original fee calculation (for reporting integrity), session validation, and comprehensive audit logging.",
+            objective: "Provide a controlled, auditable mechanism for authorized personnel to waive parking fees while preserving financial reporting integrity by recording the original calculated fee amount.",
+            inScope: [
+              "Waive parking session fee for system errors or management approvals.",
+              "Original fee calculation and recording (for audit/reporting) even when waiving.",
+              "Session status transition from ACTIVE to WAIVED.",
+              "Payment entity creation with status=WAIVED and amount=calculatedFee.",
+              "Strict reason validation (10-500 chars, non-empty, non-whitespace).",
+              "Role-based reason code restriction (Staff: restricted list; Manager: unrestricted).",
+              "Pessimistic locking (SELECT FOR UPDATE) to prevent concurrent waiver.",
+              "Audit log with full metadata: paymentId, requestId, correlationId, collectorId, reason, waivedAmount."
+            ],
+            outOfScope: [
+              "Exit Module / Barrier opening: handled independently by the Exit Module based on session/payment state.",
+              "Online payment cancellation: handled by leaf-pay-online and PayOS webhook.",
+              "Receipt generation: handled by a separate receipt module."
+            ],
+            permissions: [
+              { role: "Manager", permission: "Authorize waiver for any valid reason code." },
+              { role: "Staff", permission: "Authorize waiver ONLY for specific codes: SYSTEM_ERROR, FREE_EVENT, PROMOTION. Any other reason code must return 403 FORBIDDEN." }
+            ],
+            businessRules: [
+              "Payment Required Check: If payment_required == false, return 422 NO_PAYMENT_REQUIRED immediately.",
+              "Fee Integrity: If calculatedFee <= 0 (and payment_required == true), return 422 NO_PAYMENT_REQUIRED.",
+              "Financial Integrity: payments.amount = calculatedFee (NOT 0). payments.status = WAIVED. payments.method = NONE (Inspect schema; use project equivalent if NONE is not supported).",
+              "Reason Validation: Required. Trim whitespace. Length [10-500]. Non-null, non-empty, no whitespace-only strings.",
+              "Permission Logic: Manager: authorized for any valid reason. Staff: authorized ONLY for SYSTEM_ERROR, FREE_EVENT, PROMOTION codes. Return 403 for any other reason.",
+              "State Conflict: If online payment is PENDING, return 409 PAYMENT_ALREADY_PENDING.",
+              "Session Status: Reject if status is in {PAID, WAIVED, COMPLETED, CANCELLED}. Return 422 SESSION_ALREADY_COMPLETED.",
+              "Lost Card / Plate Mismatch Block: If pending resolution flags are active, return 422 LOST_CARD_PENDING or PLATE_MISMATCH_PENDING.",
+              "Concurrency: SELECT FOR UPDATE on parking_sessions immediately after loading. Re-check status after lock is acquired.",
+              "Snapshot Pricing: Use snapshot_day_price etc. if != NULL. Fallback to pricing_rules if snapshot is NULL. If both NULL, return 500.",
+              "Atomicity: Payment INSERT, parking_sessions UPDATE, audit_log INSERT must be in a single IDbContextTransaction. Full rollback on any exception.",
+              "Loose Coupling: Do NOT invoke Exit Module directly. State change on payment/session is sufficient for Exit Module to operate independently."
+            ],
+            dbExistingTables: ["parking_sessions", "payments", "audit_logs", "pricing_rules"],
+            dbNewTablesSql: "-- VERIFY before implementation:\n-- 1. CHECK if payments.method supports 'NONE'. If not, map to project equivalent (e.g., 'OTHER', 'EXEMPT').\n-- 2. CHECK if parking_sessions.status supports 'WAIVED'. If not, add via migration or map to existing enum.\n-- Example migration if needed:\n-- ALTER TABLE payments DROP CONSTRAINT ck_payments_method;\n-- ALTER TABLE payments ADD CONSTRAINT ck_payments_method CHECK (method IN ('CASH', 'NONE', 'ONLINE'));\n-- ALTER TABLE parking_sessions DROP CONSTRAINT ck_sessions_status;\n-- ALTER TABLE parking_sessions ADD CONSTRAINT ck_sessions_status CHECK (status IN ('ACTIVE', 'PAID', 'WAIVED', 'COMPLETED', 'CANCELLED'));",
+            dbRelationships: [
+              "parking_sessions: SELECT FOR UPDATE to lock row, validate ACTIVE status, read snapshot pricing fields, check lost_card/plate_mismatch flags.",
+              "payments: INSERT payment record with status WAIVED, method NONE, amount=calculatedFee, waivedBy from JWT.",
+              "audit_logs: INSERT WAIVED_PAYMENT event with paymentId, requestId, correlationId, collectorId, sessionId, waivedAmount, reason, OldStatus, NewStatus.",
+              "pricing_rules: READ-only fallback when session snapshot pricing fields are NULL."
+            ],
+            validationRules: [
+              { field: "sessionId", rule: "Required. Session must exist and status must be ACTIVE.", errorMessage: "SESSION_NOT_FOUND" },
+              { field: "reason", rule: "Required. Trimmed length must be between 10 and 500 characters. Cannot be null, empty, or whitespace-only.", errorMessage: "VALIDATION_ERROR" },
+              { field: "reason (Staff role)", rule: "Must be one of: SYSTEM_ERROR, FREE_EVENT, PROMOTION. Any other value returns 403.", errorMessage: "FORBIDDEN" }
+            ],
+            securityRules: [
+              "JWT Auth: All requests must provide valid Bearer token.",
+              "Role Enforcement: Only Staff and Manager roles are permitted.",
+              "Staff Reason Restriction: Staff may only use pre-approved reason codes. Return 403 for unauthorized reason codes.",
+              "Server-side Fee Recalculation: Never trust fee from client. Always calculate on server for audit integrity."
+            ],
+            logEvents: [
+              "Log: TraceId, SessionId, CollectorId (from JWT), OldStatus, NewStatus, PaymentId, WaivedAmount, Reason, Latency.",
+              "Audit log WAIVED_PAYMENT event must include: paymentId, requestId, correlationId, collectorId, sessionId, waivedAmount, reason."
+            ],
+            noLogEvents: [
+              "Do not log raw JWT tokens or user passwords.",
+              "Do not log full driver personal data in application logs."
+            ],
+            integrationPoints: [
+              { system: "Pricing Module", responsibility: "Providing fee calculation (even when waiving, for audit integrity). Fallback to pricing_rules if snapshot is NULL." },
+              { system: "Audit Module", responsibility: "Writing WAIVED_PAYMENT audit record atomically inside the main transaction with full correlationId metadata." },
+              { system: "Exit Module", responsibility: "Independently reads payment/session status to determine if vehicle exit is permitted. NOT called directly from this feature." }
+            ],
+            uiPage: "/staff/waived-payment or /manager/waive",
+            uiComponents: "Waive confirmation modal: session summary, calculated fee display, mandatory reason input (10-500 chars), Confirm Waive button.",
+            uiStateLoading: "Disable 'Confirm Waive' button and show spinner while POST is in flight.",
+            uiStateEmpty: "N/A",
+            uiStateError: "Display specific error from reasonCode: 'PAYMENT_ALREADY_PENDING', 'LOST_CARD_PENDING', 'SESSION_ALREADY_COMPLETED', 'NO_PAYMENT_REQUIRED', 'FORBIDDEN'.",
+            uiStateSuccess: "Show waiver success with paymentId, waivedAt, waivedBy, waivedAmount, and reason. Gate exit handled separately by Exit Module.",
+            notes: "CRITICAL: Do NOT set payments.amount = 0. Always use calculatedFee for financial reporting integrity. Do NOT invoke Exit Module directly. Verify schema supports WAIVED status and NONE method before implementation.",
+            dependencies: [],
+            risks: [],
             endpoints: ["POST /api/core/payments/waive"],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/payments/waive"),
-            testCases: defaultApiTests("Waived Payment", ["Manager"], ["POST /api/core/payments/waive"]),
-            doneCriteria: defaultDoneCriteria("Waived Payment")
+            apiContracts: [
+              {
+                id: "contract-pay-waived-post",
+                name: "POST /api/core/payments/waive",
+                content: `Method: POST\nPath: /api/core/payments/waive\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: application/json\nRequest Body:\n{\n  "sessionId": 123456789,\n  "reason": "System error caused incorrect fee calculation"\n}\n\nResponse 200 OK (Waiver Successful):\n{\n  "success": true,\n  "data": {\n    "paymentId": 987654321,\n    "waivedAt": "2026-07-19T07:30:00Z",\n    "waivedBy": "staff-uuid-001",\n    "waivedAmount": 20000,\n    "status": "WAIVED"\n  }\n}\n\nResponse 409 (Online Payment Already Pending):\n{\n  "success": false,\n  "error": {\n    "code": "PAYMENT_ALREADY_PENDING",\n    "message": "An online payment is already pending for this session.",\n    "traceId": "0HL-1234567890"\n  }\n}\n\nResponse 422 (No Payment Required):\n{\n  "success": false,\n  "error": {\n    "code": "NO_PAYMENT_REQUIRED",\n    "message": "This session does not require payment.",\n    "traceId": "0HL-1234567890"\n  }\n}\n\nResponse 403 (Staff Unauthorized Reason):\n{\n  "success": false,\n  "error": {\n    "code": "FORBIDDEN",\n    "message": "Staff is not authorized to waive with this reason code.",\n    "traceId": "0HL-1234567890"\n  }\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-waive-happy-path",
+                title: "Verify successful waiver records waivedAmount and transitions session to WAIVED",
+                type: "integration",
+                precondition: "Active session with payment_required = true. Manager JWT. Valid reason (10-500 chars).",
+                steps: [
+                  "POST /api/core/payments/waive with valid sessionId and reason."
+                ],
+                expectedResult: "HTTP 200 OK. Payment WAIVED inserted with amount=calculatedFee. parking_sessions.status=WAIVED. Audit log written with full metadata including correlationId.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-payment-required-false",
+                title: "Verify 422 when payment_required is false",
+                type: "integration",
+                precondition: "Session is ACTIVE but payment_required = false.",
+                steps: [
+                  "POST /api/core/payments/waive."
+                ],
+                expectedResult: "HTTP 422. Error code: NO_PAYMENT_REQUIRED. No DB changes.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-missing-reason",
+                title: "Verify 400 when reason is empty or missing",
+                type: "api",
+                precondition: "Valid session. Request body has empty reason string.",
+                steps: [
+                  "POST /api/core/payments/waive with reason: ''."
+                ],
+                expectedResult: "HTTP 400 VALIDATION_ERROR.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-pending-payment",
+                title: "Verify 409 when online payment is in PENDING state",
+                type: "integration",
+                precondition: "Active session with an existing PENDING online payment.",
+                steps: [
+                  "POST /api/core/payments/waive."
+                ],
+                expectedResult: "HTTP 409. Error code: PAYMENT_ALREADY_PENDING.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-lost-card-active",
+                title: "Verify 422 when lost card resolution is pending",
+                type: "integration",
+                precondition: "Session has active lost_card_pending flag.",
+                steps: [
+                  "POST /api/core/payments/waive."
+                ],
+                expectedResult: "HTTP 422. Error code: LOST_CARD_PENDING.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-snapshot-null-fallback",
+                title: "Verify successful waiver when snapshot is NULL and fallback to PricingRule",
+                type: "integration",
+                precondition: "Session snapshot_day_price = NULL. PricingRule exists. Manager JWT.",
+                steps: [
+                  "POST /api/core/payments/waive with valid reason."
+                ],
+                expectedResult: "HTTP 200 OK. Fee calculated from pricing_rules. Audit log records correct waivedAmount.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-concurrent",
+                title: "Verify concurrent waiver by 2 users: 1 success, 1 fail",
+                type: "concurrency",
+                precondition: "Two requests for same sessionId simultaneously.",
+                steps: [
+                  "Dispatch two simultaneous POST requests for the same sessionId."
+                ],
+                expectedResult: "One request: HTTP 200 WAIVED. Other request: HTTP 409 or 422 SESSION_ALREADY_COMPLETED.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-staff-forbidden-reason",
+                title: "Verify Staff cannot waive with unauthorized reason code",
+                type: "api",
+                precondition: "Authenticated as Staff. Reason code is 'MANAGER_OVERRIDE' (not in Staff allowed list).",
+                steps: [
+                  "POST /api/core/payments/waive with reason='MANAGER_OVERRIDE' using Staff JWT."
+                ],
+                expectedResult: "HTTP 403 FORBIDDEN.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-reason-whitespace-only",
+                title: "Verify 400 when reason contains only whitespace",
+                type: "api",
+                precondition: "Request body has reason = '   ' (spaces only).",
+                steps: [
+                  "POST /api/core/payments/waive with reason='   '."
+                ],
+                expectedResult: "HTTP 400 VALIDATION_ERROR.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-reason-too-long",
+                title: "Verify 400 when reason exceeds 500 characters",
+                type: "api",
+                precondition: "reason string has 501 characters.",
+                steps: [
+                  "POST /api/core/payments/waive with 501-char reason."
+                ],
+                expectedResult: "HTTP 400 VALIDATION_ERROR.",
+                status: "not_started"
+              },
+              {
+                id: "tc-waive-role-access-matrix",
+                title: "Verify role access matrix: Manager passes any reason; Staff limited to approved codes",
+                type: "integration",
+                precondition: "Two accounts: Manager and Staff.",
+                steps: [
+                  "Manager: POST with reason='SPECIAL_VIP_EXEMPTION'. Expect 200.",
+                  "Staff: POST with reason='SYSTEM_ERROR'. Expect 200.",
+                  "Staff: POST with reason='SPECIAL_VIP_EXEMPTION'. Expect 403."
+                ],
+                expectedResult: "Manager succeeds for all reasons. Staff succeeds only for SYSTEM_ERROR, FREE_EVENT, PROMOTION.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-waive-session-transition", content: "Session status transition verified: ACTIVE -> WAIVED.", checked: true },
+              { id: "dc-waive-payment-created-once", content: "Payment entity created exactly once per waiver action. Duplicate prevention via locking and status re-check.", checked: true },
+              { id: "dc-waive-payment-required", content: "422 returned if payment_required == false or calculatedFee <= 0.", checked: true },
+              { id: "dc-waive-amount-not-zero", content: "payments.amount = calculatedFee. NEVER 0. Financial integrity preserved for reporting.", checked: true },
+              { id: "dc-waive-audit-complete", content: "Audit metadata complete: paymentId, requestId, correlationId, collectorId, waivedAmount, reason, OldStatus, NewStatus.", checked: true },
+              { id: "dc-waive-concurrent-prevention", content: "Concurrent waiver prevented via SELECT FOR UPDATE and re-check after lock.", checked: true },
+              { id: "dc-waive-pending-conflict", content: "Online payment conflict handled: 409 PAYMENT_ALREADY_PENDING if PENDING online payment exists.", checked: true },
+              { id: "dc-waive-rollback", content: "No partial updates after exception. Full IDbContextTransaction rollback verified.", checked: true },
+              { id: "dc-waive-reason-validation", content: "Reason trimmed, 10-500 chars, non-empty, non-whitespace. Staff restricted to approved reason codes.", checked: true },
+              { id: "dc-waive-tests", content: "All 11 test cases covering happy path, auth, concurrency, edge cases, and role matrix are defined.", checked: true }
+            ]
           },
           {
             id: "leaf-pay-reconcile",
@@ -10867,58 +12212,89 @@ AI IMPLEMENTATION DIRECTIVES:
             id: "leaf-inc-lost-card",
             title: "Lost Card Claim Management",
             type: "leaf_feature",
-            status: "in_progress",
-            priority: "medium",
             clients: ["Staff", "Manager"],
-            tags: ["incidents", "lost-card", "file-upload", "documents", "audit"],
-            summary: "Cung cấp các API quản lý tài liệu minh chứng đi kèm với mỗi sự vụ báo mất thẻ (Lost Card Case).",
-            objective: "Cung cấp các API quản lý tài liệu minh chứng (hồ sơ, hình ảnh CCCD, giấy tờ xe, biên bản cam kết) đi kèm với mỗi sự vụ báo mất thẻ (Lost Card Case). Các tài liệu này là điều kiện bắt buộc (bằng chứng pháp lý) để Staff/Manager xác minh chủ xe, áp phí phạt mất thẻ (LostCardFee), lập hóa đơn thanh toán và thực hiện mở cổng cho xe xuất bãi một cách hợp lệ.",
+            status: "ready",
+            priority: "high",
+            tags: ["lost-card", "incidents", "claim-management"],
+            summary: "Provide a complete workflow for staff to record and process lost parking card claims. The feature supports collecting customer information, uploading proof of vehicle ownership, calculating lost card penalties, and issuing a temporary or replacement ticket that allows the customer to exit the parking building safely.",
+            objective: "Implement transactional APIs and secure document management flows in .NET Core API to process lost parking card claims, blacklist cards, calculate penalties, and issue replacement tickets.",
             inScope: [
-              "Hỗ trợ tải lên tài liệu minh chứng dạng tệp tin đơn lẻ (POST) hoặc tải lên hàng loạt (POST Batch).",
-              "Lưu trữ metadata của tài liệu (tên file, đường dẫn lưu trữ, định dạng, dung lượng) vào cơ sở dữ liệu PostgreSQL.",
-              "Truy xuất danh sách tài liệu minh chứng đã tải lên theo từng vụ việc (caseId).",
-              "Cho phép xóa tài liệu minh chứng nếu upload nhầm trước khi vụ việc được đóng/hoàn tất."
+              "Record a lost parking card claim.",
+              "Capture customer and vehicle information.",
+              "Upload and manage supporting documents.",
+              "Calculate the lost card penalty fee.",
+              "Issue a temporary or replacement parking ticket.",
+              "Blacklist the lost parking card immediately after confirmation."
             ],
             outOfScope: [
-              "Dịch vụ lưu trữ vật lý tệp tin (File Storage Service như AWS S3, Azure Blob, hoặc Local Storage sẽ được gọi qua một Interface trừu tượng IStorageService).",
-              "Quy trình xử lý thanh toán thực tế cho phí mất thẻ (được quản lý bởi luồng Payment)."
+              "Integration with external identity verification services.",
+              "Payment gateway implementation.",
+              "Physical RFID card printing."
             ],
             permissions: [
-              { role: "Staff", permission: "Read/Write/Delete - Tiếp nhận yêu cầu tại quầy, trực tiếp chụp ảnh giấy tờ, upload tài liệu minh chứng và có thể xóa file vừa upload nếu có sai sót." },
-              { role: "Manager", permission: "Read/Write/Delete - Kiểm tra, đối chiếu hồ sơ minh chứng trước khi phê duyệt đóng hồ sơ hoặc miễn giảm phí phạt nếu có lý do chính đáng." }
+              { role: "Staff", permission: "Authorized to create, update, and process lost card claims." },
+              { role: "Manager", permission: "Authorized to review, supervise, and process lost card claims." }
             ],
             businessRules: [
-              "Case Validation: Chỉ cho phép upload hoặc thay đổi tài liệu đối với các vụ việc mất thẻ (LostCardCases) đang ở trạng thái xử lý (Pending, Processing). Một khi sự vụ đã đóng (Resolved, Closed), mọi hành vi thay đổi tài liệu (Thêm, Xóa) đều bị cấm hoàn toàn để bảo vệ tính toàn vẹn hồ sơ pháp lý.",
-              "File Validation Constraints: Chỉ chấp nhận các định dạng tệp tin: .jpg, .jpeg, .png, .pdf. Dung lượng tối đa cho mỗi file tải lên là 5MB.",
-              "Database Constraints: Bản ghi thông tin tài liệu phải liên kết chặt chẽ với bảng sự vụ mất thẻ thông qua khóa ngoại kiểu UUID."
+              "Lost card claims must include mandatory photo evidence of the vehicle registration and the driver's personal identification before processing.",
+              "A standardized lost card penalty fee must be applied according to the parking building's policy before the vehicle is allowed to exit.",
+              "Once a lost card claim is confirmed, the original parking card must immediately be marked as Blacklisted or Invalid to prevent fraudulent reuse.",
+              "Supporting documents must be stored securely and linked to the lost card claim."
             ],
-            dbExistingTables: ["LostCardCases", "AuditLogs"],
-            dbNewTablesSql: `CREATE TABLE LostCardDocuments (\n    Id UUID PRIMARY KEY,\n    CaseId UUID NOT NULL REFERENCES LostCardCases(Id) ON DELETE CASCADE,\n    DocumentType VARCHAR(50) NOT NULL, -- ID_Card, Vehicle_Registration, Handover_Report, Other\n    FileName VARCHAR(255) NOT NULL,\n    FileUrl VARCHAR(512) NOT NULL,\n    FileSize BIGINT NOT NULL,          -- Lưu dung lượng theo bytes để kiểm soát giới hạn\n    FileExtension VARCHAR(10) NOT NULL,-- .jpg, .png, .pdf\n    UploadedAt TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,\n    UploadedBy VARCHAR(100) NOT NULL\n);\n\n-- Index tối ưu tốc độ tìm kiếm tài liệu theo vụ việc\nCREATE INDEX IX_LostCardDocuments_CaseId ON LostCardDocuments(CaseId);`,
+            dbExistingTables: [
+              "lost_card_cases",
+              "parking_cards",
+              "users",
+              "attachments"
+            ],
+            dbNewTablesSql: "",
             dbRelationships: [
-              "Một sự vụ mất thẻ (LostCardCase) có quan hệ 1-Nhiều (1-n) với LostCardDocuments."
+              "Each lost card case may contain multiple supporting documents.",
+              "Supporting documents are associated with one lost card case.",
+              "Lost parking cards are linked to their original parking card records.",
+              "Card status must be updated immediately after a lost card claim is approved."
             ],
             validationRules: [
-              { field: "caseId", rule: "Phải là một UUID hợp lệ và tồn tại trong bảng LostCardCases.", errorMessage: "LOST_CARD_CASE_NOT_FOUND" },
-              { field: "caseState", rule: "Sự vụ phải có trạng thái khác Resolved hoặc Closed.", errorMessage: "CANNOT_MODIFY_CLOSED_CASE" },
-              { field: "file", rule: "Không được trống, định dạng phải là hình ảnh hoặc PDF, dung lượng tối đa 5MB.", errorMessage: "INVALID_FILE_FORMAT_OR_SIZE" },
-              { field: "documentType", rule: "Phải thuộc một trong các nhóm định nghĩa sẵn (ID_Card, Vehicle_Registration, Handover_Report, Other).", errorMessage: "INVALID_DOCUMENT_TYPE" }
+              { field: "vehicleRegistrationImage", rule: "Required", errorMessage: "Vehicle registration image is required." },
+              { field: "driverIdentificationImage", rule: "Required", errorMessage: "Driver identification image is required." },
+              { field: "Uploaded File Type", rule: "Must be a supported image format", errorMessage: "Unsupported file format." },
+              { field: "Uploaded File Size", rule: "Must not exceed configured size", errorMessage: "File size exceeds the allowed limit." }
             ],
             securityRules: [
-              "Role-Based Access Control (RBAC): Chỉ những tài khoản có Claim Role là Staff hoặc Manager mới có quyền truy cập và thao tác trên các endpoints này.",
-              "Malicious File Scan: Trước khi ghi file vào Storage, backend phải thực hiện kiểm tra phần mở rộng thực tế của tệp tin (MIME Type check) để ngăn chặn lỗ hổng tải lên mã độc (Web Shell, Executable files)."
+              "Validate role permissions.",
+              "Prevent unauthorized access.",
+              "Store uploaded documents securely.",
+              "Prevent direct public access to uploaded files.",
+              "Immediately blacklist lost cards after successful processing.",
+              "Do not log sensitive data."
             ],
             logEvents: [
-              "Tải lên tài liệu mới thành công (Ghi rõ caseId, documentId, fileName, uploadedBy).",
-              "Xóa tài liệu khỏi hệ thống (Ghi rõ documentId đã xóa và định danh người thực hiện)."
+              "Lost card claim creation.",
+              "Document upload and deletion.",
+              "Lost card approval.",
+              "Lost card penalty calculation.",
+              "Parking card blacklist operation.",
+              "Temporary/replacement ticket issuance."
             ],
             noLogEvents: [
-              "Nội dung nhị phân (binary content) của tệp tin, thông tin Token trong Header."
+              "Passwords.",
+              "Access tokens.",
+              "Refresh tokens.",
+              "Credit card details.",
+              "Personal identification document images."
             ],
             integrationPoints: [
-              { system: "Object Storage Service (S3/Azure/Local)", responsibility: "Tiếp nhận luồng byte dữ liệu từ .NET API, thực hiện lưu trữ vật lý và trả về URL truy cập công khai/bảo mật." }
+              { system: "Secure File Storage Service", responsibility: "Handle secure document uploads." },
+              { system: "Parking Card Management module", responsibility: "Update card status." },
+              { system: "Ticket Management module", responsibility: "Issue temporary or replacement tickets." }
             ],
-            uiComponents: "Page: /staff/incident-management/lost-cards/{caseId}. Components: Drag & Drop Zone cho batch upload; danh sách tệp hiển thị dạng Card/Thumbnail với Preview; nút Xóa kèm Pop-over xác nhận.",
-            uiStateSuccess: "Processing State: Progress bar theo % cho file lớn đang upload. Success/Error: Toast notification chi tiết (ví dụ: 'Đã tải lên thành công 3/3 file' hoặc 'File xxx.exe không đúng định dạng').",
+            uiPage: "/staff/lost-cards",
+            uiComponents: "Lost Card Claim Form, File Upload Dropzone, Penalty Calculator Display, Replacement Ticket Action Panel",
+            uiStateIdle: "Display lost card claim information and uploaded documents.",
+            uiStateLoading: "Display upload progress while files are being uploaded.",
+            uiStateSuccess: "Display confirmation after successful processing.",
+            uiStateEmpty: "Prompt staff to upload required supporting documents.",
+            uiStateError: "Display validation errors or upload failures.",
             endpoints: [
               "POST /api/core/lost-cards/{caseId}/documents",
               "POST /api/core/lost-cards/{caseId}/documents/batch",
@@ -10928,93 +12304,442 @@ AI IMPLEMENTATION DIRECTIVES:
             ownerService: ".NET Core API",
             apiContracts: [
               {
-                id: "contract-lost-card-upload-single",
+                id: "contract-post-lost-cards-documents",
                 name: "POST /api/core/lost-cards/{caseId}/documents",
-                content: `Method: POST\nPath: /api/core/lost-cards/{caseId}/documents\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: multipart/form-data\nRequest Body:\n  file: [Binary File]\n  documentType: "ID_Card" (ID_Card, Vehicle_Registration, Handover_Report, Other)\nResponse 201 Created:\n{\n  "success": true,\n  "message": "Document uploaded successfully.",\n  "data": {\n    "documentId": "4a1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb7a",\n    "fileName": "cccd_mat_truoc.jpg",\n    "fileUrl": "https://storage.parking.com/lost-cards/4a1deb4d/cccd_mat_truoc.jpg"\n  }\n}`
-              },
-              {
-                id: "contract-lost-card-upload-batch",
-                name: "POST /api/core/lost-cards/{caseId}/documents/batch",
-                content: `Method: POST\nPath: /api/core/lost-cards/{caseId}/documents/batch\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: multipart/form-data\nRequest Body:\n  files: [Binary File 1, Binary File 2, ...]\n  documentTypes: ["ID_Card", "Vehicle_Registration", ...]\nResponse 201 Created:\n{\n  "success": true,\n  "message": "Batch documents uploaded successfully.",\n  "data": [\n    {\n      "documentId": "4a1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb7a",\n      "fileName": "cccd_mat_truoc.jpg",\n      "fileUrl": "https://storage.parking.com/lost-cards/4a1deb4d/cccd_mat_truoc.jpg"\n    },\n    {\n      "documentId": "5c1fdf4e-4b7e-5cad-8cee-3c0e8c4dda8b",\n      "fileName": "cavet_xe.jpg",\n      "fileUrl": "https://storage.parking.com/lost-cards/4a1deb4d/cavet_xe.jpg"\n    }\n  ]\n}`
-              },
-              {
-                id: "contract-lost-card-get-docs",
-                name: "GET /api/core/lost-cards/{caseId}/documents",
-                content: `Method: GET\nPath: /api/core/lost-cards/{caseId}/documents\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "data": [\n    {\n      "documentId": "4a1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb7a",\n      "documentType": "ID_Card",\n      "fileName": "cccd_mat_truoc.jpg",\n      "fileSize": 1542000,\n      "fileUrl": "https://storage.parking.com/lost-cards/4a1deb4d/cccd_mat_truoc.jpg",\n      "uploadedBy": "staff_nguyen_van_a",\n      "uploadedAt": "2026-07-17T10:30:00Z"\n    }\n  ]\n}`
-              },
-              {
-                id: "contract-lost-card-delete-doc",
-                name: "DELETE /api/core/lost-cards/{caseId}/documents/{documentId}",
-                content: `Method: DELETE\nPath: /api/core/lost-cards/{caseId}/documents/4a1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb7a\nHeaders:\n  Authorization: Bearer <token>\nResponse 200 OK:\n{\n  "success": true,\n  "message": "Document deleted successfully."\n}`
+                content: "Method: POST\nPath: /api/core/lost-cards/{caseId}/documents\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: multipart/form-data\nRequest:\n  Files:\n    - vehicleRegistrationImage\n    - driverIdentificationImage\nResponse:\n  status: 200 OK\n  data:\n  {\n    \"success\": true,\n    \"message\": \"Documents uploaded successfully.\"\n  }"
               }
             ],
             testCases: [
               {
-                id: "tc-lost-card-batch-upload-success",
-                title: "Verify Staff can upload multiple documents using Batch API successfully",
-                type: "integration",
-                precondition: "Sự vụ mất thẻ có CaseId = 32b6e1b2-1b1a-4d2a-89aa-5561a317bf01 đang ở trạng thái Pending.",
+                id: "tc-lost-card-staff-success",
+                title: "Verify authorized client (Staff) can access \"Lost Card Claim Management\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Staff",
                 steps: [
                   "Authenticate user as Staff.",
-                  "Tạo HTTP POST Multipart request gửi kèm 2 file ảnh (goc_chup_1.jpg, goc_chup_2.png) tới endpoint /api/core/lost-cards/{caseId}/documents/batch."
+                  "Invoke endpoint: GET /api/core/lost-cards/{caseId}/documents.",
+                  "Check response code is 200 OK."
                 ],
-                expectedResult: "HTTP 201 Created. Danh sách trả về chứa 2 bản ghi tài liệu mới có mã UUID và đường dẫn URL lưu trữ đầy đủ.",
+                expectedResult: "Request succeeds and returns the associated documents.",
                 status: "not_started"
               },
               {
-                id: "tc-lost-card-upload-closed-case",
-                title: "Verify upload is rejected when Lost Card Case is already Closed",
+                id: "tc-lost-card-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing \"Lost Card Claim Management\"",
                 type: "api",
-                precondition: "Sự vụ mất thẻ có trạng thái Closed.",
+                precondition: "User is anonymous or lacks required role.",
                 steps: [
-                  "Gửi POST request upload tệp tin lên vụ việc đã đóng đó."
+                  "Attempt to invoke endpoint without authorization."
                 ],
-                expectedResult: "HTTP 400 Bad Request kèm mã lỗi CANNOT_MODIFY_CLOSED_CASE. Trạng thái dữ liệu không bị biến động.",
+                expectedResult: "Returns 401 Unauthorized or 403 Forbidden.",
                 status: "not_started"
               },
               {
-                id: "tc-lost-card-invalid-file",
-                title: "Verify upload rejects files exceeding 5MB limit or having invalid extension",
-                type: "unit",
-                precondition: "Người dùng đăng nhập quyền Staff.",
-                steps: [
-                  "Gửi một tệp tin dung lượng 7MB hoặc tệp tin có tên trojan.exe tới endpoint upload."
-                ],
-                expectedResult: "HTTP 400 Bad Request kèm thông báo lỗi INVALID_FILE_FORMAT_OR_SIZE.",
+                id: "tc-lost-card-mandatory-docs",
+                title: "Verify mandatory supporting documents are required",
+                type: "integration",
+                expectedResult: "Processing is rejected when either the driver's ID or vehicle registration image is missing.",
+                status: "not_started"
+              },
+              {
+                id: "tc-lost-card-blacklist",
+                title: "Verify lost card is blacklisted after claim approval",
+                type: "integration",
+                expectedResult: "Parking card status changes to Blacklisted or Invalid immediately after approval.",
+                status: "not_started"
+              },
+              {
+                id: "tc-lost-card-penalty-calc",
+                title: "Verify standardized penalty fee is calculated",
+                type: "integration",
+                expectedResult: "System calculates the correct penalty according to the configured policy before allowing exit.",
+                status: "not_started"
+              },
+              {
+                id: "tc-lost-card-replacement-ticket",
+                title: "Verify replacement ticket can be issued",
+                type: "integration",
+                expectedResult: "System successfully issues a temporary or replacement parking ticket after claim completion.",
                 status: "not_started"
               }
             ],
             doneCriteria: [
-              { id: "dc-lost-card-contract", content: "API contract is documented in this node.", checked: true },
-              { id: "dc-lost-card-roles", content: "Required roles (Staff, Manager) are assigned and validated.", checked: true },
-              { id: "dc-lost-card-business-rules", content: "Business rules (strictly block uploads/deletions on Closed/Resolved cases) are enforced in DB/Service layer.", checked: true },
-              { id: "dc-lost-card-file-validation", content: "File validation logic (MIME type check, max 5MB size) works correctly.", checked: true },
-              { id: "dc-lost-card-responses", content: "Success and error responses are standard and do not leak system path traces.", checked: true },
-              { id: "dc-lost-card-db-model", content: "Database model mapping for LostCardDocuments using UUID PK is successfully designed.", checked: true },
-              { id: "dc-lost-card-audit", content: "Audit entries are recorded when documents are added or removed.", checked: true }
-            ],
-            notes: "Before coding:\nInspect the existing .NET Core API structure (specifically, where the File Storage layer is abstracted via IStorageService).\nUse a custom validation filter or FluentValidation to enforce file extension limits before saving data.\nEnsure that file upload processes are stream-based where possible to minimize memory allocation on the API host for large payloads.\nImplement atomic DB transactions: The file metadata should only be written to PostgreSQL after the physical file storage upload succeeds. If the DB save fails, trigger a rollback task to delete the uploaded file from the storage.\nCheck and run existing test projects. Add newly specified tests under the LostCardClaim directory.\nVerify code compiles without warnings and run all tests before completing the task."
+              { id: "dc-lost-card-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-lost-card-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-lost-card-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-lost-card-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-lost-card-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-lost-card-upload", content: "Secure document upload is implemented.", checked: false },
+              { id: "dc-lost-card-validate-docs", content: "Mandatory supporting documents are validated.", checked: false },
+              { id: "dc-lost-card-blacklist-action", content: "Lost parking cards are immediately blacklisted after approval.", checked: false },
+              { id: "dc-lost-card-penalty-calc", content: "Standardized lost card penalties are calculated correctly.", checked: false },
+              { id: "dc-lost-card-replacement-issue", content: "Temporary or replacement tickets can be issued.", checked: false },
+              { id: "dc-lost-card-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-lost-card-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false },
+              { id: "dc-lost-card-secure-fee", content: "Lost card documentation and replacement fee details are managed securely.", checked: false }
+            ]
           },
           {
             id: "leaf-inc-mismatch",
             title: "Plate Mismatch Case",
             type: "leaf_feature",
             clients: ["Staff"],
-            endpoints: [],
+            status: "ready",
+            priority: "high",
+            tags: ["lost-card", "incidents", "plate-mismatch"],
+            summary: "Handle scenarios where the Automatic License Plate Recognition (ALPR) system detects a mismatch between the license plate captured at vehicle exit and the plate recorded during vehicle entry for the same parking card. The feature enables staff to manually compare entry and exit camera snapshots, verify the incident, and approve or reject the vehicle exit while maintaining a complete audit trail.",
+            objective: "Implement transactional verification APIs in .NET Core API that support displaying mismatch cases, viewing snapshots side-by-side, verification decision processing, and permanent exception report logging.",
+            inScope: [
+              "Detect plate mismatch incidents generated by the ALPR system.",
+              "Display entry and exit vehicle snapshots for manual comparison.",
+              "Allow staff to approve or reject the vehicle exit.",
+              "Record verification reason and staff information.",
+              "Generate audit records for every manual verification.",
+              "Automatically create an incident record for manager reporting after approval."
+            ],
+            outOfScope: [
+              "Improvements to the ALPR recognition algorithm.",
+              "Integration with external government vehicle databases."
+            ],
+            permissions: [
+              { role: "Staff", permission: "Authorized to review, verify, approve, or reject plate mismatch cases." }
+            ],
+            businessRules: [
+              "Staff must manually verify entry and exit vehicle snapshots before approving a plate mismatch case.",
+              "Staff must provide a written reason or select a predefined reason (such as 'Muddy Plate', 'ALPR Misread') when approving a mismatch.",
+              "Every manual verification must permanently record the staff ID, verification timestamp, decision, and reason.",
+              "Every approved plate mismatch must automatically generate an incident entry for the Manager's daily exception report."
+            ],
+            dbExistingTables: [
+              "parking_sessions",
+              "parking_cards",
+              "entry_exit_images",
+              "users",
+              "incident_cases"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Each plate mismatch case belongs to one parking session.",
+              "Entry and exit camera images are linked to the corresponding parking session.",
+              "Manual verification records are associated with the resolving staff member.",
+              "Approved incidents are included in the manager's daily incident report."
+            ],
+            validationRules: [
+              { field: "reason", rule: "Required when approving a mismatch", errorMessage: "Approval reason is required." },
+              { field: "caseId", rule: "Must exist", errorMessage: "Plate mismatch case does not exist." },
+              { field: "decision", rule: "Must be Approve or Reject", errorMessage: "Invalid verification decision." }
+            ],
+            securityRules: [
+              "Validate role permissions.",
+              "Prevent unauthorized access.",
+              "Only authorized staff may approve or reject mismatch cases.",
+              "Store verification logs securely for auditing.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Plate mismatch detection.",
+              "Staff opens a mismatch case.",
+              "Manual verification performed.",
+              "Approval or rejection decision.",
+              "Verification reason.",
+              "Staff ID and timestamp.",
+              "Automatic creation of manager incident report entry."
+            ],
+            noLogEvents: [
+              "Passwords.",
+              "Access tokens.",
+              "Refresh tokens.",
+              "Credit card details."
+            ],
+            integrationPoints: [
+              { system: "ALPR Recognition Service", responsibility: "Feed plate mismatch detection events." },
+              { system: "Camera Image Storage Service", responsibility: "Retrieve and store entry and exit snapshots." },
+              { system: "Manager Daily Exception Report module", responsibility: "Include approved mismatch cases." }
+            ],
+            uiPage: "/staff/mismatches",
+            uiComponents: "Mismatch Incidents Table, Snapshot Comparison Tool, Decision Control Dialog, Verification Form",
+            uiStateIdle: "Display detected mismatch cases awaiting review.",
+            uiStateLoading: "Show loading indicator while retrieving images.",
+            uiStateSuccess: "Display confirmation after approval or rejection.",
+            uiStateEmpty: "Display 'No plate mismatch cases found.'",
+            uiStateError: "Display validation or processing errors.",
+            endpoints: [
+              "GET /api/core/incidents/plate-mismatches",
+              "GET /api/core/incidents/plate-mismatches/{caseId}",
+              "POST /api/core/incidents/plate-mismatches/{caseId}/approve",
+              "POST /api/core/incidents/plate-mismatches/{caseId}/reject"
+            ],
             ownerService: ".NET Core API",
-            testCases: defaultApiTests("Plate Mismatch Case", ["Staff"], []),
-            doneCriteria: defaultDoneCriteria("Plate Mismatch Case")
+            apiContracts: [
+              {
+                id: "contract-post-mismatches-approve",
+                name: "POST /api/core/incidents/plate-mismatches/{caseId}/approve",
+                content: "Method: POST\nPath: /api/core/incidents/plate-mismatches/{caseId}/approve\nHeaders:\n  Authorization: Bearer <token>\nRequest:\n{\n  \"reason\": \"ALPR Misread\"\n}\nResponse:\n  status: 200 OK\n{\n  \"success\": true,\n  \"message\": \"Plate mismatch case approved successfully.\"\n}"
+              },
+              {
+                id: "contract-post-mismatches-reject",
+                name: "POST /api/core/incidents/plate-mismatches/{caseId}/reject",
+                content: "Method: POST\nPath: /api/core/incidents/plate-mismatches/{caseId}/reject\nHeaders:\n  Authorization: Bearer <token>\nRequest:\n{\n  \"reason\": \"Vehicle information does not match.\"\n}\nResponse:\n  status: 200 OK\n{\n  \"success\": true,\n  \"message\": \"Plate mismatch case rejected successfully.\"\n}"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-mismatch-staff-success",
+                title: "Verify authorized client (Staff) can access \"Plate Mismatch Case\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Staff.",
+                steps: [
+                  "Authenticate user as Staff.",
+                  "Retrieve a plate mismatch case."
+                ],
+                expectedResult: "Request succeeds and returns the case details.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mismatch-unauthorized",
+                title: "Verify unauthorized role is rejected when accessing \"Plate Mismatch Case\"",
+                type: "api",
+                precondition: "User is anonymous or lacks required role.",
+                steps: [
+                  "Attempt to access the feature without authorization."
+                ],
+                expectedResult: "Returns 401 Unauthorized or 403 Forbidden.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mismatch-reason-required",
+                title: "Verify approval requires a reason",
+                type: "integration",
+                expectedResult: "System rejects approval when no reason is provided.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mismatch-audit-log",
+                title: "Verify manual verification is permanently logged",
+                type: "integration",
+                expectedResult: "Audit log contains staff ID, timestamp, decision, and reason.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mismatch-manager-report",
+                title: "Verify approved mismatch is included in manager report",
+                type: "integration",
+                expectedResult: "Approved case automatically appears in the manager's daily exception report.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mismatch-snapshot-display",
+                title: "Verify entry and exit snapshots are displayed correctly",
+                type: "ui",
+                expectedResult: "Staff can compare entry and exit images side-by-side before making a decision.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-mismatch-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-mismatch-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-mismatch-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-mismatch-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-mismatch-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-mismatch-side-by-side", content: "Staff can compare entry and exit snapshots side-by-side.", checked: false },
+              { id: "dc-mismatch-reason-check", content: "Approval requires a reason.", checked: false },
+              { id: "dc-mismatch-audit", content: "Manual verification events are permanently audited.", checked: false },
+              { id: "dc-mismatch-staff-record", content: "Staff ID, timestamp, and decision are recorded.", checked: false },
+              { id: "dc-mismatch-manager-sync", content: "Approved mismatches automatically appear in the manager's daily incident report.", checked: false },
+              { id: "dc-mismatch-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-mismatch-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false }
+            ]
           },
           {
             id: "leaf-inc-override",
             title: "Manual Staff Override",
             type: "leaf_feature",
             clients: ["Staff", "Manager"],
-            endpoints: [],
+            status: "ready",
+            priority: "medium",
+            tags: ["lost-card", "incidents", "manual-override"],
+            summary: "Provide a fail-safe mechanism that allows authorized Staff or Managers to manually open a barrier gate and manually record vehicle entry or exit events when critical system failures, sensor malfunctions, or completely unreadable parking cards prevent the normal parking workflow from operating.",
+            objective: "Implement transaction-safe manual override APIs in .NET Core API that support opening barriers, manual entry/exit registration, operator auditing, Manager approval workflow integration, and secure hardware controller commands.",
+            inScope: [
+              "Manually open the barrier gate.",
+              "Manually record vehicle entry events.",
+              "Manually record vehicle exit events.",
+              "Record complete audit information for every override operation.",
+              "Support Manager review workflow for Staff overrides.",
+              "Secure communication with the local hardware controller / IoT gateway."
+            ],
+            outOfScope: [
+              "Automatic gate operation.",
+              "Normal ALPR or RFID-based parking workflow.",
+              "External hardware maintenance."
+            ],
+            permissions: [
+              { role: "Staff", permission: "Authorized to perform manual overrides. Actions require Manager review within 24 hours." },
+              { role: "Manager", permission: "Authorized to perform manual overrides. Actions are automatically approved but fully audited." }
+            ],
+            businessRules: [
+              "Manual override operations bypass the normal parking workflow only in exceptional situations.",
+              "Staff manual overrides must be flagged for mandatory Manager review within 24 hours.",
+              "Manager manual overrides are automatically approved but remain fully auditable.",
+              "Every manual override must permanently record the exact timestamp, gate ID, operator ID, action type, and execution result.",
+              "Manual override audit records must be immutable and cannot be modified after creation."
+            ],
+            dbExistingTables: [
+              "parking_sessions",
+              "gates",
+              "users",
+              "audit_logs",
+              "incident_cases"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Every manual override belongs to one gate.",
+              "Every manual override is linked to the authenticated Staff or Manager.",
+              "Manual overrides create immutable audit log records.",
+              "Staff overrides generate pending Manager review records."
+            ],
+            validationRules: [
+              { field: "gateId", rule: "Required and must exist", errorMessage: "Gate does not exist." },
+              { field: "reason", rule: "Required", errorMessage: "Override reason is required." },
+              { field: "licensePlate", rule: "Required for manual entry/exit", errorMessage: "License plate is required." }
+            ],
+            securityRules: [
+              "Validate role permissions.",
+              "Prevent unauthorized access.",
+              "Secure communication with the local hardware controller / IoT gateway.",
+              "Only Staff and Managers may perform manual overrides.",
+              "Audit records must be immutable.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Barrier manually opened.",
+              "Manual vehicle entry.",
+              "Manual vehicle exit.",
+              "Override reason.",
+              "Executing Staff/Manager ID.",
+              "Gate ID.",
+              "Exact execution timestamp.",
+              "Manager review result.",
+              "Hardware communication result."
+            ],
+            noLogEvents: [
+              "Passwords.",
+              "Access tokens.",
+              "Refresh tokens.",
+              "Credit card details."
+            ],
+            integrationPoints: [
+              { system: "Local Hardware Controller", responsibility: "Receive barrier open signals." },
+              { system: "IoT Gateway", responsibility: "Relay barrier control actions." },
+              { system: "Gate Controller Service", responsibility: "Execute barrier state overrides." },
+              { system: "Audit Log Export module", responsibility: "Expose manual overrides history." },
+              { system: "Manager Review module", responsibility: "Track pending approvals for Staff overrides." }
+            ],
+            uiPage: "/staff/overrides",
+            uiComponents: "Manual Override Control Dashboard, Gate Selector, Reason Textarea, Confirmation Dialog, Process Progress Spinner",
+            uiStateIdle: "Display manual override controls.",
+            uiStateLoading: "Display progress while sending commands to the gate controller.",
+            uiStateSuccess: "Display confirmation after successful override.",
+            uiStateEmpty: "No override history available.",
+            uiStateError: "Display hardware communication or validation errors.",
+            endpoints: [
+              "POST /api/core/manual-overrides/barrier/open",
+              "POST /api/core/manual-overrides/entry",
+              "POST /api/core/manual-overrides/exit",
+              "GET /api/core/manual-overrides/{overrideId}"
+            ],
             ownerService: ".NET Core API",
-            testCases: defaultApiTests("Manual Staff Override", ["Staff"], []),
-            doneCriteria: defaultDoneCriteria("Manual Staff Override")
-          }
+            apiContracts: [
+              {
+                id: "contract-post-manual-overrides-barrier-open",
+                name: "POST /api/core/manual-overrides/barrier/open",
+                content: "Method: POST\nPath: /api/core/manual-overrides/barrier/open\nHeaders:\n  Authorization: Bearer <token>\nRequest:\n{\n  \"gateId\": \"gate-01\",\n  \"reason\": \"RFID reader failure\"\n}\nResponse:\n  status: 200 OK\n{\n  \"success\": true,\n  \"message\": \"Barrier opened successfully.\",\n  \"data\": {\n    \"overrideId\": \"ovr-001\",\n    \"status\": \"Completed\"\n  }\n}"
+              },
+              {
+                id: "contract-post-manual-overrides-entry",
+                name: "POST /api/core/manual-overrides/entry",
+                content: "Method: POST\nPath: /api/core/manual-overrides/entry\nRequest:\n{\n  \"gateId\": \"gate-01\",\n  \"licensePlate\": \"51A-12345\",\n  \"reason\": \"Card unreadable\"\n}"
+              },
+              {
+                id: "contract-post-manual-overrides-exit",
+                name: "POST /api/core/manual-overrides/exit",
+                content: "Method: POST\nPath: /api/core/manual-overrides/exit\nRequest:\n{\n  \"gateId\": \"gate-02\",\n  \"licensePlate\": \"51A-12345\",\n  \"reason\": \"System offline\"\n}"
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-override-staff-success",
+                title: "Verify authorized client (Staff) can access \"Manual Staff Override\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Staff.",
+                steps: [
+                  "Authenticate as Staff.",
+                  "Submit a manual barrier open request."
+                ],
+                expectedResult: "Override request succeeds and audit record is created.",
+                status: "not_started"
+              },
+              {
+                id: "tc-override-manager-success",
+                title: "Verify authorized client (Manager) can access \"Manual Staff Override\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Manager.",
+                steps: [
+                  "Authenticate as Manager.",
+                  "Submit a manual barrier open request."
+                ],
+                expectedResult: "Override succeeds and is automatically approved.",
+                status: "not_started"
+              },
+              {
+                id: "tc-override-unauthorized",
+                title: "Verify unauthorized role is rejected",
+                type: "api",
+                precondition: "User lacks permission.",
+                steps: [
+                  "Attempt to execute a manual override."
+                ],
+                expectedResult: "Returns 401 Unauthorized or 403 Forbidden.",
+                status: "not_started"
+              },
+              {
+                id: "tc-override-staff-review",
+                title: "Verify Staff override requires Manager review",
+                type: "integration",
+                expectedResult: "Override is flagged for Manager review within 24 hours.",
+                status: "not_started"
+              },
+              {
+                id: "tc-override-immutable-audit",
+                title: "Verify immutable audit log is created",
+                type: "integration",
+                expectedResult: "Timestamp, gate ID, operator ID, reason, and result are permanently stored.",
+                status: "not_started"
+              },
+              {
+                id: "tc-override-hardware-signal",
+                title: "Verify hardware controller receives override command",
+                type: "integration",
+                expectedResult: "Gate controller successfully receives and executes the open command.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-override-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-override-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-override-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-override-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-override-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-override-barrier-control", content: "Manual barrier control is implemented.", checked: false },
+              { id: "dc-override-entry-exit-logging", content: "Manual entry and exit logging is implemented.", checked: false },
+              { id: "dc-override-hardware-integration", content: "Secure integration with the hardware controller is implemented.", checked: false },
+              { id: "dc-override-staff-review", content: "Staff overrides require Manager review within 24 hours.", checked: false },
+              { id: "dc-override-manager-auto", content: "Manager overrides are automatically approved.", checked: false },
+              { id: "dc-override-immutable-audit", content: "Immutable audit logs record timestamp, gate ID, operator ID, action, and reason.", checked: false },
+              { id: "dc-override-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-override-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false }
+            ]
+          },
         ]
       },
 

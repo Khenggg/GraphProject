@@ -507,12 +507,15 @@ export function migrateParkingTaxonomy(root: FeatureNode): FeatureNode {
   get("cat-public").title = "Public Information";
   mergeAndRemove("leaf-pub-price", "leaf-price-public");
   mergeAndRemove("leaf-pub-avail", "leaf-struct-avail");
-  group("cat-public", "feat-public-information-access", "Public Information Access", "Anonymous access to parking information, pricing, rules, and availability.");
+  const pubAccess = group("cat-public", "feat-public-information-access", "Public Information Access", "Anonymous access to parking information, pricing, rules, and availability.");
+  pubAccess.status = "ready";
   moveMany("feat-public-information-access", ["leaf-pub-info", "leaf-pub-price", "leaf-pub-rules", "leaf-pub-avail"]);
 
-  group("cat-feedback", "feat-feedback-submission", "Feedback Submission", "Driver feedback submission flow.");
+  const feedSubmission = group("cat-feedback", "feat-feedback-submission", "Feedback Submission", "Driver feedback submission flow.");
+  feedSubmission.status = "ready";
   moveMany("feat-feedback-submission", ["leaf-feed-submit"]);
-  group("cat-feedback", "feat-feedback-administration", "Feedback Administration", "Review and manage submitted feedback.");
+  const feedAdmin = group("cat-feedback", "feat-feedback-administration", "Feedback Administration", "Review and manage submitted feedback.");
+  feedAdmin.status = "ready";
   moveMany("feat-feedback-administration", ["leaf-feed-list", "leaf-feed-detail", "leaf-feed-update"]);
 
   get("cat-notification").title = "Notifications";

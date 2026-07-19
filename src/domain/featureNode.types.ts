@@ -39,7 +39,7 @@ export interface ContractField {
 export interface TestCase {
   id: string;
   title: string;
-  type: "unit" | "integration" | "api" | "e2e" | "manual";
+  type: "unit" | "integration" | "api" | "e2e" | "manual" | "concurrency" | "ui";
   precondition?: string;
   steps?: string[];
   expectedResult: string;
@@ -99,6 +99,7 @@ export interface FeatureNode {
   integrationPoints?: { system: string; responsibility: string }[];
   uiPage?: string;
   uiComponents?: string;
+  uiStateIdle?: string;
   uiStateLoading?: string;
   uiStateEmpty?: string;
   uiStateError?: string;
