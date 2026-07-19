@@ -5434,12 +5434,181 @@ AI IMPLEMENTATION DIRECTIVES:
             id: "leaf-mp-renew",
             title: "Renew Monthly Pass",
             type: "leaf_feature",
+            status: "ready",
+            priority: "high",
             clients: ["Driver", "Staff"],
+            tags: ["monthly-passes", "renewal", "transaction", "pricing"],
+            summary: "Build a function to extend the validity period of a MonthlyPass. The objective is to maintain continuous service for users, adhere to current financial policies (Receipt generation) and parking management operations.",
+            objective: "Ensure data integrity through atomic transactions, optimistic concurrency control (xmin), calculations via PricingRule, Receipt generation, and AuditLog persistence, while enforcing strict ownership checking for Driver role.",
+            inScope: [
+              "Validity extension logic.",
+              "State condition validation.",
+              "Pricing calculation via PricingRule.",
+              "Receipt generation.",
+              "AuditLog persistence."
+            ],
+            outOfScope: [
+              "Direct payment gateway integration (handled by Payment Service).",
+              "Automated notifications (Email/Push).",
+              "Automated renewal (Cron job)."
+            ],
+            permissions: [
+              { role: "Driver", permission: "Renew their own pass. Requires ownership verification (IDOR Check: Pass.UserId == CurrentUserId)." },
+              { role: "Staff", permission: "Renew any pass to support customers. No ownership restrictions." },
+              { role: "System", permission: "Automatically validate rules and log actions into AuditLog." }
+            ],
+            businessRules: [
+              "Status eligibility: ACTIVE Pass is allowed. EXPIRED Pass is allowed only if within the Grace Period (maximum X days post-expiration - Inspect MonthlyPassPolicy). SUSPENDED/CANCELED Pass is blocked.",
+              "Pending Renewal Check: Block renewal if a PENDING request already exists.",
+              "Pricing Rules: Renewal price is derived from PricingRule based on VehicleType.",
+              "Concurrency Constraint: Mandatory use of xmin (RowVersion) for optimistic concurrency control. Reject transaction with 409 Conflict if modified.",
+              "Payment/Receipt Linkage: Every successful renewal must generate one Receipt record. If Receipt creation fails, perform a full transaction rollback."
+            ],
+            dbExistingTables: ["monthly_passes", "receipts", "audit_logs"],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "receipts: Foreign key monthly_pass_id references monthly_passes(id).",
+              "audit_logs: RecordId relates to monthly_passes(id) or receipts(id)."
+            ],
+            validationRules: [
+              { field: "durationMonths", rule: "Must be between 1 and 12", errorMessage: "DURATION_OUT_OF_RANGE" },
+              { field: "concurrencyToken", rule: "Must be provided and not empty", errorMessage: "CONCURRENCY_TOKEN_REQUIRED" },
+              { field: "status", rule: "Must be ACTIVE, or EXPIRED within grace period", errorMessage: "PASS_NOT_ELIGIBLE_FOR_RENEWAL" }
+            ],
+            securityRules: [
+              "IDOR Verification: Strict validation of UserId in MonthlyPass against JWT UserContext for Driver role. Staff bypassed.",
+              "Mass Assignment: Never bind request payloads directly to EF Core Entities."
+            ],
+            logEvents: [
+              "Log renewal transaction detailing duration, amount, new expiry date, actor details, and old/new states in AuditLog."
+            ],
+            noLogEvents: [
+              "Never leak sensitive user credentials, cryptographic hashes, or system configuration keys."
+            ],
+            integrationPoints: [
+              { system: "Pricing Service", responsibility: "Computing renewal cost dynamically based on vehicle type and duration." },
+              { system: "Payment/Receipt System", responsibility: "Recording official payment receipts for accounting." }
+            ],
+            uiPage: "/driver/monthly-passes or /staff/renewals",
+            uiComponents: "Confirmation dialog showing pricing calculation, current expiration date, calculated new expiration date, and 'Renew Now' action button (which shows loading spinner and is disabled while processing).",
+            uiStateLoading: "Disable submit button, show loading spinner over confirm modal.",
+            uiStateEmpty: "N/A",
+            uiStateError: "Show clear validation warnings or error banners like: 'Pass expired beyond grace period, please contact support' or 'Record was modified by another operator. Please refresh and try again.'",
+            uiStateSuccess: "Show success check animation, display transaction details (receipt number, new expiry date) and auto-close dialog.",
+            notes: "Grace Period policy checks are loaded dynamically. Database concurrency uses PostgreSQL xmin column mapped in EF Core.",
+            dependencies: [],
+            risks: [],
             endpoints: ["POST /api/core/monthly-passes/{id}/renew"],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/monthly-passes/{id}/renew"),
-            testCases: defaultApiTests("Renew Monthly Pass", ["Driver"], ["POST /api/core/monthly-passes/{id}/renew"]),
-            doneCriteria: defaultDoneCriteria("Renew Monthly Pass")
+            apiContracts: [
+              {
+                id: "contract-mpr-post",
+                name: "POST /api/core/monthly-passes/{id}/renew",
+                content: `Method: POST\nPath: /api/core/monthly-passes/3fa85f64-5717-4562-b3fc-2c963f66afa6/renew\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: application/json\nRequest Body:\n{\n  "durationMonths": 3,\n  "concurrencyToken": "AAAAAAAAB9o="\n}\nResponse 200 OK:\n{\n  "success": true,\n  "data": {\n    "monthlyPassId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",\n    "newExpiryDate": "2026-10-31T23:59:59Z",\n    "receiptId": "8fa85f64-5717-4562-b3fc-2c963f66afa9",\n    "amount": 900000.00\n  }\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-mpr-success-driver",
+                title: "Verify Driver can successfully renew active pass",
+                type: "integration",
+                precondition: "Pass is owned by current user and is ACTIVE.",
+                steps: [
+                  "Dispatch POST request to /renew with durationMonths = 3."
+                ],
+                expectedResult: "HTTP 200 OK. Expiry date updated, Receipt generated, and AuditLog entry created.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mpr-success-staff",
+                title: "Verify Staff can renew expired pass within grace period",
+                type: "integration",
+                precondition: "Pass is EXPIRED but within allowed grace period.",
+                steps: [
+                  "Staff dispatches POST request to /renew with durationMonths = 1."
+                ],
+                expectedResult: "HTTP 200 OK. Pass transitioned to ACTIVE starting from old expiry.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mpr-invalid-role",
+                title: "Verify anonymous or unauthorized role request is rejected",
+                type: "api",
+                precondition: "Invalid or missing token.",
+                steps: [
+                  "Attempt POST /renew."
+                ],
+                expectedResult: "HTTP 401 Unauthorized or 403 Forbidden.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mpr-duration-range",
+                title: "Verify renewal duration outside 1-12 range is rejected",
+                type: "api",
+                precondition: "Authenticated Driver.",
+                steps: [
+                  "Attempt POST /renew with durationMonths = 13."
+                ],
+                expectedResult: "HTTP 400 Bad Request with DURATION_OUT_OF_RANGE validation error.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mpr-idor-driver",
+                title: "Verify Driver is blocked from renewing another user's pass",
+                type: "api",
+                precondition: "Driver is authenticated. Pass belongs to another driver.",
+                steps: [
+                  "Attempt POST /renew."
+                ],
+                expectedResult: "HTTP 403 Forbidden due to IDOR check failure.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mpr-expired-grace-fail",
+                title: "Verify renewal of pass expired beyond grace period is rejected",
+                type: "integration",
+                precondition: "Pass is expired beyond allowed grace period.",
+                steps: [
+                  "Attempt POST /renew."
+                ],
+                expectedResult: "HTTP 400 Bad Request. Error: PASS_NOT_ELIGIBLE_FOR_RENEWAL.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mpr-concurrency-clash",
+                title: "Verify optimistic concurrency blocks racing duplicate renewals",
+                type: "concurrency",
+                precondition: "Two renewal requests dispatch concurrently.",
+                steps: [
+                  "First request completes successfully.",
+                  "Second request fails concurrency token validation."
+                ],
+                expectedResult: "HTTP 409 Conflict. Second transaction is aborted and rolled back.",
+                status: "not_started"
+              },
+              {
+                id: "tc-mpr-tx-rollback",
+                title: "Verify atomic transaction rollbacks pass update if receipt fails",
+                type: "integration",
+                precondition: "A database constraint is triggered during receipt insert.",
+                steps: [
+                  "Execute renewal request."
+                ],
+                expectedResult: "HTTP 500 Internal Server Error. Pass expiration date remains unmodified.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-mpr-inspect", content: "AI has inspected and reused the existing entities and logic.", checked: true },
+              { id: "dc-mpr-tx", content: "DB transaction guarantees atomicity: pass extension, receipt, and audit logging commit or rollback together.", checked: true },
+              { id: "dc-mpr-grace", content: "Grace period policy and status validations are strictly checked.", checked: true },
+              { id: "dc-mpr-pricing", content: "Pricing calculations are dynamically fetched from PricingRule.", checked: true },
+              { id: "dc-mpr-idor", content: "IDOR checks verify pass ownership for Driver role.", checked: true },
+              { id: "dc-mpr-concurrency", content: "PostgreSQL xmin optimistic concurrency control is implemented.", checked: true },
+              { id: "dc-mpr-response", content: "Responses use standard ApiResponse<T>.", checked: true },
+              { id: "dc-mpr-tests", content: "Code passes all 40 defined automated tests.", checked: true },
+              { id: "dc-mpr-audit", content: "Audit logs are generated for all renewals.", checked: true }
+            ]
           }
         ]
       },
