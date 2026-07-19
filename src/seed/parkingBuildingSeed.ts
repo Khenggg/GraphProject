@@ -137,7 +137,7 @@ export function createParkingBuildingSeedTree(): FeatureNode[] {
       // 3. Authentication
       {
         id: "cat-authentication",
-        title: "Authentication",
+        title: "Authentication & Session Management",
         type: "category",
         summary: "Authentication flows to verify user identity.",
         businessRules: [

@@ -1,6 +1,6 @@
 # Project Map
 
-> Generated: 2026-07-19 16:25:34
+> Generated: 2026-07-19 16:27:56
 > Generator: `scripts/export-project-map.ps1`
 
 This file contains the project architecture and a direct source-code snapshot. The snapshot is generated from the source tree and filtered by `projectmapignore`.
@@ -48,7 +48,7 @@ src/main.tsx -> src/App.tsx
 | `src/domain/taxonomy.ts` | 8301 |
 | `src/index.css` | 1592 |
 | `src/main.tsx` | 240 |
-| `src/seed/parkingBuildingSeed.ts` | 873924 |
+| `src/seed/parkingBuildingSeed.ts` | 873945 |
 | `src/seed/parkingTaxonomyMigration.ts` | 27295 |
 | `src/store/featureTreeStore.ts` | 24426 |
 | `src/tests/aiExport.test.ts` | 1952 |
@@ -5208,7 +5208,7 @@ export function createParkingBuildingSeedTree(): FeatureNode[] {
       // 3. Authentication
       {
         id: "cat-authentication",
-        title: "Authentication",
+        title: "Authentication & Session Management",
         type: "category",
         summary: "Authentication flows to verify user identity.",
         businessRules: [
