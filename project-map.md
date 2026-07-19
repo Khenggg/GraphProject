@@ -1,6 +1,6 @@
 # Project Map
 
-> Generated: 2026-07-19 15:37:50
+> Generated: 2026-07-19 15:51:50
 > Generator: `scripts/export-project-map.ps1`
 
 This file contains the project architecture and a direct source-code snapshot. The snapshot is generated from the source tree and filtered by `projectmapignore`.
@@ -41,15 +41,15 @@ src/main.tsx -> src/App.tsx
 | `src/db/dexieDb.ts` | 539 |
 | `src/domain/export.utils.ts` | 16501 |
 | `src/domain/featureNode.types.ts` | 2780 |
-| `src/domain/featureNodeFactory.ts` | 3902 |
+| `src/domain/featureNodeFactory.ts` | 4134 |
 | `src/domain/inheritance.utils.ts` | 3637 |
 | `src/domain/localization.ts` | 12043 |
 | `src/domain/projectBackup.ts` | 6002 |
 | `src/domain/taxonomy.ts` | 8301 |
 | `src/index.css` | 1592 |
 | `src/main.tsx` | 240 |
-| `src/seed/parkingBuildingSeed.ts` | 811173 |
-| `src/seed/parkingTaxonomyMigration.ts` | 26983 |
+| `src/seed/parkingBuildingSeed.ts` | 863133 |
+| `src/seed/parkingTaxonomyMigration.ts` | 27295 |
 | `src/store/featureTreeStore.ts` | 24426 |
 | `src/tests/aiExport.test.ts` | 1952 |
 | `src/tests/export.test.ts` | 2726 |
@@ -4203,6 +4203,12 @@ export type SeedNodeInput = {
   risks?: string[];
   notes?: string;
   children?: SeedNodeInput[];
+  metadata?: {
+    ownerService?: string;
+    endpoints?: string[];
+    sourceFiles?: string[];
+    consumerServices?: string[];
+  };
 
   // Advanced technical fields
   objective?: string;
@@ -4271,9 +4277,9 @@ export function createSeedNode(input: SeedNodeInput, parentId: string | null, or
     uiStateSuccess: input.uiStateSuccess,
 
     metadata: {
-      ownerService: input.ownerService,
-      sourceFiles: input.sourceFiles,
-      endpoints: input.endpoints,
+      ownerService: input.ownerService || input.metadata?.ownerService,
+      sourceFiles: input.sourceFiles || input.metadata?.sourceFiles,
+      endpoints: input.endpoints || input.metadata?.endpoints,
       roles: input.clients,
     },
     createdAt: now,
@@ -9964,7 +9970,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-sess-exit",
             title: "Vehicle Exit",
             type: "leaf_feature",
-            status: "in_progress",
+            status: "ready",
             priority: "high",
             clients: ["Staff"],
             tags: ["parking", "session", "exit"],
@@ -10323,7 +10329,7 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-pay-webhook",
             title: "PayOS Webhook",
             type: "leaf_feature",
-            status: "in_progress",
+            status: "ready",
             priority: "high",
             clients: ["System"],
             tags: ["payments", "payos", "webhook", "security"],
@@ -13506,7 +13512,7 @@ AI IMPLEMENTATION DIRECTIVES:
             id: "leaf-rep-dashboard",
             title: "Support Dashboard",
             type: "leaf_feature",
-            status: "in_progress",
+            status: "ready",
             priority: "medium",
             clients: ["Manager", "Admin"],
             tags: ["reporting", "dashboard", "analytics", "cache"],
@@ -13616,7 +13622,7 @@ AI IMPLEMENTATION DIRECTIVES:
             id: "leaf-rep-revenue",
             title: "Revenue Report",
             type: "leaf_feature",
-            status: "in_progress",
+            status: "ready",
             priority: "high",
             clients: ["Manager", "Admin"],
             tags: ["reporting", "revenue", "excel", "analytics"],
@@ -13734,7 +13740,7 @@ AI IMPLEMENTATION DIRECTIVES:
             id: "leaf-rep-traffic",
             title: "Traffic Report",
             type: "leaf_feature",
-            status: "in_progress",
+            status: "ready",
             priority: "medium",
             clients: ["Manager", "Admin"],
             tags: ["reporting", "traffic", "excel", "analytics"],
@@ -13850,7 +13856,7 @@ AI IMPLEMENTATION DIRECTIVES:
             id: "leaf-rep-occupancy",
             title: "Occupancy Report",
             type: "leaf_feature",
-            status: "in_progress",
+            status: "ready",
             priority: "medium",
             clients: ["Manager", "Admin"],
             tags: ["reporting", "occupancy", "excel", "analytics"],
@@ -13965,7 +13971,7 @@ AI IMPLEMENTATION DIRECTIVES:
             id: "leaf-rep-card",
             title: "Card Session Report",
             type: "leaf_feature",
-            status: "in_progress",
+            status: "ready",
             priority: "medium",
             clients: ["Manager", "Admin"],
             tags: ["reporting", "cards", "excel", "analytics"],
@@ -14102,7 +14108,7 @@ AI IMPLEMENTATION DIRECTIVES:
             id: "leaf-rep-export",
             title: "Generic Report Export",
             type: "leaf_feature",
-            status: "in_progress",
+            status: "ready",
             priority: "high",
             clients: ["Manager", "Admin"],
             tags: ["reporting", "export", "strategy-pattern", "excel"],
@@ -14216,7 +14222,7 @@ AI IMPLEMENTATION DIRECTIVES:
             id: "leaf-rep-audit",
             title: "Audit Log Export",
             type: "leaf_feature",
-            status: "in_progress",
+            status: "ready",
             priority: "medium",
             clients: ["Admin"],
             tags: ["reporting", "audit-logs", "excel", "security"],
@@ -14341,7 +14347,7 @@ AI IMPLEMENTATION DIRECTIVES:
             title: "Parking Info",
             type: "leaf_feature",
             clients: ["Guest", "Driver"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["public", "info", "pricing", "rules", "capacity"],
             summary: "Public read-only parking building information including capacity, pricing, and rules.",
@@ -14478,7 +14484,7 @@ AI IMPLEMENTATION DIRECTIVES:
             title: "Public Pricing",
             type: "leaf_feature",
             clients: ["Guest", "Driver"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["public", "pricing", "read-only"],
             summary: "Public read-only endpoint exposing active pricing rules grouped by vehicle type, including day rate, night rate, monthly pass cost, and lost card penalty fee.",
@@ -14715,7 +14721,7 @@ Example Error Response 500 Internal Server Error (Database Error):
             title: "Public Rules",
             type: "leaf_feature",
             clients: ["Guest", "Driver"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["public", "rules", "config", "read-only"],
             summary: "Public read-only endpoint surfacing building operational rules, height clearances, schedules, liability statements, and hotline details to unauthenticated visitors and drivers.",
@@ -14894,7 +14900,7 @@ Example Error Response 500 Internal Server Error (Database Error):
             title: "Public Available Slots",
             type: "leaf_feature",
             clients: ["Guest", "Driver"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["public", "capacity", "slots", "real-time", "read-only"],
             summary: "Public read-only endpoint exposing dynamic real-time parking capacity and vacancy counts across structural layouts grouped by supported vehicle classes.",
@@ -15123,7 +15129,7 @@ Example Error Response 500 Internal Server Error (Database Aggregation Failure):
             title: "Submit Feedback",
             type: "leaf_feature",
             clients: ["Guest", "Driver"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["support", "feedback", "write", "anonymous-submit"],
             summary: "Allows public guests or authenticated drivers to submit opinions, feedback, infrastructure incident reports, or service complaints regarding the parking building operation.",
@@ -15306,7 +15312,7 @@ Response (400 Bad Request - Validation Failed):
             title: "Feedback Management List",
             type: "leaf_feature",
             clients: ["Manager", "Admin"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["admin", "feedback", "list", "paginated"],
             summary: "Administrative dashboard endpoint for Managers and Administrators to fetch, filter, and paginate through historical user feedback collections.",
@@ -15489,7 +15495,7 @@ Response (403 Forbidden - Insufficient Role):
             title: "Feedback Detail",
             type: "leaf_feature",
             clients: ["Manager", "Admin"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["admin", "feedback", "detail", "read-only"],
             summary: "Fetches the complete granular detail blocks of a single feedback submission record using its unique database identifier key to allow targeted issue investigation.",
@@ -15649,7 +15655,7 @@ Response (403 Forbidden - Insufficient Role):
             title: "Feedback Status Update",
             type: "leaf_feature",
             clients: ["Manager", "Admin"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["admin", "feedback", "status", "write", "audit"],
             summary: "Enables managers to move a feedback record through the canonical lifecycle (NEW, IN_REVIEW, RESPONDED, CLOSED, REJECTED) with an auditable official response.",
@@ -15873,7 +15879,7 @@ Response (404 Not Found):
             title: "User Notifications",
             type: "leaf_feature",
             clients: ["Driver", "Staff", "Manager", "Admin"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["notification", "list", "paginated", "read-only"],
             summary: "Provides a paginated retrieval API for authenticated users to fetch their own historical notification streams. User identity is securely resolved from the validated JWT token context.",
@@ -16092,7 +16098,7 @@ Response (401 Unauthorized - Missing or Invalid Token):
             title: "Unread Notifications",
             type: "leaf_feature",
             clients: ["Driver", "Staff", "Manager", "Admin"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["notification", "unread", "paginated", "read-only"],
             summary: "Fetches the collection of unread notifications (is_read = false) belonging to the authenticated user. Powers badge numbers, real-time alert count synchronization, and unread dashboard indicators.",
@@ -16306,7 +16312,7 @@ Response (200 OK - No Unread Notifications):
             title: "Mark Notification as Read",
             type: "leaf_feature",
             clients: ["Driver", "Staff", "Manager", "Admin"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["notification", "mark-read", "write", "ownership"],
             summary: "Updates the processing status of a specific notification record to read (is_read = true). Allows users to acknowledge and clear alert flags inside client dashboard interfaces.",
@@ -16522,7 +16528,7 @@ Response (400 Bad Request - Invalid ID):
             title: "Mock Camera Scan",
             type: "leaf_feature",
             clients: ["STAFF", "MANAGER", "ADMIN"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["mock", "device", "camera", "write"],
             summary: "Simulates a License Plate Recognition (LPR) camera scanning event at a parking gate. The objective is to record the simulated plate-reading event into the mock_device_events database table.",
@@ -16667,7 +16673,7 @@ Response Validation Error (400 Bad Request):
             title: "Mock RFID Scan",
             type: "leaf_feature",
             clients: ["STAFF", "MANAGER", "ADMIN"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["mock", "device", "rfid", "write"],
             summary: "Simulates tapping a physical RFID card or scanning a static QR token at an entrance or exit validation gate. The endpoint registers the raw hardware swipe event context into the common database log structure.",
@@ -16793,7 +16799,7 @@ Response Success (201 Created):
             title: "Mock Barrier Control",
             type: "leaf_feature",
             clients: ["STAFF", "MANAGER", "ADMIN"],
-            status: "draft",
+            status: "ready",
             priority: "medium",
             tags: ["mock", "device", "barrier", "write"],
             summary: "Provides an endpoint to simulate sending mechanical activation override signals to a physical parking gate barrier arm. This enables operators to simulate gate behaviors and test manual override exceptions.",
@@ -16924,45 +16930,828 @@ Response Success (201 Created):
         type: "category",
         summary: "System logs check, DB sync, and debugging routines.",
         children: [
+          
+          
+          
           {
             id: "leaf-diag-core-health",
             title: "Core Health Check",
             type: "leaf_feature",
             clients: ["Admin", "System"],
-            endpoints: ["GET /api/core/health"],
-            ownerService: ".NET Core API",
-            apiContracts: createApiContract("GET /api/core/health"),
-            testCases: defaultApiTests("Core Health Check", ["Admin"], ["GET /api/core/health"]),
-            doneCriteria: defaultDoneCriteria("Core Health Check")
+            status: "ready",
+            priority: "high",
+            tags: ["health", "core", "diagnostics"],
+            summary: "Provides real-time observability for the .NET Core API via liveness and readiness probes.",
+            objective: "Ensure infrastructure can determine traffic routing (live) and if dependencies are reachable (ready), providing admins with detailed component health.",
+            inScope: ["Verify component health", "Check PostgreSQL connection", "Check RabbitMQ state"],
+            outOfScope: ["Data dumps", "System remediation"],
+            permissions: [{ role: "Admin", permission: "Reads detailed health data with valid JWT" }],
+            businessRules: [
+              "Liveness checks must NEVER query the database.",
+              "Readiness checks must enforce strict timeouts (500ms maximum)."
+            ],
+            validationRules: [{ field: "request", rule: "No query parameters allowed", errorMessage: "Bad Request: Parameters are forbidden on health endpoints" }],
+            securityRules: [
+              "Detailed health must require a valid Admin JWT.",
+              "Stack traces, connection strings, and credential secrets must NEVER be included."
+            ],
+            logEvents: ["Health transition to degraded/offline", "Audit log detailed health access"],
+            noLogEvents: ["Successful liveness pings"],
+            integrationPoints: [
+              { system: "Shared PostgreSQL", responsibility: "Check connection pool health" }
+            ],
+            uiPage: "/admin/health",
+            uiComponents: "Health Dashboard, Status Indicators",
+            uiStateLoading: "Show loading skeleton for dependency latencies",
+            uiStateEmpty: "Health metrics are continuous, empty state is never rendered.",
+            uiStateError: "Display degraded status with warning icons",
+            uiStateSuccess: "Display healthy status in green",
+            metadata: { ownerService: ".NET Core API", endpoints: ["GET /api/core/health/live", "GET /api/core/health"] },
+            dbExistingTables: ["sys_health_checks"],
+            dbRelationships: ["sys_health_checks connects to the primary reporting node"],
+            dbNewTablesSql: "-- No new tables required for this feature",
+            apiContracts: [{ id: "api-core-health", name: "GET /api/core/health", content: "Returns status and component latencies array." }],
+            uiContracts: [{ id: "ui-core-health", name: "Health Dashboard Widget", content: "Displays green/red/yellow status indicators" }],
+            dataContracts: [{ id: "data-core-health", name: "Health Status Response", content: "JSON object containing status, components, version, checkedAt" }],
+            testCases: [
+              { id: "tc-core-health-1", title: "Verify liveness returns 200 UP", type: "api", expectedResult: "Returns 200 OK without DB access", status: "not_started" },
+              { id: "tc-core-health-2", title: "Verify readiness check queries database health", type: "integration", expectedResult: "Returns component latencies and DB connectivity status", status: "not_started" }
+            ],
+            doneCriteria: [{ id: "dc-core-health-1", content: "Infrastructure routes traffic based on liveness", checked: false }],
+            dependencies: ["Infrastructure orchestrator (Kubernetes)", "Shared PostgreSQL"],
+            risks: ["High traffic to detailed health may cause minor DB load", "Liveness deadlock false positive"],
+            notes: "Liveness is strictly unauthenticated but must be network restricted."
           },
           {
             id: "leaf-diag-support-health",
             title: "Support Health Check",
             type: "leaf_feature",
             clients: ["Admin", "System"],
-            endpoints: ["GET /api/support/health"],
-            ownerService: "Spring Boot Support API",
-            apiContracts: createApiContract("GET /api/support/health"),
-            testCases: defaultApiTests("Support Health Check", ["Admin"], ["GET /api/support/health"]),
-            doneCriteria: defaultDoneCriteria("Support Health Check")
+            status: "ready",
+            priority: "high",
+            tags: ["health", "support", "diagnostics"],
+            summary: "Expose the operational health and projection lag of the Spring Boot Support API.",
+            objective: "Verify read-heavy reporting services are functional and quantify delay between Core command API and Support CQRS read models.",
+            inScope: ["Application liveness", "Database read-replica connectivity", "Event consumer offset lag"],
+            outOfScope: ["Raw data dumps", "Query execution"],
+            permissions: [{ role: "Admin", permission: "Reads detailed health including projection lag" }],
+            businessRules: [
+              "Support health reports projection freshness, NOT Core command state correctness.",
+              "Service remains available (HTTP 200) even if data is stale, up to a configurable threshold."
+            ],
+            validationRules: [{ field: "request", rule: "No query parameters allowed", errorMessage: "Bad Request: Parameters are forbidden on health endpoints" }],
+            securityRules: [
+              "Admin JWT required for detailed health.",
+              "Mask consumer endpoint details."
+            ],
+            logEvents: ["Lag exceeds 300-second warning threshold"],
+            noLogEvents: ["Liveness ping"],
+            integrationPoints: [
+              { system: "Event Stream", responsibility: "Determine offset lag" }
+            ],
+            uiPage: "/admin/health",
+            uiComponents: "Projection Freshness Widget",
+            uiStateLoading: "Show loading spinner",
+            uiStateEmpty: "Health metrics are continuous, empty state is never rendered.",
+            uiStateError: "Show 'asOf' warning for stale data",
+            uiStateSuccess: "Show real-time sync status",
+            metadata: { ownerService: "Spring Boot Support API", endpoints: ["GET /api/support/health"] },
+            dbExistingTables: ["consumer_offsets"],
+            dbRelationships: ["consumer_offsets tracks partition offset progression"],
+            dbNewTablesSql: "-- No new tables required for this feature",
+            apiContracts: [{ id: "api-support-health", name: "GET /api/support/health", content: "Returns projectionLagSeconds and asOf timestamp." }],
+            uiContracts: [{ id: "ui-support-health", name: "Projection Freshness Widget", content: "Displays lag in seconds and 'as of' time" }],
+            dataContracts: [{ id: "data-support-health", name: "Support Health Response", content: "JSON object containing lag metrics and component array" }],
+            testCases: [
+              { id: "tc-support-health-1", title: "Verify projection lag calculation", type: "api", expectedResult: "Returns accurate lag in seconds", status: "not_started" },
+              { id: "tc-support-health-2", title: "Verify support health actuator endpoint works", type: "integration", expectedResult: "Returns 200 OK with general Actuator metrics", status: "not_started" }
+            ],
+            doneCriteria: [{ id: "dc-support-health-1", content: "Operators distinguish availability from freshness", checked: false }],
+            dependencies: ["Event Bus (RabbitMQ/Kafka)", "Spring Boot Actuator"],
+            risks: ["Consumer lag spikes during high load", "Read replica replication delay"],
+            notes: "The service remains 'available' even if data is stale."
           },
           {
             id: "leaf-diag-db-check",
             title: "Database Check",
             type: "leaf_feature",
             clients: ["Admin", "System"],
-            endpoints: ["GET /api/core/db-check"],
-            ownerService: ".NET Core API",
-            apiContracts: createApiContract("GET /api/core/db-check"),
-            testCases: defaultApiTests("Database Check", ["Admin"], ["GET /api/core/db-check"]),
-            doneCriteria: defaultDoneCriteria("Database Check")
+            status: "ready",
+            priority: "high",
+            tags: ["health", "database", "diagnostics"],
+            summary: "Bounded diagnostic check of primary PostgreSQL to verify connectivity, schema, and invariants.",
+            objective: "Give DBAs immediate insight into database health without dumping customer data.",
+            inScope: ["Connectivity test", "Latency measurement", "Schema version verification", "Connection pool utilization"],
+            outOfScope: ["Migration execution", "Arbitrary SQL queries", "Customer data reads"],
+            permissions: [{ role: "Admin", permission: "Execute check requires fresh Admin session" }],
+            businessRules: [
+              "Queries must be strictly bounded (max timeout 1000ms).",
+              "Invariant checks must be aggregate counts only."
+            ],
+            validationRules: [{ field: "request", rule: "No parameters allowed", errorMessage: "Bad Request: Parameters are forbidden on database diagnostic endpoints" }],
+            securityRules: [
+              "Never return physical DSN, database username, or raw SQL."
+            ],
+            logEvents: ["Connection pool exhausted", "Long-running locks detected"],
+            noLogEvents: ["Routine healthy check polling"],
+            integrationPoints: [
+              { system: "Primary PostgreSQL", responsibility: "Query pg_stat_activity" }
+            ],
+            uiPage: "/admin/database",
+            uiComponents: "Metrics Dashboard",
+            uiStateLoading: "Show skeleton graphs",
+            uiStateEmpty: "Metrics are continuous, empty state is never rendered.",
+            uiStateError: "Display pool exhaustion error",
+            uiStateSuccess: "Display pool usage and active locks",
+            metadata: { ownerService: ".NET Core API", endpoints: ["GET /api/core/db-check"] },
+            dbExistingTables: ["__EFMigrationsHistory", "pg_stat_activity"],
+            dbRelationships: ["pg_stat_activity links to active database processes"],
+            dbNewTablesSql: "-- No new tables required for this feature",
+            apiContracts: [{ id: "api-db-check", name: "GET /api/core/db-check", content: "Returns latency, schema version, pool percentage." }],
+            uiContracts: [{ id: "ui-db-check", name: "Database Diagnostics Dashboard", content: "Renders pool utilization percentage and lock counts" }],
+            dataContracts: [{ id: "data-db-check", name: "Database Diagnostic Response", content: "JSON array of database invariants and aggregate counts" }],
+            testCases: [
+              { id: "tc-db-check-1", title: "Test pool utilization extraction", type: "integration", expectedResult: "Returns active connection count without DSN", status: "not_started" },
+              { id: "tc-db-check-2", title: "Verify DB check returns 503 on connection failure", type: "integration", expectedResult: "Returns service unavailable status on DB timeout", status: "not_started" }
+            ],
+            doneCriteria: [{ id: "dc-db-check-1", content: "Admins view active locks safely", checked: false }],
+            dependencies: ["PostgreSQL System Catalogs", "EF Core Diagnostics"],
+            risks: ["Querying pg_stat_activity requires special user permissions", "Potential for lock contention if queried too frequently"],
+            notes: "Implement strict retry/backoff to prevent accidental DDoS from the admin portal."
           },
-          { id: "leaf-diag-res-dump", title: "Reservation Debug Dump", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Reservation Debug Dump", ["Admin"], []), doneCriteria: defaultDoneCriteria("Reservation Debug Dump") },
-          { id: "leaf-diag-sess-dump", title: "Session Debug Dump", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Session Debug Dump", ["Admin"], []), doneCriteria: defaultDoneCriteria("Session Debug Dump") },
-          { id: "leaf-diag-clear-res", title: "Clear Reservations Debug", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Clear Reservations Debug", ["Admin"], []), doneCriteria: defaultDoneCriteria("Clear Reservations Debug") },
-          { id: "leaf-diag-migrate", title: "Migrate Database Debug", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Migrate Database Debug", ["Admin"], []), doneCriteria: defaultDoneCriteria("Migrate Database Debug") },
-          { id: "leaf-diag-expire-res", title: "Expire Reservation Debug", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Expire Reservation Debug", ["Admin"], []), doneCriteria: defaultDoneCriteria("Expire Reservation Debug") },
-          { id: "leaf-diag-expire-pay", title: "Expire Payment Deadline Debug", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Expire Payment Deadline Debug", ["Admin"], []), doneCriteria: defaultDoneCriteria("Expire Payment Deadline Debug") }
+          {
+            id: "leaf-diag-res-dump",
+            title: "Reservation Debug Dump",
+            type: "leaf_feature",
+            clients: ["Admin"],
+            status: "ready",
+            priority: "high",
+            tags: ["diagnostics", "reservation", "break-glass"],
+            summary: "Bounded, redacted diagnostic view of a specific reservation's state transitions.",
+            objective: "Facilitate active incident triage without creating a mass data-exfiltration vector.",
+            inScope: ["Reservation timeline", "Vehicle linkage", "Slot allocation", "Audit history"],
+            outOfScope: ["Mass export", "Raw PII", "Full payment credentials"],
+            permissions: [{ role: "Admin", permission: "Requires Break-Glass flag and incident correlation" }],
+            businessRules: [
+              "Max 100 related event rows returned.",
+              "Strict timeline ordering must be maintained."
+            ],
+            validationRules: [{ field: "incidentId", rule: "Required correlation ID", errorMessage: "Missing incident correlation parameter" }],
+            securityRules: [
+              "Mask all License Plates and Contact Details.",
+              "Show only gateway transaction reference."
+            ],
+            logEvents: ["High-priority security audit log detailing dumped Reservation ID"],
+            noLogEvents: ["Internal query trace steps"],
+            integrationPoints: [
+              { system: "Payment Gateway", responsibility: "Link masked payment refs" }
+            ],
+            uiPage: "/admin/incidents",
+            uiComponents: "Incident Timeline Viewer",
+            uiStateLoading: "Spinner overlay",
+            uiStateEmpty: "Reservation diagnostic view requires an anchor ID.",
+            uiStateError: "Show 403 Break-Glass Disabled",
+            uiStateSuccess: "Render redacted chronological timeline",
+            metadata: { ownerService: ".NET Core API", endpoints: ["GET /api/core/diagnostics/reservations/{id}"] },
+            dbExistingTables: ["reservations", "reservation_events"],
+            dbRelationships: ["reservation_events linked via reservation_id"],
+            dbNewTablesSql: "-- No new tables required for this feature",
+            apiContracts: [{ id: "api-res-dump", name: "GET /api/core/diagnostics/reservations/{id}", content: "Redacted state timeline with PII masks." }],
+            uiContracts: [{ id: "ui-res-dump", name: "Reservation Timeline View", content: "Renders sequential events for the reservation" }],
+            dataContracts: [{ id: "data-res-dump", name: "Reservation Timeline DTO", content: "Array of masked event details and timestamps" }],
+            testCases: [
+              { id: "tc-res-dump-1", title: "Verify Break-Glass guard", type: "api", expectedResult: "403 when Break-Glass disabled", status: "not_started" },
+              { id: "tc-res-dump-2", title: "Verify sensitive PII fields are masked", type: "api", expectedResult: "Returns reservation timeline details with masked contact/plate info", status: "not_started" }
+            ],
+            doneCriteria: [{ id: "dc-res-dump-1", content: "Data exfiltration mitigated", checked: false }],
+            dependencies: ["Incident Management Correlation ID Service"],
+            risks: ["Potential exposure of sensitive data if masking logic fails"],
+            notes: "Strict masking policies apply to all text fields before returning."
+          },
+          {
+            id: "leaf-diag-sess-dump",
+            title: "Session Debug Dump",
+            type: "leaf_feature",
+            clients: ["Admin"],
+            status: "ready",
+            priority: "high",
+            tags: ["diagnostics", "session", "break-glass"],
+            summary: "Bounded, redacted timeline of a parking session including barrier commands.",
+            objective: "Debug stuck vehicles or barrier anomalies during active incidents.",
+            inScope: ["Entry/exit times", "Gate ACK/NACK events", "Pricing calculations"],
+            outOfScope: ["Raw base64 ALPR images", "Mass export"],
+            permissions: [{ role: "Admin", permission: "Requires Break-Glass flag and incident correlation" }],
+            businessRules: [
+              "Timeline truncates at most recent 100 events.",
+              "Must distinguish software events from hardware barrier ACKs."
+            ],
+            validationRules: [{ field: "incidentId", rule: "Required correlation ID", errorMessage: "Missing incident correlation parameter" }],
+            securityRules: [
+              "Mask Parking Card serial numbers.",
+              "Return temporary CDN URIs for images, not raw bytes."
+            ],
+            logEvents: ["High-priority security audit log generated for access"],
+            noLogEvents: ["Transient hardware status polling"],
+            integrationPoints: [
+              { system: "Barrier Gates", responsibility: "Correlate mechanical ACKs" }
+            ],
+            uiPage: "/admin/incidents",
+            uiComponents: "Incident Timeline Viewer",
+            uiStateLoading: "Spinner overlay",
+            uiStateEmpty: "Session diagnostic view requires an anchor ID.",
+            uiStateError: "Show 403 Break-Glass Disabled",
+            uiStateSuccess: "Render session gate interaction timeline",
+            metadata: { ownerService: ".NET Core API", endpoints: ["GET /api/core/diagnostics/sessions/{id}"] },
+            dbExistingTables: ["sessions", "session_events"],
+            dbRelationships: ["session_events linked via session_id"],
+            dbNewTablesSql: "-- No new tables required for this feature",
+            apiContracts: [{ id: "api-sess-dump", name: "GET /api/core/diagnostics/sessions/{id}", content: "Timeline array distinguishing exits and barriers." }],
+            uiContracts: [{ id: "ui-sess-dump", name: "Session Hardware Timeline View", content: "Renders sequential events differentiating software/hardware" }],
+            dataContracts: [{ id: "data-sess-dump", name: "Session Timeline DTO", content: "Array of masked event details and hardware responses" }],
+            testCases: [
+              { id: "tc-sess-dump-1", title: "Verify truncation", type: "api", expectedResult: "Truncates at 100 events", status: "not_started" },
+              { id: "tc-sess-dump-2", title: "Verify break glass incident correlation validation", type: "api", expectedResult: "400 Bad Request when incident correlation ID is missing", status: "not_started" }
+            ],
+            doneCriteria: [{ id: "dc-sess-dump-1", content: "Barrier anomalies diagnosed safely", checked: false }],
+            dependencies: ["Incident Management Correlation ID Service", "Hardware Abstraction Layer"],
+            risks: ["Barrier event spam could overwhelm memory if truncation fails"],
+            notes: "Images must strictly use short-lived URLs."
+          },
+          {
+            id: "leaf-diag-clear-res",
+            title: "Clear Reservations Debug",
+            type: "leaf_feature",
+            clients: ["Admin"],
+            status: "ready",
+            priority: "low",
+            tags: ["developer-utility", "test-data", "debug", "clear-reservations"],
+            summary: "Provide a debugging utility for administrators to forcefully clear, reset, or permanently delete mock reservation data during testing without affecting real production transactions.",
+            objective: "Implement a secure database cleanup method exposed only in non-production environments to clear, reset, or permanently delete mock reservation data for Admins.",
+            inScope: [
+              "Allow administrators to clear, reset, or hard-delete reservation test data.",
+              "Restrict execution to non-production environments only.",
+              "Delete only records identified as test/mock data.",
+              "Record all debug operations in the audit log with critical severity.",
+              "Implement the feature following existing project architecture and security standards."
+            ],
+            outOfScope: [
+              "Deleting or modifying real production reservation records.",
+              "Deleting payment, audit, or operational data unrelated to test reservations.",
+              "External system integrations not specified in this document."
+            ],
+            permissions: [
+              { role: "Admin", permission: "Authorized to access this feature." }
+            ],
+            businessRules: [
+              "This debugging utility must only be available in non-production environments.",
+              "The API must validate the application environment (e.g., ASPNETCORE_ENVIRONMENT) and immediately return 403 Forbidden if executed in Production.",
+              "Only reservation records explicitly marked as test data or created by mock accounts may be deleted.",
+              "Every execution of this feature must be recorded in the audit log with Critical severity."
+            ],
+            dbExistingTables: [
+              "Reservation",
+              "Audit Log",
+              "Test/Mock Account"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Only records flagged as test data or created by mock accounts are eligible for deletion.",
+              "Audit logs must permanently retain execution history even after reservation records are removed."
+            ],
+            validationRules: [
+              { field: "Role", rule: "Only authenticated Admin users may execute this feature.", errorMessage: "Unauthorized access." },
+              { field: "Environment", rule: "Reject execution when the application is running in the Production environment.", errorMessage: "Forbidden in Production." },
+              { field: "Target Records", rule: "Verify targeted records are marked as test data before deletion.", errorMessage: "Cannot delete production data." }
+            ],
+            securityRules: [
+              "Validate Admin role permissions.",
+              "Prevent unauthorized access.",
+              "Block execution in Production environments.",
+              "Prevent deletion of production data.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Log request access, execution time, duration, and response code.",
+              "Log the executing administrator ID.",
+              "Log deleted record count.",
+              "Log environment name.",
+              "Log execution result.",
+              "Record every execution with Critical severity in the audit log."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, and credit card details."
+            ],
+            integrationPoints: [],
+            uiPage: "/admin/debug-utilities",
+            uiComponents: "Warning Dialog, Execute Debug Button, Result Console",
+            uiStateIdle: "Display a warning dialog before execution.",
+            uiStateLoading: "Disable action and show execution spinner.",
+            uiStateSuccess: "Display success or failure results with the number of deleted records.",
+            uiStateEmpty: "No test reservation data found.",
+            uiStateError: "Display execution failures or permission errors.",
+            endpoints: [],
+            ownerService: "System",
+            apiContracts: [],
+            testCases: [
+              {
+                id: "tc-clear-res-admin-success",
+                title: "Verify authorized client (Admin) can access \"Clear Reservations Debug\" successfully",
+                type: "api",
+                precondition: "Client is authenticated with role: Admin in a non-production environment",
+                steps: [
+                  "Authenticate user as Admin",
+                  "Execute the debug endpoint",
+                  "Verify only test reservation data is removed"
+                ],
+                expectedResult: "Request succeeds and only test reservation data is deleted",
+                status: "not_started"
+              },
+              {
+                id: "tc-clear-res-blocked-prod",
+                title: "Verify execution is blocked in Production",
+                type: "integration",
+                precondition: "Application is running in Production",
+                steps: [
+                  "Authenticate as Admin",
+                  "Execute the debug endpoint"
+                ],
+                expectedResult: "System returns 403 Forbidden",
+                status: "not_started"
+              },
+              {
+                id: "tc-clear-res-no-prod-deletion",
+                title: "Verify production reservation data cannot be deleted",
+                type: "integration",
+                expectedResult: "System rejects deletion of production reservation records",
+                status: "not_started"
+              },
+              {
+                id: "tc-clear-res-audit-critical",
+                title: "Verify audit log records critical execution event",
+                type: "integration",
+                expectedResult: "Audit log contains execution details with Critical severity",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-clear-res-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-clear-res-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-clear-res-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-clear-res-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-clear-res-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-clear-res-non-prod", content: "Feature is restricted to non-production environments.", checked: false },
+              { id: "dc-clear-res-env-val", content: "Environment validation is implemented.", checked: false },
+              { id: "dc-clear-res-test-only", content: "Only test/mock reservation data can be deleted.", checked: false },
+              { id: "dc-clear-res-audit-critical", content: "Audit logs record execution with Critical severity.", checked: false },
+              { id: "dc-clear-res-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-clear-res-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false },
+              { id: "dc-clear-res-edge-cases", content: "Edge cases are documented.", checked: false },
+              { id: "dc-clear-res-state-transitions", content: "Payment/session/reservation state transition is documented.", checked: false }
+            ]
+          },
+          {
+            id: "leaf-diag-migrate",
+            title: "Migrate Database Debug",
+            type: "leaf_feature",
+            clients: ["Admin"],
+            status: "ready",
+            priority: "low",
+            tags: ["developer-utility", "database", "migration", "seed-data"],
+            summary: "Provide a debugging utility for administrators to trigger or simulate database schema migrations and seed predefined mock data, ensuring database structural changes function correctly in non-production environments.",
+            objective: "Trigger or simulate database schema migrations and seed predefined mock data inside a database transaction, automatically rolling back on failure and bypassing cache.",
+            inScope: [
+              "Trigger or simulate database schema migrations.",
+              "Execute predefined database seed operations for testing.",
+              "Validate migration execution in non-production environments.",
+              "Automatically rollback database changes if migration fails.",
+              "Disable API caching during migration execution.",
+              "Follow existing project architecture and security standards."
+            ],
+            outOfScope: [
+              "Executing migrations against production databases.",
+              "Modifying production business data.",
+              "Running arbitrary SQL scripts outside the controlled migration process.",
+              "External system integrations not specified in this document."
+            ],
+            permissions: [
+              { role: "Admin", permission: "Authorized to access this feature." }
+            ],
+            businessRules: [
+              "This utility must only execute in non-production environments.",
+              "The application must validate the runtime environment and reject execution on Production.",
+              "Entity Framework (or the project's ORM) must rollback all database changes if the migration process fails.",
+              "API caching must be disabled while migration or seed operations are executing.",
+              "Seed operations must only insert predefined mock data.",
+              "Seeded records must never conflict with real user IDs or production business data."
+            ],
+            dbExistingTables: [
+              "Migration History",
+              "Existing application tables",
+              "Audit Log"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Seed data must reference only predefined mock entities.",
+              "Mock records must not share identifiers with production users or operational data.",
+              "Failed migration operations must leave the database in its original consistent state."
+            ],
+            validationRules: [
+              { field: "Role", rule: "Only authenticated Admin users may execute this feature.", errorMessage: "Unauthorized access." },
+              { field: "Environment", rule: "Reject execution when the application is running in the Production environment.", errorMessage: "Forbidden in Production." },
+              { field: "Migration Packages", rule: "Validate migration packages before execution.", errorMessage: "Invalid migration package." },
+              { field: "Seed Integrity", rule: "Validate seed data integrity before insertion.", errorMessage: "Mock data validation failed." }
+            ],
+            securityRules: [
+              "Validate Admin role permissions.",
+              "Prevent unauthorized access.",
+              "Block execution in Production environments.",
+              "Prevent accidental modification of production data.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Log request access, execution time, duration, and response code.",
+              "Log administrator ID.",
+              "Log migration version executed.",
+              "Log seed operation results.",
+              "Log rollback operations (if any).",
+              "Log environment name.",
+              "Record execution in the audit log."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, and credit card details."
+            ],
+            integrationPoints: [
+              { system: "Entity Framework / ORM migration engine", responsibility: "Executes actual database schema shifts." },
+              { system: "Database transaction management", responsibility: "Rolls back changes on failure." },
+              { system: "Audit logging subsystem", responsibility: "Logs execution metadata." }
+            ],
+            uiPage: "/admin/debug-utilities",
+            uiComponents: "Confirmation Dialog, Progress Indicator, Rollback Status Banner, Seed Summary Panel",
+            uiStateIdle: "Display a confirmation dialog before execution.",
+            uiStateLoading: "Display migration progress with a spinner.",
+            uiStateSuccess: "Show seed execution summary after completion.",
+            uiStateEmpty: "No pending migrations found.",
+            uiStateError: "Display migration success, rollback, or failure messages.",
+            endpoints: [],
+            ownerService: "System",
+            apiContracts: [],
+            testCases: [
+              {
+                id: "tc-db-migrate-admin-success",
+                title: "Verify authorized client (Admin) can execute \"Migrate Database Debug\" successfully",
+                type: "api",
+                precondition: "Client is authenticated as Admin in a non-production environment",
+                steps: [
+                  "Authenticate user as Admin",
+                  "Execute migration utility",
+                  "Verify migration and seed operations complete successfully"
+                ],
+                expectedResult: "Migration succeeds and predefined mock data is inserted",
+                status: "not_started"
+              },
+              {
+                id: "tc-db-migrate-blocked-prod",
+                title: "Verify execution is blocked in Production",
+                type: "integration",
+                precondition: "Application is running in Production",
+                steps: [
+                  "Authenticate as Admin",
+                  "Execute migration utility"
+                ],
+                expectedResult: "System returns 403 Forbidden",
+                status: "not_started"
+              },
+              {
+                id: "tc-db-migrate-rollback",
+                title: "Verify failed migration automatically rolls back",
+                type: "integration",
+                expectedResult: "Database returns to its previous consistent state after failure",
+                status: "not_started"
+              },
+              {
+                id: "tc-db-migrate-no-conflict",
+                title: "Verify seeded data does not conflict with production user IDs",
+                type: "integration",
+                expectedResult: "Only predefined mock records are inserted without ID conflicts",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-db-migrate-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-db-migrate-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-db-migrate-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-db-migrate-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-db-migrate-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-db-migrate-non-prod", content: "Feature is restricted to non-production environments.", checked: false },
+              { id: "dc-db-migrate-env-val", content: "Runtime environment validation is implemented.", checked: false },
+              { id: "dc-db-migrate-rollback", content: "Automatic rollback is implemented for failed migrations.", checked: false },
+              { id: "dc-db-migrate-cache-disabled", content: "API cache is disabled during migration execution.", checked: false },
+              { id: "dc-db-migrate-seed-mock-only", content: "Seed data only contains predefined mock records.", checked: false },
+              { id: "dc-db-migrate-no-conflict-ids", content: "Seed data does not conflict with production user IDs.", checked: false },
+              { id: "dc-db-migrate-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-db-migrate-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false }
+            ]
+          },
+          {
+            id: "leaf-diag-expire-res",
+            title: "Expire Reservation Debug",
+            type: "leaf_feature",
+            clients: ["Admin"],
+            status: "ready",
+            priority: "low",
+            tags: ["developer-utility", "test-data", "debug", "expire-reservation"],
+            summary: "Provide a developer utility that instantly forces an active reservation into an Expired state, allowing QA engineers and developers to verify timeout mechanisms, scheduled jobs, and automatic reservation expiration logic without waiting for real time to elapse.",
+            objective: "Force a reservation into the Expired state by artificially updating reservation endTime and invoking the background scan worker immediately in non-production environments.",
+            inScope: [
+              "Force a reservation into the Expired state.",
+              "Artificially update the reservation endTime.",
+              "Immediately trigger the background worker responsible for processing expired reservations.",
+              "Allow testing of timeout and expiration workflows.",
+              "Follow existing project architecture and security standards."
+            ],
+            outOfScope: [
+              "Expiring production reservations.",
+              "Modifying reservations outside supported states.",
+              "Bypassing business validation outside debugging scenarios.",
+              "External system integrations not specified in this document."
+            ],
+            permissions: [
+              { role: "Admin", permission: "Authorized to access this feature." }
+            ],
+            businessRules: [
+              "This debugging utility must only execute in non-production environments.",
+              "The endpoint artificially updates the reservation endTime and immediately invokes the background worker responsible for scanning expired reservations.",
+              "Only reservations currently in Confirmed or Active status are eligible for forced expiration.",
+              "Reservation expiration must follow the same business workflow used by the automatic expiration scheduler.",
+              "Every execution must be recorded in the audit log."
+            ],
+            dbExistingTables: [
+              "Reservation",
+              "Reservation Status",
+              "Audit Log"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Only reservations in Confirmed or Active status can transition to Expired.",
+              "Forced expiration must preserve reservation history.",
+              "Audit logs must remain immutable after execution."
+            ],
+            validationRules: [
+              { field: "Role", rule: "Only authenticated Admin users may execute this feature.", errorMessage: "Unauthorized access." },
+              { field: "Environment", rule: "Reject execution in the Production environment.", errorMessage: "Forbidden in Production." },
+              { field: "Reservation ID", rule: "Validate the reservation exists.", errorMessage: "Reservation not found." },
+              { field: "Reservation Status", rule: "Validate the reservation is currently in Confirmed or Active state. Reject already expired, cancelled, or completed reservations.", errorMessage: "Reservation status is not eligible for forced expiration." }
+            ],
+            securityRules: [
+              "Validate Admin role permissions.",
+              "Prevent unauthorized access.",
+              "Restrict execution to non-production environments.",
+              "Prevent accidental modification of production reservations.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Log request access, execution time, duration, and response code.",
+              "Log administrator ID.",
+              "Log reservation ID.",
+              "Log original reservation status.",
+              "Log updated reservation status.",
+              "Log background worker execution result.",
+              "Log environment name.",
+              "Record execution in the audit log."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, and credit card details."
+            ],
+            integrationPoints: [
+              { system: "Reservation service", responsibility: "Updates endTime and database states." },
+              { system: "Background Worker / Cron Job", responsibility: "Scans expired reservations and frees related resources." },
+              { system: "Audit logging subsystem", responsibility: "Logs execution metadata." }
+            ],
+            uiPage: "/admin/debug-utilities",
+            uiComponents: "Forced Expiration Dialog, Reservation Status Dashboard, Execution Trigger Button",
+            uiStateIdle: "Display a confirmation dialog before forcing expiration.",
+            uiStateLoading: "Disable action and show execution spinner.",
+            uiStateSuccess: "Display execution result. Show reservation status before and after execution.",
+            uiStateEmpty: "No active reservations eligible for expiration found.",
+            uiStateError: "Display execution failures or permission errors.",
+            endpoints: [],
+            ownerService: "System",
+            apiContracts: [],
+            testCases: [
+              {
+                id: "tc-expire-res-success",
+                title: "Verify authorized client (Admin) can execute \"Expire Reservation Debug\" successfully",
+                type: "api",
+                precondition: "Client is authenticated as Admin in a non-production environment and reservation status is Confirmed or Active",
+                steps: [
+                  "Authenticate user as Admin",
+                  "Execute the expire reservation utility",
+                  "Verify reservation status changes to Expired"
+                ],
+                expectedResult: "Reservation is immediately marked as Expired and background worker executes successfully",
+                status: "not_started"
+              },
+              {
+                id: "tc-expire-res-blocked-prod",
+                title: "Verify execution is blocked in Production",
+                type: "integration",
+                precondition: "Application is running in Production",
+                steps: [
+                  "Authenticate as Admin",
+                  "Execute the expire reservation utility"
+                ],
+                expectedResult: "System returns 403 Forbidden",
+                status: "not_started"
+              },
+              {
+                id: "tc-expire-res-invalid-state",
+                title: "Verify invalid reservation states cannot be expired",
+                type: "integration",
+                expectedResult: "Cancelled, Completed, or Expired reservations are rejected",
+                status: "not_started"
+              },
+              {
+                id: "tc-expire-res-trigger-worker",
+                title: "Verify background worker is triggered after forced expiration",
+                type: "integration",
+                expectedResult: "Expiration processing executes successfully and related resources are released according to business rules",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-expire-res-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-expire-res-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-expire-res-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-expire-res-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-expire-res-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-expire-res-non-prod", content: "Feature is restricted to non-production environments.", checked: false },
+              { id: "dc-expire-res-env-val", content: "Runtime environment validation is implemented.", checked: false },
+              { id: "dc-expire-res-status-check", content: "Only Confirmed or Active reservations can be expired.", checked: false },
+              { id: "dc-expire-res-time-update", content: "Reservation endTime is updated correctly.", checked: false },
+              { id: "dc-expire-res-worker-trigger", content: "Background worker is invoked immediately after execution.", checked: false },
+              { id: "dc-expire-res-audit-log", content: "Audit logs record every execution.", checked: false },
+              { id: "dc-expire-res-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-expire-res-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false },
+              { id: "dc-expire-res-edge-cases", content: "Edge cases are documented.", checked: false },
+              { id: "dc-expire-res-state-transitions", content: "Payment/session/reservation state transition is documented.", checked: false }
+            ]
+          },
+          {
+            id: "leaf-diag-expire-pay",
+            title: "Expire Payment Deadline Debug",
+            type: "leaf_feature",
+            clients: ["Admin"],
+            status: "ready",
+            priority: "low",
+            tags: ["developer-utility", "test-data", "debug", "expire-payment"],
+            summary: "Provide a debugging utility that artificially fast-forwards the payment deadline or immediately expires a pending payment, allowing developers and QA engineers to verify temporary slot lock release, unpaid reservation cleanup, and payment timeout workflows without waiting for real payment expiration.",
+            objective: "Artificially expire a pending payment, releasing associated temporary slot locks and recalculating parking capacity immediately in non-production environments.",
+            inScope: [
+              "Force a pending payment to expire.",
+              "Simulate payment gateway timeout behavior.",
+              "Trigger the same business events as a real payment timeout.",
+              "Immediately release temporary slot locks.",
+              "Update parking capacity after reservation cleanup.",
+              "Support testing of unpaid reservation cleanup logic.",
+              "Follow existing project architecture and security standards."
+            ],
+            outOfScope: [
+              "Modifying completed or refunded payments.",
+              "Testing production payment gateways.",
+              "Changing reservation data outside supported debug scenarios.",
+              "External system integrations not specified in this document."
+            ],
+            permissions: [
+              { role: "Admin", permission: "Authorized to access this feature." }
+            ],
+            businessRules: [
+              "This debugging utility must only execute in non-production environments.",
+              "The feature interacts directly with the temporary slot lock mechanism implemented in the Create Reservation workflow.",
+              "Parking capacity must be updated immediately after payment expiration.",
+              "Only reservations with Pending Payment status are eligible for forced payment expiration.",
+              "Mock payment expiration must trigger the same webhook/event processing as a real payment gateway timeout.",
+              "Every execution must be recorded in the audit log."
+            ],
+            dbExistingTables: [
+              "Reservation",
+              "Payment",
+              "Payment Transaction",
+              "Temporary Slot Lock",
+              "Audit Log"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Only reservations in Pending Payment status can transition to payment timeout.",
+              "Expired payments must immediately release their associated temporary slot locks.",
+              "Parking capacity must be recalculated after slot release.",
+              "Audit records must remain immutable after execution."
+            ],
+            validationRules: [
+              { field: "Role", rule: "Only authenticated Admin users may execute this feature.", errorMessage: "Unauthorized access." },
+              { field: "Environment", rule: "Reject execution in the Production environment.", errorMessage: "Forbidden in Production." },
+              { field: "Reservation ID", rule: "Validate the reservation exists.", errorMessage: "Reservation not found." },
+              { field: "Payment Status", rule: "Validate the payment status is Pending Payment. Reject already paid, cancelled, refunded, or expired payments.", errorMessage: "Payment status is not eligible for forced expiration." }
+            ],
+            securityRules: [
+              "Validate Admin role permissions.",
+              "Prevent unauthorized access.",
+              "Restrict execution to non-production environments.",
+              "Prevent accidental modification of production payment records.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Log request access, execution time, duration, and response code.",
+              "Log administrator ID.",
+              "Log reservation ID.",
+              "Log payment ID.",
+              "Log original payment status.",
+              "Log updated payment status.",
+              "Log temporary slot release result.",
+              "Log parking capacity update result.",
+              "Log simulated webhook/event execution.",
+              "Record execution in the audit log."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, payment credentials, and credit card details."
+            ],
+            integrationPoints: [
+              { system: "Reservation service", responsibility: "Fetches reservation states and logs results." },
+              { system: "Payment service", responsibility: "Updates payment status to Expired." },
+              { system: "Temporary Slot Lock service", responsibility: "Immediately releases slot locks." },
+              { system: "Parking Capacity service", responsibility: "Recalculates facility capacity metrics." },
+              { system: "Payment timeout webhook/event handler", responsibility: "Processes downstream logic identically to gateway timeout." },
+              { system: "Audit logging subsystem", responsibility: "Logs execution metadata." }
+            ],
+            uiPage: "/admin/debug-utilities",
+            uiComponents: "Expiration Confirmation Modal, Temporary Lock Status Display, Capacity Update Panel, Trigger Execution Button",
+            uiStateIdle: "Display a confirmation dialog before execution.",
+            uiStateLoading: "Disable action and show execution spinner.",
+            uiStateSuccess: "Display payment status before and after execution. Display whether the temporary slot lock has been released. Display updated parking capacity after execution.",
+            uiStateEmpty: "No reservations in Pending Payment status found.",
+            uiStateError: "Display execution failures or validation errors.",
+            endpoints: [],
+            ownerService: "System",
+            apiContracts: [],
+            testCases: [
+              {
+                id: "tc-expire-pay-success",
+                title: "Verify authorized client (Admin) can execute \"Expire Payment Deadline Debug\" successfully",
+                type: "api",
+                precondition: "Client is authenticated as Admin in a non-production environment and reservation payment status is Pending Payment",
+                steps: [
+                  "Authenticate user as Admin",
+                  "Execute the payment expiration utility",
+                  "Verify payment status changes to Expired"
+                ],
+                expectedResult: "Payment expires successfully, temporary slot lock is released, and parking capacity is updated",
+                status: "not_started"
+              },
+              {
+                id: "tc-expire-pay-blocked-prod",
+                title: "Verify execution is blocked in Production",
+                type: "integration",
+                precondition: "Application is running in Production",
+                steps: [
+                  "Authenticate as Admin",
+                  "Execute the payment expiration utility"
+                ],
+                expectedResult: "System returns 403 Forbidden",
+                status: "not_started"
+              },
+              {
+                id: "tc-expire-pay-only-pending",
+                title: "Verify only Pending Payment reservations can be expired",
+                type: "integration",
+                expectedResult: "Paid, Cancelled, Refunded, or Expired payments are rejected",
+                status: "not_started"
+              },
+              {
+                id: "tc-expire-pay-simulated-event",
+                title: "Verify simulated payment expiration triggers the same event as a real payment timeout",
+                type: "integration",
+                expectedResult: "Webhook/event processing executes successfully and reservation cleanup behaves identically to a real payment timeout",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-expire-pay-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-expire-pay-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-expire-pay-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-expire-pay-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-expire-pay-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-expire-pay-non-prod", content: "Feature is restricted to non-production environments.", checked: false },
+              { id: "dc-expire-pay-env-val", content: "Runtime environment validation is implemented.", checked: false },
+              { id: "dc-expire-pay-pending-only", content: "Only Pending Payment reservations can be processed.", checked: false },
+              { id: "dc-expire-pay-lock-release", content: "Temporary slot locks are released immediately.", checked: false },
+              { id: "dc-expire-pay-capacity-update", content: "Parking capacity is updated correctly.", checked: false },
+              { id: "dc-expire-pay-event-trigger", content: "Simulated timeout triggers the same webhook/event flow as the real payment gateway.", checked: false },
+              { id: "dc-expire-pay-audit-log", content: "Audit logs record every execution.", checked: false },
+              { id: "dc-expire-pay-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-expire-pay-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false },
+              { id: "dc-expire-pay-edge-cases", content: "Edge cases are documented.", checked: false },
+              { id: "dc-expire-pay-state-transitions", content: "Payment/session/reservation state transition is documented.", checked: false }
+            ]
+          }
         ]
       }
     ]
@@ -17552,17 +18341,21 @@ export function migrateParkingTaxonomy(root: FeatureNode): FeatureNode {
   get("cat-public").title = "Public Information";
   mergeAndRemove("leaf-pub-price", "leaf-price-public");
   mergeAndRemove("leaf-pub-avail", "leaf-struct-avail");
-  group("cat-public", "feat-public-information-access", "Public Information Access", "Anonymous access to parking information, pricing, rules, and availability.");
+  const pubAccess = group("cat-public", "feat-public-information-access", "Public Information Access", "Anonymous access to parking information, pricing, rules, and availability.");
+  pubAccess.status = "ready";
   moveMany("feat-public-information-access", ["leaf-pub-info", "leaf-pub-price", "leaf-pub-rules", "leaf-pub-avail"]);
 
-  group("cat-feedback", "feat-feedback-submission", "Feedback Submission", "Driver feedback submission flow.");
+  const feedSubmission = group("cat-feedback", "feat-feedback-submission", "Feedback Submission", "Driver feedback submission flow.");
+  feedSubmission.status = "ready";
   moveMany("feat-feedback-submission", ["leaf-feed-submit"]);
-  group("cat-feedback", "feat-feedback-administration", "Feedback Administration", "Review and manage submitted feedback.");
+  const feedAdmin = group("cat-feedback", "feat-feedback-administration", "Feedback Administration", "Review and manage submitted feedback.");
+  feedAdmin.status = "ready";
   moveMany("feat-feedback-administration", ["leaf-feed-list", "leaf-feed-detail", "leaf-feed-update"]);
 
   get("cat-notification").title = "Notifications";
   mergeAndRemove("leaf-notif-user", "leaf-notif-unread");
-  group("cat-notification", "feat-notification-management", "Notification Management", "Notification delivery, unread counts, and read state.");
+  const notifMgmt = group("cat-notification", "feat-notification-management", "Notification Management", "Notification delivery, unread counts, and read state.");
+  notifMgmt.status = "ready";
   moveMany("feat-notification-management", ["leaf-notif-user", "leaf-notif-read"]);
 
   get("cat-diagnostics").title = "Platform Operations & Diagnostics";
@@ -17572,9 +18365,11 @@ export function migrateParkingTaxonomy(root: FeatureNode): FeatureNode {
   moveMany("feat-diagnostic-data-access", ["leaf-diag-res-dump", "leaf-diag-sess-dump"]);
 
   get("cat-mock-devices").title = "Developer & Test Utilities";
-  group("cat-mock-devices", "feat-device-simulation", "Device Simulation", "Camera, RFID, and barrier simulators.");
+  const deviceSim = group("cat-mock-devices", "feat-device-simulation", "Device Simulation", "Camera, RFID, and barrier simulators.");
+  deviceSim.status = "ready";
   moveMany("feat-device-simulation", ["leaf-mock-camera", "leaf-mock-rfid", "leaf-mock-barrier"]);
-  group("cat-mock-devices", "feat-test-data-maintenance", "Test Data Maintenance", "Restricted destructive and lifecycle test-data utilities.");
+  const testDataMaint = group("cat-mock-devices", "feat-test-data-maintenance", "Test Data Maintenance", "Restricted destructive and lifecycle test-data utilities.");
+  testDataMaint.status = "ready";
   moveMany("feat-test-data-maintenance", ["leaf-diag-clear-res", "leaf-diag-migrate", "leaf-diag-expire-res", "leaf-diag-expire-pay"]);
 
   normalizeTree(root);
