@@ -440,7 +440,29 @@ CREATE INDEX ix_password_reset_expiry ON password_reset_tokens(expires_at);`,
       uiStateLoading: "Show loading spinner overlay during API calls, disable submit buttons.",
       uiStateEmpty: "Not applicable.",
       uiStateError: "Handle 400 (VALIDATION_ERROR, INVALID_TOKEN, PASSWORD_TOO_WEAK, PASSWORD_REUSED, USER_STATUS_INVALID), 429 RATE_LIMITED, 409 CONCURRENT_RESET, 500 INTERNAL_ERROR.",
-      uiStateSuccess: "Display success message: 'If the account exists, reset instructions have been sent.' / 'Password has been reset successfully.'"
+      uiStateSuccess: "Display success message: 'If the account exists, reset instructions have been sent.' / 'Password has been reset successfully.'",
+      apiContracts: [
+        {
+          id: "contract-auth-forgot",
+          name: "POST /api/auth/forgot-password",
+          content: "Method: POST\\nPath: /api/auth/forgot-password\\nBody:\\n{\\n  \\\"email\\\": \\\"user@example.com\\\"\\n}\\nResponse 200 OK:\\n{\\n  \\\"success\\\": true,\\n  \\\"message\\\": \\\"If the account exists, reset instructions have been sent.\\\"\\n}"
+        },
+        {
+          id: "contract-auth-reset",
+          name: "POST /api/auth/reset-password",
+          content: "Method: POST\\nPath: /api/auth/reset-password\\nBody:\\n{\\n  \\\"token\\\": \\\"raw_token_string\\\",\\n  \\\"newPassword\\\": \\\"SecurePassword123!\\\",\\n  \\\"confirmPassword\\\": \\\"SecurePassword123!\\\"\\n}\\nResponse 200 OK:\\n{\\n  \\\"success\\\": true,\\n  \\\"message\\\": \\\"Password has been reset successfully.\\\"\\n}"
+        }
+      ],
+      testCases: [
+        { id: "tc-auth-forgot-valid", title: "Verify valid email sends reset link", type: "integration", precondition: "User exists", steps: ["POST /forgot"], expectedResult: "HTTP 200", status: "not_started" },
+        { id: "tc-auth-reset-valid", title: "Verify valid token resets password", type: "integration", precondition: "Token exists", steps: ["POST /reset"], expectedResult: "HTTP 200", status: "not_started" }
+      ],
+      doneCriteria: [
+        { id: "dc-auth-forgot-impl", content: "Forgot password endpoint implemented", checked: false },
+        { id: "dc-auth-reset-impl", content: "Reset password endpoint implemented", checked: false },
+        { id: "dc-auth-reset-lock", content: "Strict lock order implemented", checked: false },
+        { id: "dc-auth-reset-outbox", content: "Outbox events published", checked: false }
+      ]
     }
   ];
 
@@ -474,9 +496,9 @@ CREATE INDEX ix_password_reset_expiry ON password_reset_tokens(expires_at);`,
     child.uiStateError = definition.uiStateError;
     child.uiStateSuccess = definition.uiStateSuccess;
 
-    child.apiContracts = node.apiContracts.filter(item => definition.match.test(`${item.id} ${item.name}`));
-    child.testCases = node.testCases.filter(item => definition.match.test(`${item.id} ${item.title}`));
-    child.doneCriteria = node.doneCriteria.filter(item => definition.match.test(`${item.id} ${item.content}`));
+    child.apiContracts = (definition as any).apiContracts || node.apiContracts.filter(item => definition.match.test(`${item.id} ${item.name}`));
+    child.testCases = (definition as any).testCases || node.testCases.filter(item => definition.match.test(`${item.id} ${item.title}`));
+    child.doneCriteria = (definition as any).doneCriteria || node.doneCriteria.filter(item => definition.match.test(`${item.id} ${item.content}`));
     return child;
   });
 
