@@ -11561,7 +11561,162 @@ Response Success (201 Created):
               { id: "dc-expire-res-state-transitions", content: "Payment/session/reservation state transition is documented.", checked: false }
             ]
           },
-          { id: "leaf-diag-expire-pay", title: "Expire Payment Deadline Debug", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Expire Payment Deadline Debug", ["Admin"], []), doneCriteria: defaultDoneCriteria("Expire Payment Deadline Debug") }
+          {
+            id: "leaf-diag-expire-pay",
+            title: "Expire Payment Deadline Debug",
+            type: "leaf_feature",
+            clients: ["Admin"],
+            status: "ready",
+            priority: "low",
+            tags: ["developer-utility", "test-data", "debug", "expire-payment"],
+            summary: "Provide a debugging utility that artificially fast-forwards the payment deadline or immediately expires a pending payment, allowing developers and QA engineers to verify temporary slot lock release, unpaid reservation cleanup, and payment timeout workflows without waiting for real payment expiration.",
+            objective: "Artificially expire a pending payment, releasing associated temporary slot locks and recalculating parking capacity immediately in non-production environments.",
+            inScope: [
+              "Force a pending payment to expire.",
+              "Simulate payment gateway timeout behavior.",
+              "Trigger the same business events as a real payment timeout.",
+              "Immediately release temporary slot locks.",
+              "Update parking capacity after reservation cleanup.",
+              "Support testing of unpaid reservation cleanup logic.",
+              "Follow existing project architecture and security standards."
+            ],
+            outOfScope: [
+              "Modifying completed or refunded payments.",
+              "Testing production payment gateways.",
+              "Changing reservation data outside supported debug scenarios.",
+              "External system integrations not specified in this document."
+            ],
+            permissions: [
+              { role: "Admin", permission: "Authorized to access this feature." }
+            ],
+            businessRules: [
+              "This debugging utility must only execute in non-production environments.",
+              "The feature interacts directly with the temporary slot lock mechanism implemented in the Create Reservation workflow.",
+              "Parking capacity must be updated immediately after payment expiration.",
+              "Only reservations with Pending Payment status are eligible for forced payment expiration.",
+              "Mock payment expiration must trigger the same webhook/event processing as a real payment gateway timeout.",
+              "Every execution must be recorded in the audit log."
+            ],
+            dbExistingTables: [
+              "Reservation",
+              "Payment",
+              "Payment Transaction",
+              "Temporary Slot Lock",
+              "Audit Log"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Only reservations in Pending Payment status can transition to payment timeout.",
+              "Expired payments must immediately release their associated temporary slot locks.",
+              "Parking capacity must be recalculated after slot release.",
+              "Audit records must remain immutable after execution."
+            ],
+            validationRules: [
+              { field: "Role", rule: "Only authenticated Admin users may execute this feature.", errorMessage: "Unauthorized access." },
+              { field: "Environment", rule: "Reject execution in the Production environment.", errorMessage: "Forbidden in Production." },
+              { field: "Reservation ID", rule: "Validate the reservation exists.", errorMessage: "Reservation not found." },
+              { field: "Payment Status", rule: "Validate the payment status is Pending Payment. Reject already paid, cancelled, refunded, or expired payments.", errorMessage: "Payment status is not eligible for forced expiration." }
+            ],
+            securityRules: [
+              "Validate Admin role permissions.",
+              "Prevent unauthorized access.",
+              "Restrict execution to non-production environments.",
+              "Prevent accidental modification of production payment records.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Log request access, execution time, duration, and response code.",
+              "Log administrator ID.",
+              "Log reservation ID.",
+              "Log payment ID.",
+              "Log original payment status.",
+              "Log updated payment status.",
+              "Log temporary slot release result.",
+              "Log parking capacity update result.",
+              "Log simulated webhook/event execution.",
+              "Record execution in the audit log."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, payment credentials, and credit card details."
+            ],
+            integrationPoints: [
+              { system: "Reservation service", responsibility: "Fetches reservation states and logs results." },
+              { system: "Payment service", responsibility: "Updates payment status to Expired." },
+              { system: "Temporary Slot Lock service", responsibility: "Immediately releases slot locks." },
+              { system: "Parking Capacity service", responsibility: "Recalculates facility capacity metrics." },
+              { system: "Payment timeout webhook/event handler", responsibility: "Processes downstream logic identically to gateway timeout." },
+              { system: "Audit logging subsystem", responsibility: "Logs execution metadata." }
+            ],
+            uiPage: "/admin/debug-utilities",
+            uiComponents: "Expiration Confirmation Modal, Temporary Lock Status Display, Capacity Update Panel, Trigger Execution Button",
+            uiStateIdle: "Display a confirmation dialog before execution.",
+            uiStateLoading: "Disable action and show execution spinner.",
+            uiStateSuccess: "Display payment status before and after execution. Display whether the temporary slot lock has been released. Display updated parking capacity after execution.",
+            uiStateEmpty: "No reservations in Pending Payment status found.",
+            uiStateError: "Display execution failures or validation errors.",
+            endpoints: [],
+            ownerService: "System",
+            apiContracts: [],
+            testCases: [
+              {
+                id: "tc-expire-pay-success",
+                title: "Verify authorized client (Admin) can execute \"Expire Payment Deadline Debug\" successfully",
+                type: "api",
+                precondition: "Client is authenticated as Admin in a non-production environment and reservation payment status is Pending Payment",
+                steps: [
+                  "Authenticate user as Admin",
+                  "Execute the payment expiration utility",
+                  "Verify payment status changes to Expired"
+                ],
+                expectedResult: "Payment expires successfully, temporary slot lock is released, and parking capacity is updated",
+                status: "not_started"
+              },
+              {
+                id: "tc-expire-pay-blocked-prod",
+                title: "Verify execution is blocked in Production",
+                type: "integration",
+                precondition: "Application is running in Production",
+                steps: [
+                  "Authenticate as Admin",
+                  "Execute the payment expiration utility"
+                ],
+                expectedResult: "System returns 403 Forbidden",
+                status: "not_started"
+              },
+              {
+                id: "tc-expire-pay-only-pending",
+                title: "Verify only Pending Payment reservations can be expired",
+                type: "integration",
+                expectedResult: "Paid, Cancelled, Refunded, or Expired payments are rejected",
+                status: "not_started"
+              },
+              {
+                id: "tc-expire-pay-simulated-event",
+                title: "Verify simulated payment expiration triggers the same event as a real payment timeout",
+                type: "integration",
+                expectedResult: "Webhook/event processing executes successfully and reservation cleanup behaves identically to a real payment timeout",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-expire-pay-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-expire-pay-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-expire-pay-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-expire-pay-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-expire-pay-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-expire-pay-non-prod", content: "Feature is restricted to non-production environments.", checked: false },
+              { id: "dc-expire-pay-env-val", content: "Runtime environment validation is implemented.", checked: false },
+              { id: "dc-expire-pay-pending-only", content: "Only Pending Payment reservations can be processed.", checked: false },
+              { id: "dc-expire-pay-lock-release", content: "Temporary slot locks are released immediately.", checked: false },
+              { id: "dc-expire-pay-capacity-update", content: "Parking capacity is updated correctly.", checked: false },
+              { id: "dc-expire-pay-event-trigger", content: "Simulated timeout triggers the same webhook/event flow as the real payment gateway.", checked: false },
+              { id: "dc-expire-pay-audit-log", content: "Audit logs record every execution.", checked: false },
+              { id: "dc-expire-pay-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-expire-pay-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false },
+              { id: "dc-expire-pay-edge-cases", content: "Edge cases are documented.", checked: false },
+              { id: "dc-expire-pay-state-transitions", content: "Payment/session/reservation state transition is documented.", checked: false }
+            ]
+          }
         ]
       }
     ]
