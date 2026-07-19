@@ -520,7 +520,8 @@ export function migrateParkingTaxonomy(root: FeatureNode): FeatureNode {
 
   get("cat-notification").title = "Notifications";
   mergeAndRemove("leaf-notif-user", "leaf-notif-unread");
-  group("cat-notification", "feat-notification-management", "Notification Management", "Notification delivery, unread counts, and read state.");
+  const notifMgmt = group("cat-notification", "feat-notification-management", "Notification Management", "Notification delivery, unread counts, and read state.");
+  notifMgmt.status = "ready";
   moveMany("feat-notification-management", ["leaf-notif-user", "leaf-notif-read"]);
 
   get("cat-diagnostics").title = "Platform Operations & Diagnostics";
