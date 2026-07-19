@@ -11274,7 +11274,149 @@ Response Success (201 Created):
               { id: "dc-clear-res-state-transitions", content: "Payment/session/reservation state transition is documented.", checked: false }
             ]
           },
-          { id: "leaf-diag-migrate", title: "Migrate Database Debug", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Migrate Database Debug", ["Admin"], []), doneCriteria: defaultDoneCriteria("Migrate Database Debug") },
+          {
+            id: "leaf-diag-migrate",
+            title: "Migrate Database Debug",
+            type: "leaf_feature",
+            clients: ["Admin"],
+            status: "ready",
+            priority: "low",
+            tags: ["developer-utility", "database", "migration", "seed-data"],
+            summary: "Provide a debugging utility for administrators to trigger or simulate database schema migrations and seed predefined mock data, ensuring database structural changes function correctly in non-production environments.",
+            objective: "Trigger or simulate database schema migrations and seed predefined mock data inside a database transaction, automatically rolling back on failure and bypassing cache.",
+            inScope: [
+              "Trigger or simulate database schema migrations.",
+              "Execute predefined database seed operations for testing.",
+              "Validate migration execution in non-production environments.",
+              "Automatically rollback database changes if migration fails.",
+              "Disable API caching during migration execution.",
+              "Follow existing project architecture and security standards."
+            ],
+            outOfScope: [
+              "Executing migrations against production databases.",
+              "Modifying production business data.",
+              "Running arbitrary SQL scripts outside the controlled migration process.",
+              "External system integrations not specified in this document."
+            ],
+            permissions: [
+              { role: "Admin", permission: "Authorized to access this feature." }
+            ],
+            businessRules: [
+              "This utility must only execute in non-production environments.",
+              "The application must validate the runtime environment and reject execution on Production.",
+              "Entity Framework (or the project's ORM) must rollback all database changes if the migration process fails.",
+              "API caching must be disabled while migration or seed operations are executing.",
+              "Seed operations must only insert predefined mock data.",
+              "Seeded records must never conflict with real user IDs or production business data."
+            ],
+            dbExistingTables: [
+              "Migration History",
+              "Existing application tables",
+              "Audit Log"
+            ],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "Seed data must reference only predefined mock entities.",
+              "Mock records must not share identifiers with production users or operational data.",
+              "Failed migration operations must leave the database in its original consistent state."
+            ],
+            validationRules: [
+              { field: "Role", rule: "Only authenticated Admin users may execute this feature.", errorMessage: "Unauthorized access." },
+              { field: "Environment", rule: "Reject execution when the application is running in the Production environment.", errorMessage: "Forbidden in Production." },
+              { field: "Migration Packages", rule: "Validate migration packages before execution.", errorMessage: "Invalid migration package." },
+              { field: "Seed Integrity", rule: "Validate seed data integrity before insertion.", errorMessage: "Mock data validation failed." }
+            ],
+            securityRules: [
+              "Validate Admin role permissions.",
+              "Prevent unauthorized access.",
+              "Block execution in Production environments.",
+              "Prevent accidental modification of production data.",
+              "Do not log sensitive data."
+            ],
+            logEvents: [
+              "Log request access, execution time, duration, and response code.",
+              "Log administrator ID.",
+              "Log migration version executed.",
+              "Log seed operation results.",
+              "Log rollback operations (if any).",
+              "Log environment name.",
+              "Record execution in the audit log."
+            ],
+            noLogEvents: [
+              "Passwords, access tokens, refresh tokens, and credit card details."
+            ],
+            integrationPoints: [
+              { system: "Entity Framework / ORM migration engine", responsibility: "Executes actual database schema shifts." },
+              { system: "Database transaction management", responsibility: "Rolls back changes on failure." },
+              { system: "Audit logging subsystem", responsibility: "Logs execution metadata." }
+            ],
+            uiPage: "/admin/debug-utilities",
+            uiComponents: "Confirmation Dialog, Progress Indicator, Rollback Status Banner, Seed Summary Panel",
+            uiStateIdle: "Display a confirmation dialog before execution.",
+            uiStateLoading: "Display migration progress with a spinner.",
+            uiStateSuccess: "Show seed execution summary after completion.",
+            uiStateEmpty: "No pending migrations found.",
+            uiStateError: "Display migration success, rollback, or failure messages.",
+            endpoints: [],
+            ownerService: "System",
+            apiContracts: [],
+            testCases: [
+              {
+                id: "tc-db-migrate-admin-success",
+                title: "Verify authorized client (Admin) can execute \"Migrate Database Debug\" successfully",
+                type: "api",
+                precondition: "Client is authenticated as Admin in a non-production environment",
+                steps: [
+                  "Authenticate user as Admin",
+                  "Execute migration utility",
+                  "Verify migration and seed operations complete successfully"
+                ],
+                expectedResult: "Migration succeeds and predefined mock data is inserted",
+                status: "not_started"
+              },
+              {
+                id: "tc-db-migrate-blocked-prod",
+                title: "Verify execution is blocked in Production",
+                type: "integration",
+                precondition: "Application is running in Production",
+                steps: [
+                  "Authenticate as Admin",
+                  "Execute migration utility"
+                ],
+                expectedResult: "System returns 403 Forbidden",
+                status: "not_started"
+              },
+              {
+                id: "tc-db-migrate-rollback",
+                title: "Verify failed migration automatically rolls back",
+                type: "integration",
+                expectedResult: "Database returns to its previous consistent state after failure",
+                status: "not_started"
+              },
+              {
+                id: "tc-db-migrate-no-conflict",
+                title: "Verify seeded data does not conflict with production user IDs",
+                type: "integration",
+                expectedResult: "Only predefined mock records are inserted without ID conflicts",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-db-migrate-contract", content: "API contract is documented in this node.", checked: false },
+              { id: "dc-db-migrate-roles", content: "Required clients/roles are assigned.", checked: false },
+              { id: "dc-db-migrate-export", content: "Business rules and inherited rules are visible in AI export.", checked: false },
+              { id: "dc-db-migrate-response-format", content: "Success response uses common API response format where applicable.", checked: false },
+              { id: "dc-db-migrate-error-safe", content: "Error response is clear and does not leak sensitive data.", checked: false },
+              { id: "dc-db-migrate-non-prod", content: "Feature is restricted to non-production environments.", checked: false },
+              { id: "dc-db-migrate-env-val", content: "Runtime environment validation is implemented.", checked: false },
+              { id: "dc-db-migrate-rollback", content: "Automatic rollback is implemented for failed migrations.", checked: false },
+              { id: "dc-db-migrate-cache-disabled", content: "API cache is disabled during migration execution.", checked: false },
+              { id: "dc-db-migrate-seed-mock-only", content: "Seed data only contains predefined mock records.", checked: false },
+              { id: "dc-db-migrate-no-conflict-ids", content: "Seed data does not conflict with production user IDs.", checked: false },
+              { id: "dc-db-migrate-test-cases", content: "At least two test cases are defined.", checked: false },
+              { id: "dc-db-migrate-ai-export", content: "Feature can be exported as AI-readable Markdown.", checked: false }
+            ]
+          },
           { id: "leaf-diag-expire-res", title: "Expire Reservation Debug", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Expire Reservation Debug", ["Admin"], []), doneCriteria: defaultDoneCriteria("Expire Reservation Debug") },
           { id: "leaf-diag-expire-pay", title: "Expire Payment Deadline Debug", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Expire Payment Deadline Debug", ["Admin"], []), doneCriteria: defaultDoneCriteria("Expire Payment Deadline Debug") }
         ]
