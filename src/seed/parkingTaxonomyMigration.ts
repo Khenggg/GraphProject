@@ -530,9 +530,11 @@ export function migrateParkingTaxonomy(root: FeatureNode): FeatureNode {
   moveMany("feat-diagnostic-data-access", ["leaf-diag-res-dump", "leaf-diag-sess-dump"]);
 
   get("cat-mock-devices").title = "Developer & Test Utilities";
-  group("cat-mock-devices", "feat-device-simulation", "Device Simulation", "Camera, RFID, and barrier simulators.");
+  const deviceSim = group("cat-mock-devices", "feat-device-simulation", "Device Simulation", "Camera, RFID, and barrier simulators.");
+  deviceSim.status = "ready";
   moveMany("feat-device-simulation", ["leaf-mock-camera", "leaf-mock-rfid", "leaf-mock-barrier"]);
-  group("cat-mock-devices", "feat-test-data-maintenance", "Test Data Maintenance", "Restricted destructive and lifecycle test-data utilities.");
+  const testDataMaint = group("cat-mock-devices", "feat-test-data-maintenance", "Test Data Maintenance", "Restricted destructive and lifecycle test-data utilities.");
+  testDataMaint.status = "ready";
   moveMany("feat-test-data-maintenance", ["leaf-diag-clear-res", "leaf-diag-migrate", "leaf-diag-expire-res", "leaf-diag-expire-pay"]);
 
   normalizeTree(root);
