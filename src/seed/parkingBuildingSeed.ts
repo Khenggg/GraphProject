@@ -5596,12 +5596,190 @@ CREATE UNIQUE INDEX ux_users_phone ON users (phone);`,
             id: "leaf-pay-cash",
             title: "Cash Payment",
             type: "leaf_feature",
+            status: "ready",
+            priority: "medium",
             clients: ["Staff", "Manager"],
+            tags: ["payments", "cash", "exit-fee", "transaction", "audit"],
+            summary: "Handle parking fee payment transactions via cash (at the counter). Requires staff authorization, session status validation, fee calculation based on Snapshot Pricing (with fallback), updating session status to PAID, and audit logging for reconciliation.",
+            objective: "Provide a reliable, atomic cash collection flow for staff that ensures data integrity via DB-level locking, prevents double-payment, and produces a complete audit trail for financial reconciliation.",
+            inScope: [
+              "Cash payment flow for parking session exit fee.",
+              "Snapshot Pricing priority with fallback to PricingRule table.",
+              "Amount received validation against calculated fee.",
+              "Single atomic DB Transaction: INSERT payment + UPDATE session status + WRITE audit log.",
+              "Pessimistic locking (SELECT FOR UPDATE) on parking_sessions to prevent concurrent double-payment.",
+              "Audit log recording with CASH_COLLECTION event."
+            ],
+            outOfScope: [
+              "Barrier/Gate opening: this is the Exit Module's responsibility.",
+              "Online payment via PayOS: handled by leaf-pay-online.",
+              "Receipt generation: handled by a separate receipt module.",
+              "Auto-retry on business logic errors (Amount Mismatch, Session Already Paid)."
+            ],
+            permissions: [
+              { role: "Staff", permission: "Collect cash payment on behalf of driver at counter." },
+              { role: "Manager", permission: "Collect cash payment and override edge cases where permitted." }
+            ],
+            businessRules: [
+              "Authorization: Only Staff and Manager roles are permitted. Driver access must return 403 FORBIDDEN.",
+              "Session Status: parking_sessions.status MUST be ACTIVE. Return 422 SESSION_ALREADY_COMPLETED if PAID or CANCELLED.",
+              "Concurrency Control: SELECT FOR UPDATE on parking_sessions at start of transaction. After lock is acquired, re-check status. If already PAID, return 409 SESSION_ALREADY_COMPLETED.",
+              "Payment Required Check: If payment_required == false or fee == 0, return 422 NO_PAYMENT_REQUIRED.",
+              "Snapshot Pricing: Must use snapshot_day_price etc. if != NULL. Fallback to pricing_rules table if Snapshot is NULL. If both are NULL, return 500 INTERNAL_SERVER_ERROR.",
+              "Amount Validation (Server-side): NEVER trust amount from client. Always recalculate fee on server. If amountReceived != calculatedFee, return 422 AMOUNT_MISMATCH.",
+              "Atomicity: Payment INSERT, parking_sessions UPDATE, and audit_logs INSERT must be in a single IDbContextTransaction. Rollback all on any exception.",
+              "Idempotency: If session is already PAID, do not create a new payment record. Return 409.",
+              "Collector ID: Retrieve staff ID from UserContext (JWT), never from request body."
+            ],
+            dbExistingTables: ["parking_sessions", "payments", "audit_logs", "pricing_rules", "driver_profiles"],
+            dbNewTablesSql: "",
+            dbRelationships: [
+              "parking_sessions: SELECT FOR UPDATE to lock row, validate ACTIVE status, read snapshot pricing fields.",
+              "payments: INSERT new payment record with status PAID, method CASH, collector_id from JWT.",
+              "audit_logs: INSERT CASH_COLLECTION event with TraceId, SessionId, CollectorId, OldStatus, NewStatus, Amount.",
+              "pricing_rules: READ-only fallback when session snapshot pricing fields are NULL."
+            ],
+            validationRules: [
+              { field: "sessionId", rule: "Required. Session must exist and status must be ACTIVE.", errorMessage: "SESSION_NOT_FOUND" },
+              { field: "amountReceived", rule: "Required. Must be a positive decimal. Validated server-side against calculated fee.", errorMessage: "AMOUNT_MISMATCH" },
+              { field: "notes", rule: "Optional. Max length 500 characters.", errorMessage: "VALIDATION_ERROR" }
+            ],
+            securityRules: [
+              "JWT Auth: All requests must provide valid Bearer token.",
+              "Role Enforcement: Only Staff and Manager. Return 403 FORBIDDEN for any other role.",
+              "Server-side Recalculation: Amount must be recalculated on server. Never trust client-provided fee amount."
+            ],
+            logEvents: [
+              "Must log: TraceId, SessionId, CollectorId, OldStatus, NewStatus, Amount, Latency.",
+              "Audit log CASH_COLLECTION event written atomically inside the main transaction."
+            ],
+            noLogEvents: [
+              "Do not log raw JWT tokens or user passwords.",
+              "Do not log full driver personal data in application logs."
+            ],
+            integrationPoints: [
+              { system: "Pricing Module", responsibility: "Providing fallback PricingRule when session snapshot is NULL." },
+              { system: "Audit Module", responsibility: "Writing CASH_COLLECTION record inside the same DB transaction." }
+            ],
+            uiPage: "/staff/cash-payment",
+            uiComponents: "Cash collection modal showing: calculated fee, amount received input, notes field, Confirm button. Shows payment receipt summary on success.",
+            uiStateLoading: "Disable 'Confirm Payment' button and show spinner while POST is in flight.",
+            uiStateEmpty: "N/A",
+            uiStateError: "Display specific error from reasonCode: 'AMOUNT_MISMATCH', 'SESSION_ALREADY_COMPLETED', 'NO_PAYMENT_REQUIRED'.",
+            uiStateSuccess: "Show payment success confirmation with paymentId, paidAt, collectorId, and amount. Trigger gate opening via Exit Module.",
+            notes: "DO NOT trigger barrier/gate opening in this flow. All DB changes (payment, session status, audit log) must be committed in a single atomic transaction. Retry only for transient DB errors (Deadlock), never for business logic errors.",
+            dependencies: [],
+            risks: [],
             endpoints: ["POST /api/core/payments/cash"],
             ownerService: ".NET Core API",
-            apiContracts: createApiContract("POST /api/core/payments/cash"),
-            testCases: defaultApiTests("Cash Payment", ["Staff"], ["POST /api/core/payments/cash"]),
-            doneCriteria: defaultDoneCriteria("Cash Payment")
+            apiContracts: [
+              {
+                id: "contract-pay-cash-post",
+                name: "POST /api/core/payments/cash",
+                content: `Method: POST\nPath: /api/core/payments/cash\nHeaders:\n  Authorization: Bearer <token>\n  Content-Type: application/json\nRequest Body:\n{\n  "sessionId": 123456789,\n  "amountReceived": 20000,\n  "notes": "Cash collected at counter 1"\n}\n\nResponse 200 OK (Payment Successful):\n{\n  "success": true,\n  "data": {\n    "paymentId": 987654321,\n    "paidAt": "2026-07-19T06:57:00Z",\n    "collectorId": "staff-uuid-001",\n    "status": "PAID"\n  }\n}\n\nResponse 422 (Amount Mismatch):\n{\n  "success": false,\n  "error": {\n    "code": "AMOUNT_MISMATCH",\n    "message": "Received amount does not match calculated fee.",\n    "traceId": "0HL-1234567890"\n  }\n}\n\nResponse 409 (Concurrent Request):\n{\n  "success": false,\n  "error": {\n    "code": "CONCURRENT_REQUEST",\n    "message": "A transaction for this session is already in progress.",\n    "traceId": "0HL-1234567890"\n  }\n}`
+              }
+            ],
+            testCases: [
+              {
+                id: "tc-cash-happy-path",
+                title: "Verify successful cash payment updates session to PAID",
+                type: "integration",
+                precondition: "Active session with payment_required = true. Staff JWT. amountReceived == calculatedFee.",
+                steps: [
+                  "POST /api/core/payments/cash with valid sessionId and correct amountReceived."
+                ],
+                expectedResult: "HTTP 200 OK. Payment record PAID inserted. parking_sessions.status updated to PAID. Audit log CASH_COLLECTION written. Returns paymentId, paidAt, collectorId.",
+                status: "not_started"
+              },
+              {
+                id: "tc-cash-amount-mismatch",
+                title: "Verify amount mismatch is rejected with 422",
+                type: "integration",
+                precondition: "Calculated fee is 20000. amountReceived = 15000.",
+                steps: [
+                  "POST /api/core/payments/cash with amountReceived = 15000."
+                ],
+                expectedResult: "HTTP 422. Error code: AMOUNT_MISMATCH. No DB changes.",
+                status: "not_started"
+              },
+              {
+                id: "tc-cash-unauthorized-driver",
+                title: "Verify Driver role is rejected with 403",
+                type: "api",
+                precondition: "Authenticated as Driver role.",
+                steps: [
+                  "POST /api/core/payments/cash with Driver JWT."
+                ],
+                expectedResult: "HTTP 403 FORBIDDEN.",
+                status: "not_started"
+              },
+              {
+                id: "tc-cash-concurrent",
+                title: "Verify concurrent collection by 2 staff on same session: 1 success, 1 conflict",
+                type: "concurrency",
+                precondition: "Two staff submit payment for same sessionId simultaneously.",
+                steps: [
+                  "Dispatch two simultaneous POST requests for the same sessionId from different staff accounts."
+                ],
+                expectedResult: "One request: HTTP 200 PAID. Other request: HTTP 409 CONCURRENT_REQUEST or 422 SESSION_ALREADY_COMPLETED.",
+                status: "not_started"
+              },
+              {
+                id: "tc-cash-snapshot-null-fallback",
+                title: "Verify fee fallback to PricingRule when snapshot is NULL",
+                type: "integration",
+                precondition: "Session snapshot_day_price = NULL. PricingRule exists.",
+                steps: [
+                  "POST /api/core/payments/cash with correct amountReceived matching PricingRule calculation."
+                ],
+                expectedResult: "HTTP 200 OK. Fee correctly calculated from pricing_rules table.",
+                status: "not_started"
+              },
+              {
+                id: "tc-cash-session-already-paid",
+                title: "Verify payment for already-paid session returns 422",
+                type: "integration",
+                precondition: "Session status is already PAID or CANCELLED.",
+                steps: [
+                  "POST /api/core/payments/cash."
+                ],
+                expectedResult: "HTTP 422. Error code: SESSION_ALREADY_COMPLETED.",
+                status: "not_started"
+              },
+              {
+                id: "tc-cash-deadlock-rollback",
+                title: "Verify DB exception causes full transaction rollback",
+                type: "integration",
+                precondition: "Mock DB to throw deadlock exception during SaveChanges.",
+                steps: [
+                  "POST /api/core/payments/cash."
+                ],
+                expectedResult: "HTTP 500 INTERNAL_SERVER_ERROR. No partial DB changes. Payments, parking_sessions, audit_logs are all unchanged.",
+                status: "not_started"
+              },
+              {
+                id: "tc-cash-invalid-input",
+                title: "Verify missing amountReceived returns 400",
+                type: "api",
+                precondition: "Request body missing amountReceived field.",
+                steps: [
+                  "POST /api/core/payments/cash with body { sessionId: 123 }."
+                ],
+                expectedResult: "HTTP 400 VALIDATION_ERROR.",
+                status: "not_started"
+              }
+            ],
+            doneCriteria: [
+              { id: "dc-cash-atomicity", content: "All DB changes (Payment INSERT, Session UPDATE, Audit log INSERT) are committed in a single IDbContextTransaction. Full rollback on any exception.", checked: true },
+              { id: "dc-cash-locking", content: "SELECT FOR UPDATE on parking_sessions is applied at the start of the transaction.", checked: true },
+              { id: "dc-cash-snapshot", content: "Snapshot Pricing priority implemented. Fallback to pricing_rules when snapshot is NULL. Returns 500 if both are NULL.", checked: true },
+              { id: "dc-cash-amount-server", content: "Fee is always recalculated on server-side. Client-provided amount is treated as amountReceived only, never as the fee.", checked: true },
+              { id: "dc-cash-audit", content: "CASH_COLLECTION audit log is written atomically inside the main transaction.", checked: true },
+              { id: "dc-cash-no-duplicate", content: "Idempotency: duplicate payment impossible due to DB locking and session status re-check after lock.", checked: true },
+              { id: "dc-cash-authz", content: "Authorization enforced: only Staff and Manager roles permitted. Driver returns 403.", checked: true },
+              { id: "dc-cash-contract", content: "API contract matches HTTP Status Matrix (200, 400, 401, 403, 404, 409, 422, 500).", checked: true },
+              { id: "dc-cash-tests", content: "All 8 test cases covering happy path, mismatch, auth, concurrency, fallback, deadlock, and invalid input are defined.", checked: true }
+            ]
           },
           {
             id: "leaf-pay-waived",
