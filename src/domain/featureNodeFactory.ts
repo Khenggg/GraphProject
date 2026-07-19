@@ -22,6 +22,12 @@ export type SeedNodeInput = {
   risks?: string[];
   notes?: string;
   children?: SeedNodeInput[];
+  metadata?: {
+    ownerService?: string;
+    endpoints?: string[];
+    sourceFiles?: string[];
+    consumerServices?: string[];
+  };
 
   // Advanced technical fields
   objective?: string;
@@ -90,9 +96,9 @@ export function createSeedNode(input: SeedNodeInput, parentId: string | null, or
     uiStateSuccess: input.uiStateSuccess,
 
     metadata: {
-      ownerService: input.ownerService,
-      sourceFiles: input.sourceFiles,
-      endpoints: input.endpoints,
+      ownerService: input.ownerService || input.metadata?.ownerService,
+      sourceFiles: input.sourceFiles || input.metadata?.sourceFiles,
+      endpoints: input.endpoints || input.metadata?.endpoints,
       roles: input.clients,
     },
     createdAt: now,

@@ -11151,7 +11151,8 @@ Response Success (201 Created):
             uiContracts: [{ id: "ui-core-health", name: "Health Dashboard Widget", content: "Displays green/red/yellow status indicators" }],
             dataContracts: [{ id: "data-core-health", name: "Health Status Response", content: "JSON object containing status, components, version, checkedAt" }],
             testCases: [
-              { id: "tc-core-health-1", title: "Verify liveness returns 200 UP", type: "api", expectedResult: "Returns 200 OK without DB access", status: "not_started" }
+              { id: "tc-core-health-1", title: "Verify liveness returns 200 UP", type: "api", expectedResult: "Returns 200 OK without DB access", status: "not_started" },
+              { id: "tc-core-health-2", title: "Verify readiness check queries database health", type: "integration", expectedResult: "Returns component latencies and DB connectivity status", status: "not_started" }
             ],
             doneCriteria: [{ id: "dc-core-health-1", content: "Infrastructure routes traffic based on liveness", checked: false }],
             dependencies: ["Infrastructure orchestrator (Kubernetes)", "Shared PostgreSQL"],
@@ -11199,7 +11200,8 @@ Response Success (201 Created):
             uiContracts: [{ id: "ui-support-health", name: "Projection Freshness Widget", content: "Displays lag in seconds and 'as of' time" }],
             dataContracts: [{ id: "data-support-health", name: "Support Health Response", content: "JSON object containing lag metrics and component array" }],
             testCases: [
-              { id: "tc-support-health-1", title: "Verify projection lag calculation", type: "api", expectedResult: "Returns accurate lag in seconds", status: "not_started" }
+              { id: "tc-support-health-1", title: "Verify projection lag calculation", type: "api", expectedResult: "Returns accurate lag in seconds", status: "not_started" },
+              { id: "tc-support-health-2", title: "Verify support health actuator endpoint works", type: "integration", expectedResult: "Returns 200 OK with general Actuator metrics", status: "not_started" }
             ],
             doneCriteria: [{ id: "dc-support-health-1", content: "Operators distinguish availability from freshness", checked: false }],
             dependencies: ["Event Bus (RabbitMQ/Kafka)", "Spring Boot Actuator"],
@@ -11246,7 +11248,8 @@ Response Success (201 Created):
             uiContracts: [{ id: "ui-db-check", name: "Database Diagnostics Dashboard", content: "Renders pool utilization percentage and lock counts" }],
             dataContracts: [{ id: "data-db-check", name: "Database Diagnostic Response", content: "JSON array of database invariants and aggregate counts" }],
             testCases: [
-              { id: "tc-db-check-1", title: "Test pool utilization extraction", type: "integration", expectedResult: "Returns active connection count without DSN", status: "not_started" }
+              { id: "tc-db-check-1", title: "Test pool utilization extraction", type: "integration", expectedResult: "Returns active connection count without DSN", status: "not_started" },
+              { id: "tc-db-check-2", title: "Verify DB check returns 503 on connection failure", type: "integration", expectedResult: "Returns service unavailable status on DB timeout", status: "not_started" }
             ],
             doneCriteria: [{ id: "dc-db-check-1", content: "Admins view active locks safely", checked: false }],
             dependencies: ["PostgreSQL System Catalogs", "EF Core Diagnostics"],
@@ -11294,7 +11297,8 @@ Response Success (201 Created):
             uiContracts: [{ id: "ui-res-dump", name: "Reservation Timeline View", content: "Renders sequential events for the reservation" }],
             dataContracts: [{ id: "data-res-dump", name: "Reservation Timeline DTO", content: "Array of masked event details and timestamps" }],
             testCases: [
-              { id: "tc-res-dump-1", title: "Verify Break-Glass guard", type: "api", expectedResult: "403 when Break-Glass disabled", status: "not_started" }
+              { id: "tc-res-dump-1", title: "Verify Break-Glass guard", type: "api", expectedResult: "403 when Break-Glass disabled", status: "not_started" },
+              { id: "tc-res-dump-2", title: "Verify sensitive PII fields are masked", type: "api", expectedResult: "Returns reservation timeline details with masked contact/plate info", status: "not_started" }
             ],
             doneCriteria: [{ id: "dc-res-dump-1", content: "Data exfiltration mitigated", checked: false }],
             dependencies: ["Incident Management Correlation ID Service"],
@@ -11342,15 +11346,14 @@ Response Success (201 Created):
             uiContracts: [{ id: "ui-sess-dump", name: "Session Hardware Timeline View", content: "Renders sequential events differentiating software/hardware" }],
             dataContracts: [{ id: "data-sess-dump", name: "Session Timeline DTO", content: "Array of masked event details and hardware responses" }],
             testCases: [
-              { id: "tc-sess-dump-1", title: "Verify truncation", type: "api", expectedResult: "Truncates at 100 events", status: "not_started" }
+              { id: "tc-sess-dump-1", title: "Verify truncation", type: "api", expectedResult: "Truncates at 100 events", status: "not_started" },
+              { id: "tc-sess-dump-2", title: "Verify break glass incident correlation validation", type: "api", expectedResult: "400 Bad Request when incident correlation ID is missing", status: "not_started" }
             ],
             doneCriteria: [{ id: "dc-sess-dump-1", content: "Barrier anomalies diagnosed safely", checked: false }],
             dependencies: ["Incident Management Correlation ID Service", "Hardware Abstraction Layer"],
             risks: ["Barrier event spam could overwhelm memory if truncation fails"],
             notes: "Images must strictly use short-lived URLs."
           },
-          { id: "leaf-diag-res-dump", title: "Reservation Debug Dump", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Reservation Debug Dump", ["Admin"], []), doneCriteria: defaultDoneCriteria("Reservation Debug Dump") },
-          { id: "leaf-diag-sess-dump", title: "Session Debug Dump", type: "leaf_feature", clients: ["Admin"], endpoints: [], ownerService: "System", testCases: defaultApiTests("Session Debug Dump", ["Admin"], []), doneCriteria: defaultDoneCriteria("Session Debug Dump") },
           {
             id: "leaf-diag-clear-res",
             title: "Clear Reservations Debug",
