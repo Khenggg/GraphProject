@@ -9,9 +9,10 @@ import {
   FileCode2
 } from "lucide-react";
 import { useFeatureTreeStore } from "../../store/featureTreeStore";
-import type { ClientType } from "../../domain/featureNode.types";
 import { translations } from "../../domain/localization";
 import ProjectInitializerButton from "../sidebar/ProjectInitializerButton";
+import { getProjectRoleRegistry } from "../../domain/taxonomy";
+import { CURRENT_PROJECT_VERSION, parseProjectBackup } from "../../domain/projectBackup";
 
 export default function LeftSidebar() {
   const {
@@ -36,16 +37,11 @@ export default function LeftSidebar() {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const t = translations[language];
 
+  const clientRoles = React.useMemo(() => getProjectRoleRegistry(nodes), [nodes]);
+
   // Compute count of features for each client role
   const clientCounts = React.useMemo(() => {
-    const counts: Record<string, number> = {
-      Admin: 0,
-      Manager: 0,
-      Staff: 0,
-      Driver: 0,
-      Guest: 0,
-      System: 0
-    };
+    const counts = Object.fromEntries(clientRoles.map(role => [role, 0])) as Record<string, number>;
     nodes.forEach(node => {
       if (node.clients) {
         node.clients.forEach(c => {
@@ -56,7 +52,7 @@ export default function LeftSidebar() {
       }
     });
     return counts;
-  }, [nodes]);
+  }, [clientRoles, nodes]);
 
   const activeProject = React.useMemo(() => {
     return projects.find(p => p.id === selectedProjectId) || null;
@@ -75,10 +71,10 @@ export default function LeftSidebar() {
   const handleExportJson = () => {
     if (!activeProject) return;
     const data = {
-      version: "1.0.0",
+      version: CURRENT_PROJECT_VERSION,
       projectName: activeProject.name,
       projectDescription: activeProject.description,
-      clients: ["Admin", "Manager", "Staff", "Driver", "Guest", "System"].map(name => ({ id: name, name })),
+      clients: clientRoles.map(name => ({ id: name, name })),
       nodes: exportTree()
     };
     
@@ -99,7 +95,8 @@ export default function LeftSidebar() {
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
-        const data = JSON.parse(event.target?.result as string);
+        const parsed = parseProjectBackup(JSON.parse(event.target?.result as string));
+        const data = parsed.data;
         if (!data.projectName || !Array.isArray(data.nodes)) {
           const errMsg = language === "en" 
             ? "Invalid backup JSON structure. Make sure 'projectName' and 'nodes' array are present."
@@ -292,7 +289,7 @@ export default function LeftSidebar() {
           </div>
 
           {/* Client lists */}
-          {(["Admin", "Manager", "Staff", "Driver", "Guest", "System"] as ClientType[]).map((client) => {
+          {clientRoles.map((client) => {
             const count = clientCounts[client] || 0;
             const isSelected = selectedClientFilter === client;
             return (

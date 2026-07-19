@@ -17,14 +17,15 @@ describe("parkingBuildingSeed", () => {
     
     const titles = root.children!.map(c => c.title);
     expect(titles).toContain("Authentication");
-    expect(titles).toContain("Reservation / Booking");
-    expect(titles).toContain("Payment");
+    expect(titles).toContain("Reservations");
+    expect(titles).toContain("Payments");
+    expect(titles).toContain("Parking Configuration");
   });
 
   test("Auth/Login node has clients and endpoint POST /api/core/auth/login", () => {
     const tree = createParkingBuildingSeedTree();
     const flat = flattenNodeTree(tree[0]);
-    const loginNode = flat.find(n => n.title === "Login & Session Management");
+    const loginNode = flat.find(n => n.title === "Sign In");
     
     expect(loginNode).toBeDefined();
     expect(loginNode!.clients).toContain("Driver");

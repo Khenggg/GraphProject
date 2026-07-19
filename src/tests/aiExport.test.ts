@@ -26,7 +26,7 @@ describe("aiExport", () => {
     const flat = flattenNodeTree(tree[0]);
     
     // Find Login node
-    const loginNode = flat.find(n => n.title === "Login & Session Management");
+    const loginNode = flat.find(n => n.title === "Sign In");
     expect(loginNode).toBeDefined();
 
     // Export to AI mode

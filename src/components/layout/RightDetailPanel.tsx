@@ -20,6 +20,7 @@ import type {
   TestCase,
   ContractField
 } from "../../domain/featureNode.types";
+import { getProjectRoleRegistry, validateFeatureTree } from "../../domain/taxonomy";
 import { getEffectiveRules, isNodeAiReady, getEffectiveTags } from "../../domain/inheritance.utils";
 import {
   formatSingleNodeMarkdown,
@@ -28,9 +29,15 @@ import {
 } from "../../domain/export.utils";
 import { translations } from "../../domain/localization";
 
-type TabType = "overview" | "db_validation" | "security_logging" | "contracts_ui" | "tests_done" | "export";
-
-const DEFAULT_ROLES = ["Admin", "Manager", "Staff", "Driver", "Guest", "System"];
+type TabType =
+  | "overview"
+  | "business_permissions"
+  | "data_validation"
+  | "api_integrations"
+  | "ui_presentation"
+  | "security_logging"
+  | "tests_acceptance"
+  | "export";
 
 function FieldLabel({
   text,
@@ -276,6 +283,56 @@ function TableEditor({
   );
 }
 
+function ContractCollectionEditor({
+  title,
+  contracts,
+  onChange,
+  language,
+}: {
+  title: string;
+  contracts: ContractField[];
+  onChange: (contracts: ContractField[]) => void;
+  language: string;
+}) {
+  return (
+    <div className="space-y-3 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">{title}</h3>
+        <button
+          type="button"
+          onClick={() => onChange([...contracts, { id: crypto.randomUUID(), name: "New contract", content: "" }])}
+          className="px-2.5 py-1 bg-white border border-slate-200 hover:bg-slate-100 text-slate-600 rounded text-[10px] font-semibold flex items-center cursor-pointer"
+        >
+          <Plus className="w-3.5 h-3.5 mr-1" /> {language === "en" ? "Add contract" : "Thêm hợp đồng"}
+        </button>
+      </div>
+      {contracts.length === 0 && <p className="text-xs text-slate-500 italic">{language === "en" ? "No contracts documented." : "Chưa có hợp đồng dữ liệu."}</p>}
+      {contracts.map((contract, index) => (
+        <div key={contract.id} className="space-y-2 p-3 bg-white border border-slate-200 rounded-lg relative">
+          <button
+            type="button"
+            onClick={() => onChange(contracts.filter((_, itemIndex) => itemIndex !== index))}
+            className="absolute top-3 right-3 text-slate-400 hover:text-rose-600 cursor-pointer"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+          <input
+            value={contract.name}
+            onChange={event => onChange(contracts.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))}
+            className="w-[calc(100%-2rem)] bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:border-indigo-500 focus:outline-none"
+          />
+          <textarea
+            value={contract.content}
+            onChange={event => onChange(contracts.map((item, itemIndex) => itemIndex === index ? { ...item, content: event.target.value } : item))}
+            rows={4}
+            className="w-full bg-slate-50 border border-slate-200 rounded px-2.5 py-1.5 text-xs font-mono text-slate-800 focus:border-indigo-500 focus:outline-none"
+          />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function RightDetailPanel() {
   const {
     nodes,
@@ -326,24 +383,19 @@ export default function RightDetailPanel() {
     return allEffectiveTags.filter(t => !localTags.includes(t));
   }, [activeNode, nodes]);
 
-  // Find the project root node to read dynamic roles
-  const projectRootNode = React.useMemo(() => {
-    return nodes.find(n => n.type === "project") || null;
-  }, [nodes]);
-
-  // Dynamic roles: use project root's metadata.roles if defined, otherwise fall back to defaults
-  const availableRoles = React.useMemo(() => {
-    const customRoles = projectRootNode?.metadata?.roles;
-    if (customRoles && customRoles.length > 0) return customRoles;
-    return DEFAULT_ROLES;
-  }, [projectRootNode]);
+  const availableRoles = React.useMemo(() => getProjectRoleRegistry(nodes), [nodes]);
+  const validationIssues = React.useMemo(() => validateFeatureTree(nodes), [nodes]);
+  const activeValidationIssues = React.useMemo(
+    () => validationIssues.filter(issue => !issue.nodeId || issue.nodeId === activeNode?.id),
+    [activeNode?.id, validationIssues]
+  );
 
   // Compute tabs that are relevant for the selected node type
   const visibleTabs = React.useMemo(() => {
     if (!activeNode) return [] as TabType[];
     const isLeafOrFeature = ["feature", "sub_feature", "leaf_feature"].includes(activeNode.type);
     if (isLeafOrFeature) {
-      return ["overview", "db_validation", "security_logging", "contracts_ui", "tests_done", "export"] as TabType[];
+      return ["overview", "business_permissions", "data_validation", "api_integrations", "ui_presentation", "security_logging", "tests_acceptance", "export"] as TabType[];
     }
     return ["overview", "export"] as TabType[];
   }, [activeNode]);
@@ -469,6 +521,14 @@ export default function RightDetailPanel() {
               }`}>
               {readiness.isReady ? t.aiReady : readiness.status === "partially_ready" ? t.partiallyReady : t.notReady}
             </span>
+            {activeValidationIssues.length > 0 && (
+              <span
+                title={activeValidationIssues.map(issue => issue.message).join("\n")}
+                className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded border bg-amber-50 text-amber-800 border-amber-200"
+              >
+                {activeValidationIssues.length} taxonomy issue{activeValidationIssues.length === 1 ? "" : "s"}
+              </span>
+            )}
           </div>
           <h2 className="text-lg font-bold text-slate-800 mt-1 truncate">{activeNode.title}</h2>
         </div>
@@ -496,10 +556,12 @@ export default function RightDetailPanel() {
               }`}
           >
             {tab === "overview" && (language === "en" ? "Overview" : "Tổng quan")}
-            {tab === "db_validation" && (language === "en" ? "DB & Validation" : "CSDL & Ràng buộc")}
+            {tab === "business_permissions" && (language === "en" ? "Business & Permissions" : "Nghiệp vụ & Phân quyền")}
+            {tab === "data_validation" && (language === "en" ? "Data & Validation" : "Dữ liệu & Validation")}
+            {tab === "api_integrations" && (language === "en" ? "API & Integrations" : "API & Tích hợp")}
+            {tab === "ui_presentation" && (language === "en" ? "UI & Presentation" : "UI & Trình bày")}
             {tab === "security_logging" && (language === "en" ? "Security & Logs" : "Bảo mật & Logs")}
-            {tab === "contracts_ui" && (language === "en" ? "Contracts & UI" : "Hợp đồng & UI")}
-            {tab === "tests_done" && (language === "en" ? "Tests & Done" : "Test & Nghiệm thu")}
+            {tab === "tests_acceptance" && (language === "en" ? "Tests & Acceptance" : "Test & Nghiệm thu")}
             {tab === "export" && (language === "en" ? "AI Export" : "Xuất Prompt AI")}
           </button>
         ))}
@@ -930,8 +992,52 @@ export default function RightDetailPanel() {
           </div>
         )}
 
-        {/* ==================== DB & VALIDATION TAB ==================== */}
-        {activeTab === "db_validation" && (
+        {/* ==================== BUSINESS & PERMISSIONS TAB ==================== */}
+        {activeTab === "business_permissions" && (
+          <div className="space-y-6">
+            <div>
+              <FieldLabel text={language === "en" ? "Business objective" : "Mục tiêu nghiệp vụ"} required={false} language={language} />
+              <textarea
+                value={activeNode.objective || ""}
+                onChange={event => updateNode(activeNode.id, { objective: event.target.value })}
+                rows={4}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+            <div>
+              <FieldLabel text={language === "en" ? "Business area" : "Lĩnh vực nghiệp vụ"} required={false} language={language} />
+              <input
+                value={activeNode.metadata?.businessArea || ""}
+                onChange={event => updateNode(activeNode.id, { metadata: { ...activeNode.metadata, businessArea: event.target.value } })}
+                placeholder="e.g. Payments, Reservations"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none"
+              />
+            </div>
+            <SimpleListEditor
+              title={language === "en" ? "Business rules" : "Quy tắc nghiệp vụ"}
+              placeholder="Add a business rule"
+              items={activeNode.businessRules || []}
+              onAdd={text => updateNode(activeNode.id, { businessRules: [...(activeNode.businessRules || []), text] })}
+              onRemove={index => updateNode(activeNode.id, { businessRules: (activeNode.businessRules || []).filter((_, itemIndex) => itemIndex !== index) })}
+              language={language}
+            />
+            <TableEditor
+              title={language === "en" ? "Roles & permissions" : "Vai trò & quyền hạn"}
+              fields={[
+                { key: "role", label: "Role", type: "select", options: availableRoles },
+                { key: "permission", label: "Permission", placeholder: "Can view or modify resources" },
+              ]}
+              items={(activeNode.permissions || []) as Record<string, string>[]}
+              onAdd={row => updateNode(activeNode.id, { permissions: [...(activeNode.permissions || []), { role: row.role, permission: row.permission }] })}
+              onRemove={index => updateNode(activeNode.id, { permissions: (activeNode.permissions || []).filter((_, itemIndex) => itemIndex !== index) })}
+              noItemsLabel={language === "en" ? "No permissions mapped." : "Chưa ánh xạ quyền hạn."}
+              language={language}
+            />
+          </div>
+        )}
+
+        {/* ==================== DATA & VALIDATION TAB ==================== */}
+        {activeTab === "data_validation" && (
           <div className="space-y-6">
             {/* Existing Tables */}
             <SimpleListEditor
@@ -982,6 +1088,12 @@ export default function RightDetailPanel() {
               language={language}
               required={false}
             />
+            <ContractCollectionEditor
+              title={language === "en" ? "Data contracts" : "Hợp đồng dữ liệu"}
+              contracts={activeNode.dataContracts || []}
+              onChange={dataContracts => updateNode(activeNode.id, { dataContracts })}
+              language={language}
+            />
           </div>
         )}
 
@@ -1024,8 +1136,26 @@ export default function RightDetailPanel() {
         )}
 
         {/* ==================== CONTRACTS & UI TAB ==================== */}
-        {activeTab === "contracts_ui" && (
+        {activeTab === "api_integrations" && (
           <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <SimpleListEditor
+                title={language === "en" ? "Endpoints" : "Endpoints"}
+                placeholder="e.g. GET /api/core/health"
+                items={activeNode.metadata?.endpoints || []}
+                onAdd={text => updateNode(activeNode.id, { metadata: { ...activeNode.metadata, endpoints: [...(activeNode.metadata?.endpoints || []), text] } })}
+                onRemove={index => updateNode(activeNode.id, { metadata: { ...activeNode.metadata, endpoints: (activeNode.metadata?.endpoints || []).filter((_, itemIndex) => itemIndex !== index) } })}
+                language={language}
+              />
+              <SimpleListEditor
+                title={language === "en" ? "Source files" : "File nguồn"}
+                placeholder="e.g. src/services/payment.ts"
+                items={activeNode.metadata?.sourceFiles || []}
+                onAdd={text => updateNode(activeNode.id, { metadata: { ...activeNode.metadata, sourceFiles: [...(activeNode.metadata?.sourceFiles || []), text] } })}
+                onRemove={index => updateNode(activeNode.id, { metadata: { ...activeNode.metadata, sourceFiles: (activeNode.metadata?.sourceFiles || []).filter((_, itemIndex) => itemIndex !== index) } })}
+                language={language}
+              />
+            </div>
             {/* API Contracts */}
             <div className="space-y-3 p-4 bg-slate-50 border border-slate-200 rounded-xl">
               <div className="flex items-center justify-between">
@@ -1106,11 +1236,10 @@ export default function RightDetailPanel() {
               onRemove={(idx) => updateNode(activeNode.id, { integrationPoints: (activeNode.integrationPoints || []).filter((_, i) => i !== idx) })}
               noItemsLabel={language === "en" ? "No integration points documented." : "Chưa có liên kết tích hợp nào."}
               language={language}
-              required={false}
             />
 
             {/* Frontend UI Behavior */}
-            <div className="space-y-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+            <div className="hidden">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">
                 {language === "en" ? "Frontend UI Behavior & States" : "Hành vi UI & Các trạng thái Frontend"}
               </h3>
@@ -1187,8 +1316,41 @@ export default function RightDetailPanel() {
           </div>
         )}
 
-        {/* ==================== TESTS & DONE TAB ==================== */}
-        {activeTab === "tests_done" && (
+        {/* ==================== UI & PRESENTATION TAB ==================== */}
+        {activeTab === "ui_presentation" && (
+          <div className="space-y-6">
+            <ContractCollectionEditor
+              title={language === "en" ? "UI contracts" : "Hợp đồng UI"}
+              contracts={activeNode.uiContracts || []}
+              onChange={uiContracts => updateNode(activeNode.id, { uiContracts })}
+              language={language}
+            />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <FieldLabel text={language === "en" ? "Page / view" : "Trang / View"} required={false} language={language} />
+                <input value={activeNode.uiPage || ""} onChange={event => updateNode(activeNode.id, { uiPage: event.target.value })} placeholder="e.g. /login" className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:border-indigo-500 focus:outline-none" />
+              </div>
+              <div>
+                <FieldLabel text={language === "en" ? "Components" : "Components"} required={false} language={language} />
+                <input value={activeNode.uiComponents || ""} onChange={event => updateNode(activeNode.id, { uiComponents: event.target.value })} placeholder="e.g. LoginForm, Toast" className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:border-indigo-500 focus:outline-none" />
+              </div>
+            </div>
+            {([
+              ["uiStateLoading", "Loading state"],
+              ["uiStateEmpty", "Empty state"],
+              ["uiStateError", "Error state"],
+              ["uiStateSuccess", "Success state"],
+            ] as const).map(([field, label]) => (
+              <div key={field}>
+                <FieldLabel text={label} required={false} language={language} />
+                <textarea value={activeNode[field] || ""} onChange={event => updateNode(activeNode.id, { [field]: event.target.value })} rows={2} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-800 focus:border-indigo-500 focus:outline-none" />
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ==================== TESTS & ACCEPTANCE TAB ==================== */}
+        {activeTab === "tests_acceptance" && (
           <div className="space-y-6">
             {/* Automated Tests */}
             <div className="space-y-4">

@@ -1,0 +1,11 @@
+{
+    "schema_version": 1,
+    "commit": "",
+    "indexed_at": "2026-07-11T09:38:11Z",
+    "project": "E-Graph-project1",
+    "nodes": 234,
+    "edges": 463,
+    "original_size": 1769472,
+    "compressed_size": 237674,
+    "compression_level": 9
+}
